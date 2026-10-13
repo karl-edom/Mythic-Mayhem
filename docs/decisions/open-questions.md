@@ -12,6 +12,6 @@ Chaque ligne bloque un choix d'architecture. Les recommandations sont des hypoth
 | D6 | Objectif de victoire | Contrôle de zone + score (voir l'expérience E3) | Partie courte (6 à 10 min) et objectif lisible. |
 | D7 | But du premier prototype | **Base technique extensible validant le fun** : simulation testable, 3 kits définis par données, validateur de budget | Le fil rouge : « ajouter un personnage sans toucher au moteur ». |
 | D8 | ✅ Décidé (0001) — REA | Ne pas installer pour l'instant (voir `research/rea-setup.md`) | Inutilisable de façon licite sur les jeux de référence. |
-| D10 | Squelette de la copie mixée (voir la décision 0003) | Structure de partie et carte de Unite ou de MLBB ; stats de LoL | À trancher en phase R2 |
-| D11 | Boutique ou objets tenus | Objets tenus façon Unite | Moins de menus |
-| D9 | « Pokémon Brawl » (cité dans le brief) | À préciser : Pokémon Unite, ou un autre jeu ? | Change seulement la recherche de références. |
+| D10 | ✅ Décidé (0004) — Squelette de la copie mixée | **Mobile Legends** | |
+| D11 | ✅ Décidé (0004) — Boutique ou objets tenus | **Objets choisis avant la partie, façon Unite** | Les objets en partie sont trop complexes |
+| D9 | ✅ Décidé (0004) — « Pokémon Brawl » | **Pokémon Unite** | |
