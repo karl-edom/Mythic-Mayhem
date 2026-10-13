@@ -1,6 +1,6 @@
 # 0005 — Adaptation « J-Stars » : brawler d'arène crossover
 
-Date : 2026-10-13. Statut : **proposée**. Branche : `claude/jstars-custom-characters-fiqi08`.
+Date : 2026-10-13. Statut : **acceptée** le 2026-10-13 : recommandations validées (Three.js, 3D à sol plat avec saut, 1v1 d'abord, validation et équilibrage réutilisés). Branche : `claude/jstars-custom-characters-fiqi08`.
 
 ## Demande du porteur de projet
 

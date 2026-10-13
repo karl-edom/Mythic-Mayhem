@@ -1,0 +1,81 @@
+/* Bright, warm and readable: light backgrounds, thick outlines, big type. */
+:root {
+  --ink: #2b2d42;
+  --paper: #fffaf0;
+  --accent: #ff7b00;
+  --good: #06d6a0;
+  --bad: #ef476f;
+  --energy: #4cc9f0;
+  font-family: "Nunito", "Trebuchet MS", system-ui, sans-serif;
+  color: var(--ink);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: #bfe8ff; }
+#view { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+#hud { position: fixed; inset: 0; pointer-events: none; }
+#menu { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 16px; background: rgba(191, 232, 255, 0.55); overflow: auto; }
+.hidden { display: none !important; }
+
+.menu-box { background: var(--paper); border: 4px solid var(--ink); border-radius: 24px; padding: 24px 28px; max-width: 960px; width: 100%; box-shadow: 0 8px 0 var(--ink); max-height: 100%; overflow: auto; }
+.menu-box.end { max-width: 420px; text-align: center; display: flex; flex-direction: column; gap: 12px; align-items: center; }
+.title { margin: 0; font-size: clamp(32px, 6vw, 56px); color: var(--accent); text-shadow: 3px 3px 0 var(--ink); letter-spacing: 1px; }
+.subtitle { margin: 4px 0 16px; font-weight: 700; }
+.columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
+.column h2 { margin: 0 0 8px; font-size: 20px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; }
+.card { text-align: left; font: inherit; color: inherit; background: white; border: 3px solid var(--ink); border-radius: 14px; padding: 10px; cursor: pointer; transition: transform 0.08s; }
+.card:hover { transform: translateY(-2px); }
+.card.selected { background: var(--secondary); box-shadow: 0 4px 0 var(--ink); }
+.swatch { height: 34px; border-radius: 8px; background: linear-gradient(135deg, var(--primary) 60%, var(--secondary) 60%); border: 2px solid var(--ink); margin-bottom: 6px; }
+.card-name { font-weight: 900; font-size: 17px; }
+.card-universe { font-size: 12px; opacity: 0.75; }
+.card-desc { font-size: 12px; margin-top: 4px; }
+.card-kit { font-size: 11px; margin-top: 4px; opacity: 0.7; }
+.levels { display: flex; align-items: center; gap: 8px; margin: 18px 0 8px; flex-wrap: wrap; font-weight: 700; }
+.pill { font: inherit; font-weight: 800; border: 3px solid var(--ink); border-radius: 999px; padding: 6px 14px; background: white; cursor: pointer; }
+.pill.selected { background: var(--good); }
+.start { font: inherit; font-weight: 900; font-size: 22px; border: 4px solid var(--ink); border-radius: 16px; padding: 10px 28px; background: var(--accent); color: white; cursor: pointer; box-shadow: 0 5px 0 var(--ink); margin-top: 8px; }
+.start:active { transform: translateY(3px); box-shadow: 0 2px 0 var(--ink); }
+.invalid { margin-top: 16px; font-size: 13px; }
+.invalid-name { font-weight: 800; margin-top: 6px; }
+.hint { font-size: 13px; opacity: 0.75; margin-top: 14px; }
+.error { color: var(--bad); font-weight: 800; }
+
+.hud-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 12px 16px; }
+.hud-panel { width: min(36vw, 360px); background: rgba(255, 250, 240, 0.92); border: 3px solid var(--ink); border-radius: 16px; padding: 8px 12px; border-top: 8px solid var(--primary); }
+.hud-panel.right { text-align: right; }
+.hud-name { font-weight: 900; font-size: 18px; }
+.hud-tag { font-size: 11px; background: var(--ink); color: white; border-radius: 6px; padding: 1px 6px; margin-left: 6px; vertical-align: middle; }
+.hud-panel.right .hud-name { display: flex; flex-direction: row-reverse; justify-content: flex-start; gap: 6px; }
+.hud-universe { font-size: 11px; opacity: 0.7; margin-bottom: 4px; }
+.bar { position: relative; height: 14px; background: #e9e4d8; border: 2px solid var(--ink); border-radius: 8px; overflow: hidden; margin-top: 4px; }
+.bar.energy { height: 9px; }
+.bar .fill { position: absolute; top: 0; bottom: 0; left: 0; width: 100%; }
+.hud-panel.right .bar .fill { left: auto; right: 0; }
+.bar.hp .fill { background: var(--good); }
+.bar.hp .fill.lag { background: #ffd166; }
+.bar.energy .fill { background: var(--energy); }
+.cost-mark { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--ink); opacity: 0.5; }
+.hud-panel.right .cost-mark { transform: scaleX(-1); left: auto !important; }
+.hud-specials { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; font-size: 11px; }
+.hud-panel.right .hud-specials { justify-content: flex-end; }
+.special { padding: 2px 6px; border-radius: 6px; background: #e9e4d8; opacity: 0.55; font-weight: 700; }
+.special.ready { background: var(--secondary); opacity: 1; }
+.hud-center { display: flex; align-items: center; gap: 10px; background: var(--paper); border: 3px solid var(--ink); border-radius: 16px; padding: 6px 12px; }
+.hud-timer { font-weight: 900; font-size: 26px; min-width: 64px; text-align: center; }
+.pips { display: flex; gap: 4px; }
+.pips.right { flex-direction: row-reverse; }
+.pip { width: 16px; height: 16px; border-radius: 50%; border: 3px solid var(--ink); background: white; }
+.pip.on { background: var(--accent); }
+.hud-banner { position: absolute; top: 38%; left: 50%; transform: translate(-50%, -50%) scale(0.8); font-size: clamp(28px, 6vw, 64px); font-weight: 900; color: white; text-shadow: 4px 4px 0 var(--ink), -2px -2px 0 var(--ink), 2px -2px 0 var(--ink), -2px 2px 0 var(--ink); opacity: 0; transition: opacity 0.15s, transform 0.15s; white-space: nowrap; }
+.hud-banner.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+.hud-help { position: absolute; left: 16px; bottom: 16px; background: rgba(255, 250, 240, 0.9); border: 3px solid var(--ink); border-radius: 12px; padding: 8px 12px; font-size: 12px; display: grid; gap: 2px; }
+.hud-help .row { display: flex; gap: 8px; }
+.hud-help b { min-width: 120px; }
+
+@media (max-width: 640px) {
+  .hud-panel { width: 40vw; padding: 6px 8px; }
+  .hud-name { font-size: 14px; }
+  .hud-help { display: none; }
+  .hud-timer { font-size: 18px; min-width: 44px; }
+}

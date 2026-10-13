@@ -1,6 +1,6 @@
 # Packs « fan » : personnages de tes univers
 
-Statut : **règles d'organisation**, le format de kit `schemaVersion: 2` reste à écrire (décision 0005).
+Statut : **utilisable**. Le format de kit est `schemaVersion: 2` (voir `combat-contract-v2.md` ; exemples : `data/fighters/ronin/`, `data/fighters/kaminari/`). Un pack posé dans `packs/local/` apparaît dans le menu au prochain `npm run dev` ; s'il est refusé, le menu affiche pourquoi.
 
 ## Où ils vivent
 
