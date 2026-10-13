@@ -84,8 +84,17 @@ export interface Zone {
 export type SimEvent =
   | { t: number; type: "cast"; unit: number; slot: number }
   | { t: number; type: "damage"; source: number; target: number; amount: number; by: Source }
-  | { t: number; type: "heal"; source: number; target: number; amount: number }
-  | { t: number; type: "status"; source: number; target: number; status: "slow" | "stun" | "knockback" | "shield" | "haste" }
+  | { t: number; type: "heal"; source: number; target: number; amount: number; by: Source }
+  | {
+      t: number;
+      type: "status";
+      source: number;
+      target: number;
+      status: "slow" | "stun" | "knockback" | "shield" | "haste";
+      /** Seconds for timed statuses, metres for knockback, absorb amount for shields. */
+      value: number;
+      by: Source;
+    }
   | { t: number; type: "death"; target: number; killer: number }
   | { t: number; type: "respawn"; unit: number };
 
@@ -184,7 +193,7 @@ export function applyEffect(w: World, sourceId: number, target: Unit, effect: Ef
     case "heal": {
       const amount = Math.min(effect.amount, target.kit.stats.hp - target.hp);
       target.hp += amount;
-      w.events.push({ t, type: "heal", source: sourceId, target: target.id, amount });
+      w.events.push({ t, type: "heal", source: sourceId, target: target.id, amount, by });
       return;
     }
     case "shield":
@@ -207,7 +216,9 @@ export function applyEffect(w: World, sourceId: number, target: Unit, effect: Ef
       break;
     }
   }
-  w.events.push({ t, type: "status", source: sourceId, target: target.id, status: effect.type });
+  const value =
+    effect.type === "knockback" ? effect.distance : effect.type === "shield" ? effect.amount : effect.duration;
+  w.events.push({ t, type: "status", source: sourceId, target: target.id, status: effect.type, value, by });
 }
 
 /** Applies a list of effects to one unit, keeping only those meant for its side. */

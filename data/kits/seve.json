@@ -3,14 +3,14 @@
   "id": "seve",
   "role": "support",
   "stats": {
-    "hp": 1050,
+    "hp": 1200,
     "moveSpeed": 3.5,
     "armor": 0.05,
     "radius": 0.5
   },
   "basic": {
     "range": 4.5,
-    "damage": 42,
+    "damage": 40,
     "interval": 0.9,
     "projectileSpeed": 15
   },

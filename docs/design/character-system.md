@@ -72,7 +72,32 @@ Outils :
 - `npm run fit -- <kit.json> --write` : met un kit au budget en ajustant seulement ses dégâts, soins et boucliers ;
 - `npm run e2:field` : mesure la qualité du modèle de coût sur des centaines de kits aléatoires, et peut le recalibrer.
 
-## 5. Trois kits originaux pour E2
+## 5. Profil de forces et faiblesses (au-delà du budget total)
+
+Le budget dit **combien** un kit est fort. Le profil dit **en quoi** il l'est. Les points sont regroupés en 6 axes, plus la portée :
+
+| Axe | Contenu |
+| --- | --- |
+| survie | PV, armure, taille, soins et boucliers sur soi |
+| degats | attaque de base (dégâts continus) |
+| burst | dégâts des capacités |
+| mobilite | vitesse, dashs, accélérations |
+| controle | ralentissements, étourdissements, repoussements |
+| soutien | soins et boucliers de zone (pour l'équipe) |
+| portee | portée de l'attaque de base, en mètres |
+
+Règles (`data/balance/profile.json`, modifiables sans code) :
+
+- aucun axe ne dépasse 50 % du budget ;
+- au plus 3 points forts (20 % ou plus) ;
+- **au moins 2 faiblesses** (8 % ou moins) ;
+- **bornes par rôle**. Par exemple :
+  - Avant-garde : survie ≥ 30 %, contrôle ≥ 8 %, dégâts ≤ 35 % ;
+  - Tireur : dégâts ≥ 30 %, portée ≥ 5 m, survie ≤ 15 %.
+
+`npm run budget` affiche le profil de chaque kit sous forme de barres.
+
+## 6. Trois kits originaux pour E2
 
 | Kit | Rôle | Attaque de base | Capacité 1 | Capacité 2 | Faiblesse payée |
 | --- | --- | --- | --- | --- | --- |
@@ -81,6 +106,6 @@ Outils :
 | **Lame** (4ᵉ, ajouté uniquement par données) | Assassin | mêlée rapide | dash offensif | bouclier + accélération sur soi | fragile, doit tout engager |
 | **Sève** | Soutien | projectile moyen | zone de soin pour les alliés | projectile ralentissant | dégâts faibles |
 
-## 6. Créateur de personnages (plus tard)
+## 7. Créateur de personnages (plus tard)
 
-Le créateur est une interface posée sur ce même validateur. Le joueur choisit sa base de stats, ses primitives et leurs paramètres, et voit son budget restant en direct. Le moteur ne fait aucune différence entre un personnage officiel et un personnage créé par un joueur.
+Le créateur est une interface posée sur ce même validateur. Le joueur choisit un rôle, sa base de stats, ses primitives et leurs paramètres. Il voit en direct son budget restant, son profil sur les 7 axes et les bornes de son rôle. Le moteur ne fait aucune différence entre un personnage officiel et un personnage créé par un joueur.

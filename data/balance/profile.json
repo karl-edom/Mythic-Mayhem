@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "maxAxisShare": 0.5,
+  "strongShare": 0.2,
+  "maxStrengths": 3,
+  "weakShare": 0.08,
+  "minWeaknesses": 2,
+  "roles": {
+    "vanguard":   { "survie": { "min": 0.3 }, "controle": { "min": 0.08 }, "degats": { "max": 0.35 } },
+    "fighter":    { "degats": { "min": 0.2 }, "survie": { "min": 0.15 } },
+    "marksman":   { "degats": { "min": 0.3 }, "portee": { "min": 5 }, "survie": { "max": 0.15 } },
+    "controller": { "controle": { "min": 0.2 }, "burst": { "max": 0.3 } },
+    "support":    { "soutien": { "min": 0.15 }, "burst": { "max": 0.25 } },
+    "assassin":   { "burst": { "min": 0.2 }, "mobilite": { "min": 0.1 }, "survie": { "max": 0.15 } }
+  }
+}

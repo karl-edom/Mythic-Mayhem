@@ -6,7 +6,8 @@
 
 import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { DATA_DIR, loadCosts, loadValidKits } from "../src/data/load.ts";
+import { collectMetrics, metricsTable, type Metrics } from "../src/balance/telemetry.ts";
+import { DATA_DIR, loadBalance, loadValidKits } from "../src/data/load.ts";
 import type { Kit } from "../src/sim/kit.ts";
 import { runMatch } from "../src/sim/match.ts";
 
@@ -20,7 +21,7 @@ const { values } = parseArgs({
   },
 });
 const n = Number(values.n);
-const kits = loadValidKits(values.kits, loadCosts());
+const kits = loadValidKits(values.kits, loadBalance());
 
 function combinations<T>(items: T[], k: number): T[][] {
   if (k === 0) return [[]];
@@ -33,6 +34,7 @@ const label = (side: Kit[]) => side.map((k) => k.id).join("+");
 
 console.log(`E2 — ${kits.length} kits, ${size}v${size}, ${sides.length} compositions, ${n} combats par affiche\n`);
 
+const metrics = new Map<string, Metrics>();
 /** Per kit: score and games, counted only when the kit is on one side only. */
 const perKit = new Map(kits.map((k) => [k.id, { score: 0, games: 0 }]));
 let worst = { rate: 0, label: "" };
@@ -50,6 +52,7 @@ for (let i = 0; i < sides.length; i++) {
       // Alternate sides so spawn position never favours anyone.
       const flip = s % 2 === 1;
       const r = runMatch(flip ? [b, a] : [a, b], s + 1);
+      collectMetrics(r.world, r.winner, metrics);
       const aScore = r.winner === null ? 0.5 : r.winner === (flip ? 1 : 0) ? 1 : 0;
       if (r.winner === null) localDraws++;
       score += aScore;
@@ -77,8 +80,10 @@ function bump(id: string, score: number) {
   k.games++;
 }
 
-console.log("\nTaux de victoire par kit (toutes affiches confondues) :");
+console.log("\nTaux de victoire par kit (hors affiches miroir) :");
 for (const [id, k] of perKit) console.log(`  ${id.padEnd(12)} ${((k.score / k.games) * 100).toFixed(1).padStart(5)} %`);
+console.log("\nTélémétrie par kit (moyenne par match joué) :");
+for (const line of metricsTable(metrics)) console.log(`  ${line}`);
 console.log(`Matchs nuls (90 s écoulées) : ${((draws / total) * 100).toFixed(1)} %`);
 console.log(`Durée moyenne : ${(durationSum / total).toFixed(1)} s`);
 console.log(`Pire écart : ${worst.label} à ${(worst.rate * 100).toFixed(1)} % (seuil ${THRESHOLD * 100} %)`);

@@ -1,6 +1,7 @@
 // Turns untrusted JSON into a Kit, or a list of readable errors.
 // Structural checks first, then design rules (counterplay guarantees), then budget.
 
+import { checkProfile, kitProfile, type Profile, type ProfileRules } from "../balance/profile.ts";
 import { kitBudget, type BudgetReport, type CostTable } from "./budget.ts";
 import {
   ALLY_EFFECTS,
@@ -46,9 +47,15 @@ const LIMITS = {
 /** Minimum telegraph before a stun lands, so it can always be dodged. */
 export const STUN_MIN_DELAY = 0.4;
 
+/** Everything a kit is checked against: point costs and strength/weakness rules. */
+export interface Balance {
+  costs: CostTable;
+  profile: ProfileRules;
+}
+
 export type ValidationResult =
-  | { ok: true; kit: Kit; budget: BudgetReport }
-  | { ok: false; errors: string[]; budget?: BudgetReport };
+  | { ok: true; kit: Kit; budget: BudgetReport; profile: Profile }
+  | { ok: false; errors: string[]; budget?: BudgetReport; profile?: Profile };
 
 class Reader {
   errors: string[] = [];
@@ -235,14 +242,17 @@ function checkRules(kit: Kit): string[] {
   return errors;
 }
 
-export function validateKit(data: unknown, costs: CostTable): ValidationResult {
+export function validateKit(data: unknown, balance: Balance): ValidationResult {
+  const { costs } = balance;
   const r = new Reader();
   const kit = readKit(r, data);
   if (!kit || r.errors.length > 0) return { ok: false, errors: r.errors };
   const errors = checkRules(kit);
   const budget = kitBudget(kit, costs);
+  const profile = kitProfile(kit, costs);
+  errors.push(...checkProfile(kit, profile, balance.profile));
   const total = Math.round(budget.total * 10) / 10;
   if (budget.total > costs.budget.max) errors.push(`budget: ${total} points dépasse le maximum de ${costs.budget.max}`);
   if (budget.total < costs.budget.min) errors.push(`budget: ${total} points sous le minimum de ${costs.budget.min}`);
-  return errors.length > 0 ? { ok: false, errors, budget } : { ok: true, kit, budget };
+  return errors.length > 0 ? { ok: false, errors, budget, profile } : { ok: true, kit, budget, profile };
 }

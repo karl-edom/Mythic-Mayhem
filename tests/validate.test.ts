@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import { join } from "node:path";
 import { test } from "node:test";
-import { DATA_DIR, loadCosts, loadKitDir } from "../src/data/load.ts";
+import { DATA_DIR, loadBalance, loadKitDir } from "../src/data/load.ts";
 import { validateKit } from "../src/sim/validate.ts";
 
-const costs = loadCosts();
-const kits = loadKitDir(join(DATA_DIR, "kits"), costs);
+const balance = loadBalance();
+const kits = loadKitDir(join(DATA_DIR, "kits"), balance);
 
 /** A deep copy of a shipped kit, to mutate in tests. */
 function kitJson(id: string): any {
@@ -15,7 +15,7 @@ function kitJson(id: string): any {
 }
 
 const errorsOf = (data: unknown) => {
-  const r = validateKit(data, costs);
+  const r = validateKit(data, balance);
   return r.ok ? [] : r.errors;
 };
 
@@ -71,4 +71,25 @@ test("les données malformées sont refusées sans planter", () => {
   const k3 = kitJson("seve");
   k3.abilities.push(k3.abilities[0]);
   assert.ok(errorsOf(k3).some((e) => e.includes("exactement 2 capacités")));
+});
+
+test("un kit qui met plus de la moitié de son budget dans un seul axe est refusé", () => {
+  const k = kitJson("etincelle");
+  k.basic.damage *= 3;
+  assert.ok(errorsOf(k).some((e) => /profil: degats prend .* du budget/.test(e)));
+});
+
+test("chaque rôle impose ses bornes : un tireur doit tirer de loin", () => {
+  const k = kitJson("etincelle");
+  k.basic.range = 2;
+  assert.ok(errorsOf(k).some((e) => e.includes("rôle marksman: portee")));
+});
+
+test("un kit sans faiblesse est refusé, même dans le budget", () => {
+  const k = kitJson("seve");
+  // Spread the kit over every axis: a bit of mobility and self-sustain.
+  k.stats.moveSpeed = 4.2;
+  k.stats.hp = 1600;
+  k.abilities[1] = { id: "elan", cooldown: 6, delivery: { type: "dash", distance: 5, speed: 16 }, effects: [{ type: "damage", amount: 120 }] };
+  assert.ok(errorsOf(k).some((e) => e.includes("point(s) faible(s)")));
 });

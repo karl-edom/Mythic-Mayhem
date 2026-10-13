@@ -12,8 +12,9 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { FEATURES, kitFeatures, type Feature } from "../src/balance/features.ts";
 import { randomField } from "../src/balance/generate.ts";
+import { kitProfile, POINT_AXES, type PointAxis } from "../src/balance/profile.ts";
 import { ridgeRegression } from "../src/balance/regress.ts";
-import { DATA_DIR, loadCosts } from "../src/data/load.ts";
+import { DATA_DIR, loadBalance } from "../src/data/load.ts";
 import type { CostTable } from "../src/sim/budget.ts";
 import type { Kit } from "../src/sim/kit.ts";
 import { rng } from "../src/sim/math.ts";
@@ -95,12 +96,15 @@ interface RoundResult {
   max: number;
   value: Partial<Record<Feature, number>>;
   support: Record<Feature, number>;
+  axisValue: Record<PointAxis, number>;
+  roleRates: Map<string, { sum: number; count: number }>;
 }
 
 function evaluate(costs: CostTable, round: number): RoundResult {
   const target = (costs.budget.min + costs.budget.max) / 2;
+  const balance = { costs, profile: profileRules };
   const random = rng(Number(values.seed) * 7919 + round);
-  const kits = randomField(random, KITS, costs, target);
+  const kits = randomField(random, KITS, balance, target);
   const rates = TEAM === 1 ? roundRobin(kits) : randomTeams(kits, random);
   const feats = kits.map((k) => kitFeatures(k, costs));
   const support = Object.fromEntries(
@@ -115,7 +119,23 @@ function evaluate(costs: CostTable, round: number): RoundResult {
   FEATURES.forEach((f, i) => {
     if (support[f] >= MIN_SUPPORT) value[f] = b[i]! / (0.5 / target);
   });
+  // Same measurement on the readable profile axes.
+  const profiles = kits.map((k) => kitProfile(k, costs));
+  const bAxes = ridgeRegression(
+    profiles.map((p) => POINT_AXES.map((ax) => p.points[ax])),
+    rates,
+  );
+  const axisValue = Object.fromEntries(POINT_AXES.map((ax, i) => [ax, bAxes[i]! / (0.5 / target)])) as Record<PointAxis, number>;
+  const roleRates = new Map<string, { sum: number; count: number }>();
+  kits.forEach((k, i) => {
+    const r = roleRates.get(k.role) ?? { sum: 0, count: 0 };
+    r.sum += rates[i]!;
+    r.count++;
+    roleRates.set(k.role, r);
+  });
   return {
+    axisValue,
+    roleRates,
     spread: stdev(rates),
     inBand: rates.filter((r) => r >= 0.35 && r <= 0.65).length / rates.length,
     min: Math.min(...rates),
@@ -135,22 +155,28 @@ function report(r: RoundResult, round: number): void {
     const frozen = NOT_CALIBRATED.includes(f) ? "  [gelé]" : "";
     console.log(`  ${f.padEnd(13)} ${v === undefined ? "   —  " : v.toFixed(2).padStart(6)}   (présent dans ${r.support[f]} kits)${frozen}`);
   }
+  console.log("Valeur réelle d'un point, par axe de profil :");
+  for (const ax of POINT_AXES) console.log(`  ${ax.padEnd(13)} ${r.axisValue[ax].toFixed(2).padStart(6)}`);
+  console.log("Taux de victoire moyen par rôle :");
+  for (const [role, v] of [...r.roleRates].sort()) console.log(`  ${role.padEnd(13)} ${pct(v.sum / v.count).padStart(7)}   (${v.count} kits)`);
 }
 
 /**
  * Utility features that bots cannot value (they never chain crowd control into
  * focused damage), so measurements would drive their price to zero. Their
- * coefficients stay at the design hypothesis until better bots or playtests.
+ * price relative to damage stays at the design hypothesis until better bots or playtests.
  */
 const NOT_CALIBRATED: readonly Feature[] = ["slow", "stun", "knockback", "haste", "dashMobility"];
 
 /** Moves each coefficient towards the measured value of its points. */
 function recalibrate(costs: CostTable, value: Partial<Record<Feature, number>>): CostTable {
   const c: CostTable = structuredClone(costs);
-  const factor = (f: Feature) => {
+  const measured = (f: Feature) => {
     const v = value[f];
-    return v === undefined || NOT_CALIBRATED.includes(f) ? 1 : Math.min(2, Math.max(0.5, v)) ** DAMPING;
+    return v === undefined ? 1 : Math.min(2, Math.max(0.5, v)) ** DAMPING;
   };
+  // Frozen features keep their price relative to damage, the unit everything else is compared to.
+  const factor = (f: Feature) => (NOT_CALIBRATED.includes(f) ? measured("damage") : measured(f));
   c.stats.pointsPer100Hp *= factor("hp");
   c.stats.pointsPerMoveSpeed *= factor("moveSpeed");
   c.stats.pointsPerEhpPercentFromArmor *= factor("armor");
@@ -175,13 +201,32 @@ function recalibrate(costs: CostTable, value: Partial<Record<Feature, number>>):
     c.basic.pointsPerDps *= m / (1 + f1 * rm);
     c.basic.rangeFactorPerMetre = f1;
   }
+  return anchorToDamage(c, costs);
+}
+
+/**
+ * Calibration only measures relative prices; left alone, every price drifts up
+ * together and fights get slower. Rescale so a point of damage keeps its price:
+ * the overall power level (and time to kill) stays a design choice.
+ */
+function anchorToDamage(c: CostTable, previous: CostTable): CostTable {
+  const k = c.ability.effectValue.damage / previous.ability.effectValue.damage;
+  c.stats.pointsPer100Hp /= k;
+  c.stats.pointsPerMoveSpeed /= k;
+  c.stats.pointsPerEhpPercentFromArmor /= k;
+  c.stats.pointsPerRadiusBelowBase /= k;
+  c.basic.pointsPerDps /= k;
+  const e = c.ability.effectValue;
+  for (const key of Object.keys(e) as (keyof typeof e)[]) e[key] /= k;
+  c.ability.dashMobilityPerMetre /= k;
   return c;
 }
 
 const roundCoefficients = (c: CostTable): CostTable =>
   JSON.parse(JSON.stringify(c, (_k, v: unknown) => (typeof v === "number" && !Number.isInteger(v) ? Math.round(v * 1000) / 1000 : v)));
 
-let costs = loadCosts();
+const { costs: initialCosts, profile: profileRules } = loadBalance();
+let costs = initialCosts;
 console.log(
   TEAM === 1
     ? `E2 (champ) — ${KITS} kits aléatoires à budget égal, ${SEEDS} combats par paire, duels 1v1`

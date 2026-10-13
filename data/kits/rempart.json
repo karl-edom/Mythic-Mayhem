@@ -3,53 +3,53 @@
   "id": "rempart",
   "role": "vanguard",
   "stats": {
-    "hp": 1650,
+    "hp": 2000,
     "moveSpeed": 3.3,
-    "armor": 0.15,
+    "armor": 0.25,
     "radius": 0.6
   },
   "basic": {
     "range": 1.6,
-    "damage": 55,
-    "interval": 0.9
+    "damage": 50,
+    "interval": 1.0
   },
   "abilities": [
     {
       "id": "charge",
-      "cooldown": 8,
+      "cooldown": 9,
       "delivery": {
         "type": "dash",
-        "distance": 5,
+        "distance": 4,
         "speed": 14
       },
       "effects": [
         {
           "type": "damage",
-          "amount": 60
+          "amount": 50
         },
         {
           "type": "knockback",
-          "distance": 2
+          "distance": 1.5
         }
       ]
     },
     {
       "id": "seisme",
-      "cooldown": 11,
+      "cooldown": 12,
       "delivery": {
         "type": "circle",
         "castRange": 0,
-        "radius": 2.5,
+        "radius": 2.2,
         "delay": 0.6
       },
       "effects": [
         {
           "type": "damage",
-          "amount": 80
+          "amount": 100
         },
         {
           "type": "stun",
-          "duration": 0.9
+          "duration": 0.8
         }
       ]
     }

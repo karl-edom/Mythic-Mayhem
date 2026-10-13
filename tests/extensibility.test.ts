@@ -6,23 +6,24 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { randomKit } from "../src/balance/generate.ts";
-import { DATA_DIR, loadCosts, loadValidKits } from "../src/data/load.ts";
+import { DATA_DIR, loadBalance, loadValidKits } from "../src/data/load.ts";
 import { rng } from "../src/sim/math.ts";
 import { runMatch } from "../src/sim/match.ts";
 
-const costs = loadCosts();
+const balance = loadBalance();
+const { costs } = balance;
 
 test("un nouveau personnage s'ajoute en déposant un seul fichier de données", () => {
   const dir = mkdtempSync(join(tmpdir(), "kits-"));
   cpSync(join(DATA_DIR, "kits"), dir, { recursive: true });
-  const before = loadValidKits(dir, costs).length;
+  const before = loadValidKits(dir, balance).length;
 
   const r = rng(7);
   let kit;
-  while (!kit) kit = randomKit(r, "nouveau", costs, (costs.budget.min + costs.budget.max) / 2);
+  while (!kit) kit = randomKit(r, "nouveau", balance, (costs.budget.min + costs.budget.max) / 2);
   writeFileSync(join(dir, "nouveau.json"), JSON.stringify(kit));
 
-  const kits = loadValidKits(dir, costs);
+  const kits = loadValidKits(dir, balance);
   assert.equal(kits.length, before + 1);
   const added = kits.find((k) => k.id === "nouveau")!;
   for (const other of kits) {

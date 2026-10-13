@@ -4,7 +4,7 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { fitKit } from "../src/balance/fit.ts";
-import { loadCosts } from "../src/data/load.ts";
+import { loadBalance } from "../src/data/load.ts";
 import { kitBudget } from "../src/sim/budget.ts";
 import type { Kit } from "../src/sim/kit.ts";
 import { validateKit } from "../src/sim/validate.ts";
@@ -13,7 +13,8 @@ const { values, positionals } = parseArgs({
   allowPositionals: true,
   options: { target: { type: "string" }, write: { type: "boolean", default: false } },
 });
-const costs = loadCosts();
+const balance = loadBalance();
+const { costs } = balance;
 const target = values.target ? Number(values.target) : (costs.budget.min + costs.budget.max) / 2;
 
 for (const file of positionals) {
@@ -25,7 +26,7 @@ for (const file of positionals) {
     process.exitCode = 1;
     continue;
   }
-  const check = validateKit(fitted.kit, costs);
+  const check = validateKit(fitted.kit, balance);
   const after = kitBudget(fitted.kit, costs).total;
   console.log(`${file} : ${before.toFixed(1)} → ${after.toFixed(1)} pts (×${fitted.factor.toFixed(2)})${check.ok ? "" : ` — invalide : ${check.errors.join(" | ")}`}`);
   if (values.write && check.ok) writeFileSync(file, JSON.stringify(fitted.kit, null, 2) + "\n");

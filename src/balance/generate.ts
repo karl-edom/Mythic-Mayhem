@@ -1,9 +1,10 @@
 // Generates random kits that pass validation and cost exactly a target budget.
 // Used to test the cost model on many shapes of characters, not just the ones we designed.
 
-import { kitBudget, type CostTable } from "../sim/budget.ts";
+import { kitBudget } from "../sim/budget.ts";
 import type { Ability, Effect, Kit } from "../sim/kit.ts";
-import { validateKit } from "../sim/validate.ts";
+import { validateKit, type Balance } from "../sim/validate.ts";
+import { kitProfile, matchingRoles } from "./profile.ts";
 
 type Rand = () => number;
 
@@ -87,7 +88,8 @@ function randomAbility(r: Rand, id: string, stunTaken: boolean): Ability {
  * Returns a valid kit worth exactly `target` points, or undefined if this
  * random draw cannot be fitted (the caller just draws again).
  */
-export function randomKit(r: Rand, id: string, costs: CostTable, target: number): Kit | undefined {
+export function randomKit(r: Rand, id: string, balance: Balance, target: number): Kit | undefined {
+  const { costs } = balance;
   const ranged = r() < 0.5;
   const first = randomAbility(r, "a1", false);
   const second = randomAbility(r, "a2", first.effects.some((e) => e.type === "stun"));
@@ -112,14 +114,18 @@ export function randomKit(r: Rand, id: string, costs: CostTable, target: number)
   const perDamage = lines.find((l) => l.label === "basic")!.points;
   kit.basic.damage = Math.round(((target - withoutBasic) / perDamage) * 10) / 10;
   if (kit.basic.damage < 15 || kit.basic.damage > 150) return undefined;
-  return validateKit(kit, costs).ok ? kit : undefined;
+  // A generated kit takes the first role whose rules it satisfies, or is discarded.
+  const role = matchingRoles(kit, kitProfile(kit, costs), balance.profile)[0];
+  if (!role) return undefined;
+  kit.role = role;
+  return validateKit(kit, balance).ok ? kit : undefined;
 }
 
-export function randomField(r: Rand, count: number, costs: CostTable, target: number): Kit[] {
+export function randomField(r: Rand, count: number, balance: Balance, target: number): Kit[] {
   const kits: Kit[] = [];
   for (let attempts = 0; kits.length < count; attempts++) {
     if (attempts > count * 1000) throw new Error("Impossible de générer assez de kits valides avec ces coûts");
-    const kit = randomKit(r, `gen-${kits.length + 1}`, costs, target);
+    const kit = randomKit(r, `gen-${kits.length + 1}`, balance, target);
     if (kit) kits.push(kit);
   }
   return kits;

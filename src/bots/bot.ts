@@ -5,7 +5,7 @@
 
 import { isEnemyEffect, type Ability } from "../sim/kit.ts";
 import { dist, norm, sub, type Vec } from "../sim/math.ts";
-import { isStunned, zoneContains, type Command, type Unit, type World } from "../sim/world.ts";
+import { isStunned, shieldTotal, zoneContains, type Command, type Unit, type World } from "../sim/world.ts";
 
 export interface BotParams {
   /** Seconds before the bot reacts to a new telegraph. */
@@ -41,6 +41,33 @@ function nearestEnemy(w: World, u: Unit): Unit | undefined {
     if (!best || dist(u.pos, e.pos) < dist(u.pos, best.pos)) best = e;
   }
   return best;
+}
+
+/** How far this unit can threaten right now: basic range, or the longest reach of an ability. */
+function threatReach(u: Unit): number {
+  let reach = u.kit.basic.range;
+  for (const ab of u.kit.abilities) {
+    const d = ab.delivery;
+    if (!ab.effects.some(isEnemyEffect)) continue;
+    if (d.type === "projectile") reach = Math.max(reach, d.range);
+    else if (d.type === "line") reach = Math.max(reach, d.length);
+    else if (d.type === "circle") reach = Math.max(reach, d.castRange + d.radius);
+    else if (d.type === "dash") reach = Math.max(reach, d.distance + u.kit.basic.range);
+  }
+  return reach;
+}
+
+/** Focus the weakest enemy within reach (lowest effective HP); otherwise walk to the nearest. */
+function chooseTarget(w: World, u: Unit): Unit | undefined {
+  const reach = threatReach(u) + 1;
+  let best: Unit | undefined;
+  let bestHp = Infinity;
+  for (const e of w.units) {
+    if (!e.alive || e.team === u.team || dist(u.pos, e.pos) > reach) continue;
+    const effectiveHp = (e.hp + shieldTotal(e)) / (1 - e.kit.stats.armor);
+    if (effectiveHp < bestHp) [best, bestHp] = [e, effectiveHp];
+  }
+  return best ?? nearestEnemy(w, u);
 }
 
 function mostHurtAlly(w: World, u: Unit, within: number): Unit | undefined {
@@ -132,7 +159,7 @@ export function decide(w: World, u: Unit, p: BotParams): Command {
   if (!u.alive || u.dash || isStunned(w, u)) return { unit: u.id };
   const away = dodge(w, u, p);
   if (away) return { unit: u.id, move: away };
-  const enemy = nearestEnemy(w, u);
+  const enemy = chooseTarget(w, u);
   if (!enemy) return { unit: u.id };
   const choice = chooseCast(w, u, enemy);
   const cast = choice && { slot: choice.slot, target: aim(u, choice.target, p) };
