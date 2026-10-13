@@ -57,7 +57,7 @@ export type ValidationResult =
   | { ok: true; kit: Kit; budget: BudgetReport; profile: Profile }
   | { ok: false; errors: string[]; budget?: BudgetReport; profile?: Profile };
 
-class Reader {
+export class Reader {
   errors: string[] = [];
 
   obj(v: unknown, path: string): Record<string, unknown> | undefined {

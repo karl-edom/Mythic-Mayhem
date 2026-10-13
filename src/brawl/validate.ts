@@ -1,0 +1,200 @@
+// Turns untrusted JSON into a FighterKit, or a list of readable errors.
+// Structural checks first, then design rules (counterplay guarantees), then budget.
+// Pure: no I/O, so the browser client runs the exact same checks as the tools.
+
+import { Reader } from "../sim/validate.ts";
+import { fighterBudget, type BrawlBudget, type BrawlCostTable } from "./budget.ts";
+import { BRAWL_CONFIG } from "./world.ts";
+import { ARCHETYPES, FIGHTER_SCHEMA_VERSION, type Archetype, type FighterKit, type Special, type SpecialDelivery, type Strike } from "./kit.ts";
+
+export const MAX_LIGHT_HITS = 5;
+export const MAX_SPECIALS = 3;
+
+/** Hard limits on every number a fighter kit may contain. */
+const LIMITS = {
+  hp: [700, 1600],
+  moveSpeed: [4, 9],
+  jumpSpeed: [6, 14],
+  weight: [0.7, 1.4],
+  radius: [0.35, 0.8],
+  damage: [1, 400],
+  startup: [0.05, 1.5],
+  active: [0.03, 0.5],
+  recovery: [0.05, 1.5],
+  reach: [0.3, 3],
+  size: [0.2, 2],
+  hitstun: [0.05, 1.2],
+  knockback: [0, 20],
+  maxCharge: [0, 2],
+  chargeBonus: [1, 2.5],
+  energyCost: [10, 100],
+  specialStartup: [0.05, 1.5],
+  specialRecovery: [0.1, 2],
+  projectileSpeed: [6, 40],
+  projectileRange: [3, 25],
+  rushDistance: [2, 12],
+  rushSpeed: [8, 40],
+  castRange: [0, 15],
+  areaRadius: [0.5, 5],
+  areaDelay: [0, 2],
+} as const satisfies Record<string, readonly [number, number]>;
+
+/** A light-combo opener must be slow enough to be blocked on reaction... */
+export const MIN_LIGHT_STARTUP = 0.08;
+/** ...and the heavy attack, which breaks guard, must be readable and dodgeable. */
+export const MIN_HEAVY_STARTUP = 0.35;
+/** A guard-breaking special must be telegraphed at least this long. */
+export const MIN_GUARD_BREAK_TELEGRAPH = 0.4;
+/** Knockback that floors even the heaviest fighter. */
+export const FLOORS_EVERYONE = BRAWL_CONFIG.knockdownSpeed * LIMITS.weight[1];
+
+export type FighterValidation =
+  | { ok: true; kit: FighterKit; budget: BrawlBudget }
+  | { ok: false; errors: string[]; budget?: BrawlBudget };
+
+function readStrike(r: Reader, v: unknown, path: string): Strike | undefined {
+  const o = r.obj(v, path);
+  if (!o) return undefined;
+  return {
+    damage: r.num(o, "damage", path, LIMITS.damage),
+    startup: r.num(o, "startup", path, LIMITS.startup),
+    active: r.num(o, "active", path, LIMITS.active),
+    recovery: r.num(o, "recovery", path, LIMITS.recovery),
+    reach: r.num(o, "reach", path, LIMITS.reach),
+    size: r.num(o, "size", path, LIMITS.size),
+    hitstun: r.num(o, "hitstun", path, LIMITS.hitstun),
+    knockback: r.num(o, "knockback", path, LIMITS.knockback),
+  };
+}
+
+function readDelivery(r: Reader, v: unknown, path: string): SpecialDelivery | undefined {
+  const o = r.obj(v, path);
+  if (!o) return undefined;
+  switch (o.type) {
+    case "projectile":
+      return {
+        type: "projectile",
+        speed: r.num(o, "speed", path, LIMITS.projectileSpeed),
+        range: r.num(o, "range", path, LIMITS.projectileRange),
+        size: r.num(o, "size", path, LIMITS.size),
+      };
+    case "rush":
+      return {
+        type: "rush",
+        distance: r.num(o, "distance", path, LIMITS.rushDistance),
+        speed: r.num(o, "speed", path, LIMITS.rushSpeed),
+        size: r.num(o, "size", path, LIMITS.size),
+      };
+    case "area":
+      return {
+        type: "area",
+        castRange: r.num(o, "castRange", path, LIMITS.castRange),
+        radius: r.num(o, "radius", path, LIMITS.areaRadius),
+        delay: r.num(o, "delay", path, LIMITS.areaDelay),
+      };
+    default:
+      r.errors.push(`${path}.type: livraison inconnue "${String(o.type)}"`);
+      return undefined;
+  }
+}
+
+function readSpecial(r: Reader, v: unknown, path: string): Special | undefined {
+  const o = r.obj(v, path);
+  if (!o) return undefined;
+  const delivery = readDelivery(r, o.delivery, `${path}.delivery`);
+  if (typeof o.guardBreak !== "boolean") r.errors.push(`${path}.guardBreak: booléen attendu`);
+  if (!delivery) return undefined;
+  return {
+    id: r.str(o, "id", path),
+    energyCost: r.num(o, "energyCost", path, LIMITS.energyCost),
+    startup: r.num(o, "startup", path, LIMITS.specialStartup),
+    recovery: r.num(o, "recovery", path, LIMITS.specialRecovery),
+    delivery,
+    damage: r.num(o, "damage", path, LIMITS.damage),
+    hitstun: r.num(o, "hitstun", path, LIMITS.hitstun),
+    knockback: r.num(o, "knockback", path, LIMITS.knockback),
+    guardBreak: o.guardBreak === true,
+  };
+}
+
+/** Counterplay guarantees: every rule here names what the opponent can do about it. */
+function designErrors(kit: FighterKit): string[] {
+  const errors: string[] = [];
+  const first = kit.light.hits[0];
+  if (first && first.startup < MIN_LIGHT_STARTUP)
+    errors.push(`light.hits[0].startup: au moins ${MIN_LIGHT_STARTUP} s, pour pouvoir garder en réaction`);
+  const last = kit.light.hits.at(-1);
+  // The combo must end in a way that frees the target: either it floors every fighter
+  // (get-up invulnerability follows), or the target recovers before a new opener lands.
+  if (first && last && last.knockback < FLOORS_EVERYONE && last.hitstun > last.recovery + first.startup)
+    errors.push(
+      `light: le dernier coup doit mettre au sol (recul ≥ ${FLOORS_EVERYONE}) ou avoir un hitstun ≤ récupération + démarrage du premier coup (sinon boucle infinie)`,
+    );
+  if (kit.heavy.startup < MIN_HEAVY_STARTUP)
+    errors.push(`heavy.startup: au moins ${MIN_HEAVY_STARTUP} s, l'attaque lourde brise la garde et doit se voir venir`);
+  kit.specials.forEach((sp, i) => {
+    const telegraph = sp.startup + (sp.delivery.type === "area" ? sp.delivery.delay : 0);
+    if (sp.guardBreak && telegraph < MIN_GUARD_BREAK_TELEGRAPH)
+      errors.push(`specials[${i}]: une spéciale brise-garde doit être télégraphiée au moins ${MIN_GUARD_BREAK_TELEGRAPH} s (démarrage + délai)`);
+  });
+  const ids = kit.specials.map((s) => s.id);
+  if (new Set(ids).size !== ids.length) errors.push("specials: identifiants en double");
+  return errors;
+}
+
+export function validateFighter(data: unknown, costs: BrawlCostTable): FighterValidation {
+  const r = new Reader();
+  const o = r.obj(data, "kit");
+  if (!o) return { ok: false, errors: r.errors };
+  if (o.schemaVersion !== FIGHTER_SCHEMA_VERSION)
+    return { ok: false, errors: [`kit.schemaVersion: ${FIGHTER_SCHEMA_VERSION} attendu (contrat de combat brawler)`] };
+  const id = r.str(o, "id", "kit");
+  if (!ARCHETYPES.includes(o.archetype as Archetype)) r.errors.push(`kit.archetype: un parmi ${ARCHETYPES.join(", ")}`);
+
+  const so = r.obj(o.stats, "kit.stats");
+  const stats = so && {
+    hp: r.num(so, "hp", "kit.stats", LIMITS.hp),
+    moveSpeed: r.num(so, "moveSpeed", "kit.stats", LIMITS.moveSpeed),
+    jumpSpeed: r.num(so, "jumpSpeed", "kit.stats", LIMITS.jumpSpeed),
+    weight: r.num(so, "weight", "kit.stats", LIMITS.weight),
+    radius: r.num(so, "radius", "kit.stats", LIMITS.radius),
+  };
+
+  const lo = r.obj(o.light, "kit.light");
+  const rawHits = lo?.hits;
+  if (lo && (!Array.isArray(rawHits) || rawHits.length < 1 || rawHits.length > MAX_LIGHT_HITS))
+    r.errors.push(`kit.light.hits: entre 1 et ${MAX_LIGHT_HITS} coups`);
+  const hits = Array.isArray(rawHits) ? rawHits.map((h, i) => readStrike(r, h, `kit.light.hits[${i}]`)) : [];
+
+  const ho = r.obj(o.heavy, "kit.heavy");
+  const heavyStrike = ho && readStrike(r, ho, "kit.heavy");
+  const heavy = ho && heavyStrike && {
+    ...heavyStrike,
+    maxCharge: r.num(ho, "maxCharge", "kit.heavy", LIMITS.maxCharge),
+    chargeBonus: r.num(ho, "chargeBonus", "kit.heavy", LIMITS.chargeBonus),
+  };
+
+  const rawSpecials = o.specials;
+  if (!Array.isArray(rawSpecials) || rawSpecials.length < 1 || rawSpecials.length > MAX_SPECIALS)
+    r.errors.push(`kit.specials: entre 1 et ${MAX_SPECIALS} spéciales`);
+  const specials = Array.isArray(rawSpecials) ? rawSpecials.map((s, i) => readSpecial(r, s, `kit.specials[${i}]`)) : [];
+
+  if (r.errors.length > 0 || !stats || !heavy || hits.some((h) => !h) || specials.some((s) => !s))
+    return { ok: false, errors: r.errors };
+
+  const kit: FighterKit = {
+    schemaVersion: 2,
+    id,
+    archetype: o.archetype as Archetype,
+    stats,
+    light: { hits: hits as Strike[] },
+    heavy,
+    specials: specials as Special[],
+  };
+  const errors = designErrors(kit);
+  const budget = fighterBudget(kit, costs);
+  const { min, max } = costs.budget;
+  if (budget.total > max) errors.push(`budget: ${budget.total.toFixed(1)} points, maximum ${max}`);
+  if (budget.total < min) errors.push(`budget: ${budget.total.toFixed(1)} points, minimum ${min}`);
+  return errors.length > 0 ? { ok: false, errors, budget } : { ok: true, kit, budget };
+}

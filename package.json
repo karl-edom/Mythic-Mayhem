@@ -12,10 +12,16 @@
     "budget": "node tools/budget.ts",
     "e2": "node tools/e2-duels.ts",
     "fit": "node tools/fit.ts",
-    "e2:field": "node tools/e2-field.ts"
+    "e2:field": "node tools/e2-field.ts",
+    "brawl": "node tools/brawl.ts"
   },
   "devDependencies": {
     "@types/node": "22.20.5",
-    "typescript": "5.9.3"
+    "@types/three": "0.186.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.1"
+  },
+  "dependencies": {
+    "three": "0.186.1"
   }
 }
