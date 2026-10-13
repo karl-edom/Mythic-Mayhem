@@ -6,29 +6,29 @@
   },
   "stats": {
     "hpBase": 1000,
-    "pointsPer100Hp": 3,
+    "pointsPer100Hp": 5.425,
     "moveSpeedBase": 3.5,
-    "pointsPerMoveSpeed": 20,
-    "pointsPerEhpPercentFromArmor": 0.3,
+    "pointsPerMoveSpeed": 6.344,
+    "pointsPerEhpPercentFromArmor": 0.496,
     "radiusBase": 0.5,
-    "pointsPerRadiusBelowBase": 20
+    "pointsPerRadiusBelowBase": 6.598
   },
   "basic": {
-    "pointsPerDps": 0.4,
-    "rangeFactorPerMetre": 0.25
+    "pointsPerDps": 0.771,
+    "rangeFactorPerMetre": 0.12
   },
   "ability": {
     "pointsPerValuePerSecond": 0.6,
     "effectValue": {
-      "damage": 1,
-      "heal": 1,
-      "shield": 0.8,
-      "slowPerPctSecond": 300,
-      "stunPerSecond": 400,
-      "knockbackPerMetre": 40,
-      "hastePerPctSecond": 150
+      "damage": 1.66,
+      "heal": 1.643,
+      "shield": 1.176,
+      "slowPerPctSecond": 498.0,
+      "stunPerSecond": 664.0,
+      "knockbackPerMetre": 66.4,
+      "hastePerPctSecond": 249.0
     },
-    "dashMobilityPerMetre": 30,
+    "dashMobilityPerMetre": 49.8,
     "rangeFactorPerMetre": 0.05,
     "areaFactorPerMetreRadius": 0.15,
     "delayDiscountPerSecond": 0.8,

@@ -2,7 +2,8 @@
 // play a full round robin, then measure which kind of point is over- or
 // under-priced. Optionally recalibrates the cost coefficients.
 //
-// Usage: node tools/e2-field.ts [--kits 80] [--seeds 4] [--rounds 1] [--seed 1] [--write]
+// Usage: node tools/e2-field.ts [--kits 80] [--seeds 4] [--team 3 --matches 20000] [--rounds 1] [--seed 1] [--write]
+//   --team N    random NvN teams drawn from the field instead of a 1v1 round robin
 //   --rounds N  recalibrate N-1 times, regenerating the field each round
 //   --write     save the calibrated coefficients to data/balance/costs.json
 
@@ -22,6 +23,8 @@ const { values } = parseArgs({
   options: {
     kits: { type: "string", default: "80" },
     seeds: { type: "string", default: "4" },
+    team: { type: "string", default: "1" },
+    matches: { type: "string", default: "20000" },
     rounds: { type: "string", default: "1" },
     seed: { type: "string", default: "1" },
     write: { type: "boolean", default: false },
@@ -29,6 +32,8 @@ const { values } = parseArgs({
 });
 const KITS = Number(values.kits);
 const SEEDS = Number(values.seeds);
+const TEAM = Number(values.team);
+const MATCHES = Number(values.matches);
 const ROUNDS = Number(values.rounds);
 /** Features present in fewer kits than this are not trusted. */
 const MIN_SUPPORT = 25;
@@ -55,6 +60,28 @@ function roundRobin(kits: Kit[]): number[] {
   return wins.map((w, k) => w / games[k]!);
 }
 
+/** Random NvN matches; each kit scores the result of every match it plays. */
+function randomTeams(kits: Kit[], random: () => number): number[] {
+  const wins = kits.map(() => 0);
+  const games = kits.map(() => 0);
+  for (let m = 0; m < MATCHES; m++) {
+    // Draw 2N distinct kits.
+    const picked = new Set<number>();
+    while (picked.size < TEAM * 2) picked.add(Math.floor(random() * kits.length));
+    const ids = [...picked];
+    const sides = [ids.slice(0, TEAM), ids.slice(TEAM)] as const;
+    const r = runMatch([sides[0].map((i) => kits[i]!), sides[1].map((i) => kits[i]!)], m + 1);
+    sides.forEach((side, team) => {
+      const score = r.winner === null ? 0.5 : r.winner === team ? 1 : 0;
+      for (const i of side) {
+        wins[i]! += score;
+        games[i]!++;
+      }
+    });
+  }
+  return wins.map((w, k) => w / Math.max(1, games[k]!));
+}
+
 const stdev = (xs: number[]) => {
   const m = xs.reduce((a, b) => a + b, 0) / xs.length;
   return Math.sqrt(xs.reduce((a, b) => a + (b - m) ** 2, 0) / xs.length);
@@ -72,8 +99,9 @@ interface RoundResult {
 
 function evaluate(costs: CostTable, round: number): RoundResult {
   const target = (costs.budget.min + costs.budget.max) / 2;
-  const kits = randomField(rng(Number(values.seed) * 7919 + round), KITS, costs, target);
-  const rates = roundRobin(kits);
+  const random = rng(Number(values.seed) * 7919 + round);
+  const kits = randomField(random, KITS, costs, target);
+  const rates = TEAM === 1 ? roundRobin(kits) : randomTeams(kits, random);
   const feats = kits.map((k) => kitFeatures(k, costs));
   const support = Object.fromEntries(
     FEATURES.map((f) => [f, feats.filter((x) => Math.abs(x[f]) > 1).length]),
@@ -104,16 +132,24 @@ function report(r: RoundResult, round: number): void {
   console.log("Valeur réelle d'un point, par catégorie (1,00 = bien payé ; >1 = sous-payé ; <1 = sur-payé) :");
   for (const f of FEATURES) {
     const v = r.value[f];
-    console.log(`  ${f.padEnd(13)} ${v === undefined ? "   —  " : v.toFixed(2).padStart(6)}   (présent dans ${r.support[f]} kits)`);
+    const frozen = NOT_CALIBRATED.includes(f) ? "  [gelé]" : "";
+    console.log(`  ${f.padEnd(13)} ${v === undefined ? "   —  " : v.toFixed(2).padStart(6)}   (présent dans ${r.support[f]} kits)${frozen}`);
   }
 }
+
+/**
+ * Utility features that bots cannot value (they never chain crowd control into
+ * focused damage), so measurements would drive their price to zero. Their
+ * coefficients stay at the design hypothesis until better bots or playtests.
+ */
+const NOT_CALIBRATED: readonly Feature[] = ["slow", "stun", "knockback", "haste", "dashMobility"];
 
 /** Moves each coefficient towards the measured value of its points. */
 function recalibrate(costs: CostTable, value: Partial<Record<Feature, number>>): CostTable {
   const c: CostTable = structuredClone(costs);
   const factor = (f: Feature) => {
     const v = value[f];
-    return v === undefined ? 1 : Math.min(2, Math.max(0.5, v)) ** DAMPING;
+    return v === undefined || NOT_CALIBRATED.includes(f) ? 1 : Math.min(2, Math.max(0.5, v)) ** DAMPING;
   };
   c.stats.pointsPer100Hp *= factor("hp");
   c.stats.pointsPerMoveSpeed *= factor("moveSpeed");
@@ -146,7 +182,11 @@ const roundCoefficients = (c: CostTable): CostTable =>
   JSON.parse(JSON.stringify(c, (_k, v: unknown) => (typeof v === "number" && !Number.isInteger(v) ? Math.round(v * 1000) / 1000 : v)));
 
 let costs = loadCosts();
-console.log(`E2 (champ) — ${KITS} kits aléatoires à budget égal, ${SEEDS} combats par paire, duels 1v1`);
+console.log(
+  TEAM === 1
+    ? `E2 (champ) — ${KITS} kits aléatoires à budget égal, ${SEEDS} combats par paire, duels 1v1`
+    : `E2 (champ) — ${KITS} kits aléatoires à budget égal, ${MATCHES} matchs ${TEAM}v${TEAM} entre équipes tirées au hasard`,
+);
 const started = Date.now();
 for (let round = 1; round <= ROUNDS; round++) {
   const result = evaluate(costs, round);
