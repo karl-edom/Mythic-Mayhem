@@ -1,6 +1,6 @@
 # Système de personnages — brouillon v0
 
-Statut : **proposition à valider**. Tous les chiffres sont des points de départ, à calibrer avec l'expérience E2.
+Statut : **v0 implémentée** (`src/sim/`), validée par le porteur de projet. Les chiffres sont calibrés par l'expérience E2 (voir `docs/experiments/e2-results.md`).
 
 ## 1. Un personnage = identité + kit
 
@@ -17,7 +17,7 @@ Le moteur ne lit que `kit.json`. L'identité ne sert qu'à l'affichage. Deux per
 Chaque personnage possède :
 
 - **Stats** : `hp`, `moveSpeed`, `armor` (réduction en %), `radius` (taille de collision).
-- **Attaque de base** : obligatoire.
+- **Attaque de base** : obligatoire. Elle part automatiquement sur l'ennemi le plus proche à portée, **uniquement à l'arrêt**, puis immobilise 0,25 s (voir la décision 0002).
 - **Capacités actives** : 2 dans le prototype, une ultime plus tard.
 - **États subis** : ralenti, étourdi, repoussé, protégé (bouclier), invulnérable (seulement à la réapparition).
 - **Cycle de vie** : vivant → mort → réapparition après un délai, avec une courte invulnérabilité.
@@ -33,7 +33,7 @@ Une capacité se compose d'une **livraison** (comment elle atteint sa cible) et 
 | `projectile` | portée, vitesse, largeur, traverse ou non | ligne de visée pour le lanceur |
 | `line` | longueur, largeur, délai | rectangle au sol pendant le délai |
 | `circle` | portée de pose, rayon, délai | cercle au sol pendant le délai |
-| `dash` | distance, vitesse | flèche pour le lanceur ; trajectoire visible pour l'ennemi |
+| `dash` | distance, vitesse ; effets facultatifs (mobilité pure) | flèche pour le lanceur ; trajectoire visible pour l'ennemi |
 | `self` | — | aura sur le lanceur |
 
 | Effet | Paramètres | Contre-jeu |
@@ -54,7 +54,7 @@ Garde-fous codés dans le validateur, pas seulement documentés :
 
 ## 4. Budget de puissance (couche C)
 
-Chaque kit dépense **100 points**. Le validateur refuse un kit qui dépasse 100 points ou qui descend sous 90 points (pour éviter les personnages inutilement faibles).
+Chaque kit doit coûter **entre 90 et 100 points**. Le validateur refuse un kit qui dépasse 100 points ou qui descend sous 90 points (pour éviter les personnages inutilement faibles).
 
 Principe des coûts, à calibrer :
 
@@ -66,12 +66,19 @@ Principe des coûts, à calibrer :
 
 Le budget n'est qu'une **estimation**. Les simulations automatiques bot contre bot de E2 servent à vérifier que l'estimation colle à la réalité. Quand ce n'est pas le cas, on corrige les coefficients.
 
+Outils :
+
+- `npm run budget` : détail des points de chaque kit ;
+- `npm run fit -- <kit.json> --write` : met un kit au budget en ajustant seulement ses dégâts, soins et boucliers ;
+- `npm run e2:field` : mesure la qualité du modèle de coût sur des centaines de kits aléatoires, et peut le recalibrer.
+
 ## 5. Trois kits originaux pour E2
 
 | Kit | Rôle | Attaque de base | Capacité 1 | Capacité 2 | Faiblesse payée |
 | --- | --- | --- | --- | --- | --- |
 | **Rempart** | Avant-garde | mêlée, courte portée | dash + repoussement | cercle autour de soi avec délai 0,6 s → étourdissement court | lent, pas de dégâts à distance |
 | **Étincelle** | Tireur | projectile longue portée | ligne de dégâts avec délai | dash de repli | peu de points de vie |
+| **Lame** (4ᵉ, ajouté uniquement par données) | Assassin | mêlée rapide | dash offensif | bouclier + accélération sur soi | fragile, doit tout engager |
 | **Sève** | Soutien | projectile moyen | zone de soin pour les alliés | projectile ralentissant | dégâts faibles |
 
 ## 6. Créateur de personnages (plus tard)

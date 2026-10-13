@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "lame",
+  "role": "assassin",
+  "stats": { "hp": 950, "moveSpeed": 3.8, "armor": 0.05, "radius": 0.45 },
+  "basic": { "range": 1.4, "damage": 60, "interval": 0.8 },
+  "abilities": [
+    {
+      "id": "fente",
+      "cooldown": 7,
+      "delivery": { "type": "dash", "distance": 5, "speed": 18 },
+      "effects": [{ "type": "damage", "amount": 120 }]
+    },
+    {
+      "id": "voile",
+      "cooldown": 12,
+      "delivery": { "type": "self" },
+      "effects": [{ "type": "shield", "amount": 150, "duration": 2 }, { "type": "haste", "pct": 0.3, "duration": 2 }]
+    }
+  ]
+}

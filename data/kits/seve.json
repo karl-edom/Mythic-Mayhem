@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "id": "seve",
+  "role": "support",
+  "stats": {
+    "hp": 1050,
+    "moveSpeed": 3.5,
+    "armor": 0.05,
+    "radius": 0.5
+  },
+  "basic": {
+    "range": 4.5,
+    "damage": 42,
+    "interval": 0.9,
+    "projectileSpeed": 15
+  },
+  "abilities": [
+    {
+      "id": "floraison",
+      "cooldown": 7,
+      "delivery": {
+        "type": "circle",
+        "castRange": 5,
+        "radius": 2,
+        "delay": 0.3
+      },
+      "effects": [
+        {
+          "type": "heal",
+          "amount": 220
+        }
+      ]
+    },
+    {
+      "id": "ronce",
+      "cooldown": 6,
+      "delivery": {
+        "type": "projectile",
+        "range": 7,
+        "speed": 14,
+        "width": 0.6
+      },
+      "effects": [
+        {
+          "type": "damage",
+          "amount": 100
+        },
+        {
+          "type": "slow",
+          "pct": 0.35,
+          "duration": 1.5
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "id": "etincelle",
+  "role": "marksman",
+  "stats": {
+    "hp": 1000,
+    "moveSpeed": 3.7,
+    "armor": 0,
+    "radius": 0.45
+  },
+  "basic": {
+    "range": 6,
+    "damage": 50,
+    "interval": 0.9,
+    "projectileSpeed": 18
+  },
+  "abilities": [
+    {
+      "id": "rayon",
+      "cooldown": 6,
+      "delivery": {
+        "type": "line",
+        "length": 8,
+        "width": 1,
+        "delay": 0.5
+      },
+      "effects": [
+        {
+          "type": "damage",
+          "amount": 240
+        }
+      ]
+    },
+    {
+      "id": "bond",
+      "cooldown": 7,
+      "delivery": {
+        "type": "dash",
+        "distance": 4,
+        "speed": 16
+      },
+      "effects": []
+    }
+  ]
+}

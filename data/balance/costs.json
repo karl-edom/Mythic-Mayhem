@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "budget": {
+    "min": 90,
+    "max": 100
+  },
+  "stats": {
+    "hpBase": 1000,
+    "pointsPer100Hp": 3,
+    "moveSpeedBase": 3.5,
+    "pointsPerMoveSpeed": 20,
+    "pointsPerEhpPercentFromArmor": 0.3,
+    "radiusBase": 0.5,
+    "pointsPerRadiusBelowBase": 20
+  },
+  "basic": {
+    "pointsPerDps": 0.4,
+    "rangeFactorPerMetre": 0.25
+  },
+  "ability": {
+    "pointsPerValuePerSecond": 0.6,
+    "effectValue": {
+      "damage": 1,
+      "heal": 1,
+      "shield": 0.8,
+      "slowPerPctSecond": 300,
+      "stunPerSecond": 400,
+      "knockbackPerMetre": 40,
+      "hastePerPctSecond": 150
+    },
+    "dashMobilityPerMetre": 30,
+    "rangeFactorPerMetre": 0.05,
+    "areaFactorPerMetreRadius": 0.15,
+    "delayDiscountPerSecond": 0.8,
+    "maxDelayDiscount": 0.7,
+    "projectileReliability": 0.85
+  }
+}

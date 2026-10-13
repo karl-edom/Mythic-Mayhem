@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "id": "rempart",
+  "role": "vanguard",
+  "stats": {
+    "hp": 1650,
+    "moveSpeed": 3.3,
+    "armor": 0.15,
+    "radius": 0.6
+  },
+  "basic": {
+    "range": 1.6,
+    "damage": 55,
+    "interval": 0.9
+  },
+  "abilities": [
+    {
+      "id": "charge",
+      "cooldown": 8,
+      "delivery": {
+        "type": "dash",
+        "distance": 5,
+        "speed": 14
+      },
+      "effects": [
+        {
+          "type": "damage",
+          "amount": 60
+        },
+        {
+          "type": "knockback",
+          "distance": 2
+        }
+      ]
+    },
+    {
+      "id": "seisme",
+      "cooldown": 11,
+      "delivery": {
+        "type": "circle",
+        "castRange": 0,
+        "radius": 2.5,
+        "delay": 0.6
+      },
+      "effects": [
+        {
+          "type": "damage",
+          "amount": 80
+        },
+        {
+          "type": "stun",
+          "duration": 0.9
+        }
+      ]
+    }
+  ]
+}
