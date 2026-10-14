@@ -9,7 +9,7 @@
     "pointsAtBaseHp": 30,
     "hpBase": 1000,
     "weightFactor": 0.5,
-    "pointsPerRadiusAboveBase": 20,
+    "pointsPerRadiusAboveBase": 40,
     "radiusBase": 0.5
   },
   "mobility": {
@@ -18,7 +18,7 @@
   },
   "light": {
     "pointsPerDps": 0.12,
-    "reachFactorPerMetre": 0.15,
+    "reachFactorPerMetre": 0.4,
     "reachBase": 1.5,
     "pointsPerSecondOfFastStartup": 30,
     "startupBase": 0.2
@@ -46,6 +46,8 @@
       1,
       0.35,
       0.2
-    ]
+    ],
+    "efficiencyReference": 3.3,
+    "efficiencyExponent": 0.6
   }
 }

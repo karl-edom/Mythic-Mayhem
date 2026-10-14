@@ -23,6 +23,12 @@ export interface BrawlCostTable {
     areaDelayDiscountPerSecond: number;
     areaMaxDelayDiscount: number;
     /**
+     * Damage per energy point has diminishing value (energy income and recovery
+     * cap how often a special fires): points follow (efficiency / reference)^exponent.
+     */
+    efficiencyReference: number;
+    efficiencyExponent: number;
+    /**
      * All specials draw on the same energy gauge, so a second or third special adds
      * choice, not more damage per match: the most expensive one is paid in full,
      * the next ones at these weights.
@@ -66,7 +72,9 @@ export function specialMultiplier(sp: Special, c: BrawlCostTable): number {
 export function specialCost(sp: Special, c: BrawlCostTable): number {
   const gb = sp.guardBreak ? c.special.guardBreakFactor : 1;
   const df = c.special.deliveryFactor?.[sp.delivery.type] ?? 1;
-  return (sp.damage / sp.energyCost) * c.special.pointsPerDamagePerEnergy * specialMultiplier(sp, c) * gb * df;
+  const ref = c.special.efficiencyReference ?? 1;
+  const efficiency = ref * (sp.damage / sp.energyCost / ref) ** (c.special.efficiencyExponent ?? 1);
+  return efficiency * c.special.pointsPerDamagePerEnergy * specialMultiplier(sp, c) * gb * df;
 }
 
 /** One line per special, weighted by rank (most expensive first, see extraSpecialWeights). */

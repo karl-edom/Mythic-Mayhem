@@ -2,6 +2,9 @@
 //   node tools/brawl.ts                 → validation + budget of every pack
 //   node tools/brawl.ts --duels 200     → round-robin duels between valid fighters
 //   node tools/brawl.ts --duels 40 --arena clairiere   → same, on a given arena
+//   node tools/brawl.ts --gauntlet                     → win rate of every pack against the reference panel
+//   node tools/brawl.ts --tune                         → scale each pack's damage until it wins ~50 % of the
+//                                                        gauntlet (rewrites kit.json)
 //   node tools/brawl.ts --fit [--target 95]            → bring every pack back to the budget
 //                                                        by scaling its damage only (rewrites kit.json)
 
@@ -9,6 +12,8 @@ import { runDuel } from "../src/brawl/match.ts";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { buildArena } from "../src/brawl/arena.ts";
+import { fighterBudget } from "../src/brawl/budget.ts";
+import { BALANCED_BAND, gauntletRate, referencePanel, tuneToGauntlet } from "../src/brawl/gauntlet.ts";
 import { fitFighter } from "../src/brawl/generate.ts";
 import { ROOT_DIR, loadBrawlCosts } from "../src/brawl/load.ts";
 import { loadAllPacks, loadArenas, loadPropCatalog } from "../src/brawl/load.ts";
@@ -38,6 +43,25 @@ if (args.includes("--fit")) {
     writeFileSync(file, JSON.stringify(fitted, null, 2) + "\n");
     console.log(`✔ ${p.dir} : dégâts ajustés pour ${target} points`);
   }
+}
+
+if (args.includes("--gauntlet") || args.includes("--tune")) {
+  const costs = loadBrawlCosts();
+  const panel = referencePanel(costs);
+  const pct = (v: number) => `${(v * 100).toFixed(0)} %`;
+  console.log(`Épreuve : ${panel.length} adversaires de référence, 2 duels chacun (côtés inversés). Équilibré entre ${pct(BALANCED_BAND[0])} et ${pct(BALANCED_BAND[1])}.`);
+  for (const p of loadAllPacks(costs)) {
+    if (!p.result.ok) continue;
+    const rate = gauntletRate(p.result.kit, panel);
+    const ok = rate >= BALANCED_BAND[0] && rate <= BALANCED_BAND[1];
+    console.log(`${ok ? "✔" : "✘"} ${p.character.name} : ${pct(rate)} de victoires`);
+    if (args.includes("--tune")) {
+      const t = tuneToGauntlet(p.result.kit, panel);
+      writeFileSync(join(ROOT_DIR, p.dir, "kit.json"), JSON.stringify(t.kit, null, 2) + "\n");
+      console.log(`   → dégâts × ${t.factor.toFixed(2)} : ${pct(t.rate)} de victoires, budget ${fighterBudget(t.kit, costs).total.toFixed(1)} points (kit.json réécrit)`);
+    }
+  }
+  console.log("");
 }
 
 const packs = loadAllPacks();
