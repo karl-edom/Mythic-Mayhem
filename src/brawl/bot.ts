@@ -1,7 +1,8 @@
 // Generic brawler bot: reads only the world state, outputs the same Command a
 // player produces. One personality for every kit; parameters tune its level.
 
-import { canSee, hdist, lockTarget, type BrawlWorld, type Command, type Fighter } from "./world.ts";
+import { distToProp } from "./arena.ts";
+import { canSee, grabbable, hdist, lockTarget, type BrawlWorld, type Command, type Fighter } from "./world.ts";
 
 export interface BrawlBotParams {
   /** Chance per decision to react to an incoming heavy or special (dodge or guard). */
@@ -35,12 +36,14 @@ export interface BrawlBot {
   prevPos: { x: number; z: number };
   stuckTicks: number;
   detourUntil: number;
+  /** Prop the bot is walking to, to pick it up and throw it. */
+  fetch: { prop: number; until: number } | null;
 }
 
 export function createBot(random: () => number, params: BrawlBotParams = BOT_LEVELS.normal): BrawlBot {
   return {
     params, random, nextThinkAt: 0, guardUntil: 0, chargeHeavyUntil: 0, strafe: random() < 0.5 ? 1 : -1,
-    lastSeen: null, lastSeenAt: -Infinity, wander: null, prevPos: { x: 0, z: 0 }, stuckTicks: 0, detourUntil: 0,
+    lastSeen: null, lastSeenAt: -Infinity, wander: null, prevPos: { x: 0, z: 0 }, stuckTicks: 0, detourUntil: 0, fetch: null,
   };
 }
 
@@ -141,6 +144,29 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
     return cmd;
   }
 
+  // Carrying a prop: get in range, then throw it.
+  if (me.carrying !== null && !me.action) {
+    if (d < 14 && bot.random() < 0.15) cmd.grab = true;
+    else walkTo(w, me, bot, foe.pos, cmd);
+    bot.prevPos = { x: me.pos.x, z: me.pos.z };
+    return cmd;
+  }
+
+  // Fetching a prop to throw.
+  if (bot.fetch && !me.action) {
+    const prop = w.arena.props[bot.fetch.prop]!;
+    if (!prop.alive || w.time > bot.fetch.until) bot.fetch = null;
+    else if (grabbable(w, me) === prop) {
+      bot.fetch = null;
+      cmd.grab = true;
+      return cmd;
+    } else {
+      walkTo(w, me, bot, prop, cmd);
+      bot.prevPos = { x: me.pos.x, z: me.pos.z };
+      return cmd;
+    }
+  }
+
   // In a combo: keep pressing light so the chain continues.
   if (me.action?.kind === "light") {
     cmd.light = d <= reach + 0.5;
@@ -160,6 +186,17 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
       cmd.heavy = true;
     } else cmd.light = true;
     return cmd;
+  }
+
+  // At range, sometimes pick up a nearby prop to throw.
+  if (d > reach + 2 && bot.random() < 0.3) {
+    const near = w.arena.props
+      .filter((p) => p.alive && p.kind.throwable && distToProp(p, me.pos.x, me.pos.z) < 4)
+      .sort((a, b) => distToProp(a, me.pos.x, me.pos.z) - distToProp(b, me.pos.x, me.pos.z))[0];
+    if (near) {
+      bot.fetch = { prop: near.id, until: w.time + 2 };
+      return cmd;
+    }
   }
 
   // At range: pick an affordable special that can reach, or close the gap.

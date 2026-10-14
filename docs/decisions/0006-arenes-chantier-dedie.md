@@ -1,6 +1,6 @@
 # 0006 — Arènes : un chantier à part entière
 
-Date : 2026-10-14. Statut : **acceptée pour l'étape A1** (faite) ; étapes suivantes **proposées**.
+Date : 2026-10-14. Statut : **acceptée pour A1 et A2** (faites) ; étapes suivantes **proposées**. Règle de K.-O. tranchée : on **garde la barre de vie** (J-Stars), pas l'éjection façon Smash.
 
 ## Demande du porteur de projet
 
@@ -15,7 +15,7 @@ Le chantier avance par étapes courtes et jouables :
 | Étape | Contenu | Statut |
 | --- | --- | --- |
 | **A1** | cartes plus grandes (56 × 40 m et 62 × 44 m, contre un disque de 32 m), obstacles solides, éléments cassables, on peut monter sur les petits, on peut se cacher | **faite** |
-| A2 | **ramasser et lancer** un élément (caisse, tonneau, débris) : nouveau bouton, projectile qui inflige des dégâts ; **projeter l'adversaire contre un mur** inflige des dégâts en plus | proposée |
+| **A2** | **ramasser et lancer** une caisse ou un tonneau (touche F) ; **projeter l'adversaire contre un mur** ou un élément inflige des dégâts en plus | **faite** |
 | A3 | éléments **dangereux** : tonneau explosif (dégâts de zone quand il casse), objets qui tombent | proposée |
 | A4 | **hauteur** : toits et plateformes où grimper, plusieurs niveaux | proposée |
 | A5 | **éditeur de cartes** (d'abord le format de données documenté, puis un éditeur visuel) | proposée |
@@ -32,6 +32,15 @@ Le chantier avance par étapes courtes et jouables :
 
 S'éclipser sert aujourd'hui à **recharger son énergie** (touche E) à l'abri. La caméra rend transparents les éléments qui cachent ton propre personnage, jamais ceux qui cachent l'adversaire, pour garder l'intérêt de se cacher en multijoueur.
 
-## Question ouverte pour le porteur de projet
+## Règles introduites par A2, avec contre-jeu et indicateur visuel
 
-**Smash ou J-Stars pour la règle de K.-O. ?** Smash fonctionne au pourcentage de dégâts et à l'éjection hors de la carte ; J-Stars à la barre de vie et à la jauge de victoire. Le prototype garde la barre de vie (J-Stars). Passer à l'éjection changerait la forme des cartes (bords ouverts, vide), donc à trancher avant A4.
+| Règle | Contre-jeu | Indicateur visuel |
+| --- | --- | --- |
+| **Ramasser** (F, à moins de 0,9 m d'une caisse ou d'un tonneau) : levée de 0,35 s, vulnérable | frapper pendant la levée : l'objet se brise | l'objet monte au-dessus de la tête ; invite « F · ramasser » |
+| **Porter** : vitesse × 0,75, ni garde, ni esquive, ni autre attaque ; frappé, on lâche l'objet qui se brise | attaquer le porteur | l'objet au-dessus de la tête ; invite « F · lancer » |
+| **Lancer** (F ou J) : démarrage 0,25 s, l'objet file vers la cible (20 m/s, 22 m) ; caisse 90 dégâts, tonneau 70 ; se brise à l'impact | garde (10 % des dégâts), esquive, se mettre derrière un obstacle | l'objet lui-même, qui tournoie |
+| **Choc contre un mur** : projeté à plus de 7 m/s contre un mur ou un élément, on prend 60 à 90 dégâts en plus ; un élément cassable heurté encaisse le double | ne pas se battre dos au mur | bannière « Contre le mur ! » ; le personnage s'arrête net |
+
+Les objets à lancer sont décrits dans le catalogue (`throwable` dans `data/arenas/props.json`) : en ajouter un se fait sans code. Ils font partie du décor, pas du kit : ils ne comptent pas dans le budget des personnages.
+
+Mesure (bots, 20 duels par carte) : environ 4 lancers, 5 à 6 chocs contre un mur et 8 objets cassés par match.

@@ -49,6 +49,6 @@ Six postes : survie (PV × poids, pénalité de taille), mobilité, combo (dég�
 
 ## 5. Pas encore fait
 
-Ultime / mode « burst », personnage de soutien, 2v2, combat aérien spécifique, éléments de décor à lancer (étape A2 de la décision 0006), manette testée sur matériel réel.
+Ultime / mode « burst », personnage de soutien, 2v2, combat aérien spécifique, manette testée sur matériel réel.
 
-Les règles de décor (se cacher, casser, monter dessus) sont décrites dans la décision 0006.
+Les règles de décor (se cacher, casser, monter dessus, ramasser et lancer, chocs contre les murs) sont décrites dans la décision 0006.

@@ -11,12 +11,13 @@ export const KEY_HELP: [string, string][] = [
   ["L (maintenir)", "garde"],
   ["Maj", "esquive (invulnérable au début)"],
   ["U / I / O", "spéciales 1 / 2 / 3"],
+  ["F", "ramasser une caisse ou un tonneau, puis lancer"],
   ["E (maintenir)", "recharger l'énergie"],
   ["Échap", "pause"],
   ["H", "afficher / masquer l'aide"],
 ];
 
-type Button = "jump" | "light" | "heavy" | "guard" | "dodge" | "charge" | "s0" | "s1" | "s2";
+type Button = "jump" | "light" | "heavy" | "guard" | "dodge" | "charge" | "grab" | "s0" | "s1" | "s2";
 
 const KEYS: Record<string, Button | "up" | "down" | "left" | "right"> = {
   KeyW: "up", ArrowUp: "up",
@@ -29,10 +30,11 @@ const KEYS: Record<string, Button | "up" | "down" | "left" | "right"> = {
   KeyL: "guard",
   ShiftLeft: "dodge", ShiftRight: "dodge",
   KeyE: "charge",
+  KeyF: "grab",
   KeyU: "s0", KeyI: "s1", KeyO: "s2",
 };
 
-/** Standard gamepad mapping: A jump, X light, Y heavy, B dodge, RB guard, RT charge, LB + X/Y/B specials. */
+/** Standard gamepad mapping: A jump, X light, Y heavy, B dodge, RB guard, RT charge, LT grab/throw, LB + X/Y/B specials. */
 function readGamepad(): { held: Set<string>; stick: { x: number; y: number } } | null {
   const pad = navigator.getGamepads?.().find((p) => p);
   if (!pad) return null;
@@ -45,6 +47,7 @@ function readGamepad(): { held: Set<string>; stick: { x: number; y: number } } |
   if (b(1)) held.add(shift ? "s2" : "dodge");
   if (b(5)) held.add("guard");
   if (b(7)) held.add("charge");
+  if (b(6)) held.add("grab");
   const dz = (v: number | undefined) => (v !== undefined && Math.abs(v) > 0.2 ? v : 0);
   const stick = { x: dz(pad.axes[0]) || (b(15) ? 1 : b(14) ? -1 : 0), y: dz(pad.axes[1]) || (b(13) ? 1 : b(12) ? -1 : 0) };
   return { held, stick };
@@ -110,6 +113,7 @@ export class Input {
       unit,
       move,
       jump: take("jump"),
+      grab: take("grab"),
       light: take("light"),
       dodge: take("dodge"),
       special,

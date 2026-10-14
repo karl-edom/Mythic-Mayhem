@@ -18,6 +18,8 @@ export interface PropKind {
   shape: PropShape;
   /** Hit points; null = indestructible. */
   hp: number | null;
+  /** Present if a fighter can pick it up and throw it. The thrown prop breaks on impact. */
+  throwable?: { damage: number; knockback: number; hitstun: number };
 }
 
 export type PropCatalog = Record<string, PropKind>;
@@ -45,7 +47,12 @@ export interface Prop {
   halfD: number;
   height: number;
   hp: number;
+  /** Standing in the arena (blocks movement, sight and projectiles). */
   alive: boolean;
+  /** Fighter carrying it overhead, or null. */
+  held: number | null;
+  /** Thrown and in flight. */
+  flying: boolean;
 }
 
 export interface Arena {
@@ -82,7 +89,7 @@ export function buildArena(def: ArenaDef, catalog: PropCatalog): Arena {
       const kind = catalog[p.kind]!;
       const s = kind.shape;
       const [w, d] = s.type === "box" ? (p.rotated ? [s.depth, s.width] : [s.width, s.depth]) : [s.radius * 2, s.radius * 2];
-      return { id, kind, x: p.x, z: p.z, halfW: w / 2, halfD: d / 2, height: s.height, hp: kind.hp ?? Infinity, alive: true };
+      return { id, kind, x: p.x, z: p.z, halfW: w / 2, halfD: d / 2, height: s.height, hp: kind.hp ?? Infinity, alive: true, held: null, flying: false };
     }),
   };
 }

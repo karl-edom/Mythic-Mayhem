@@ -102,3 +102,61 @@ test("un duel de bots se termine sur chaque arène", () => {
     assert.equal(r.world.over, true, def.id);
   }
 });
+
+// Étape A2 : ramasser, lancer, projeter contre un mur.
+
+test("on ramasse une caisse à portée ; elle ne bloque plus le passage", () => {
+  const w = world([{ kind: "crate", x: -1.6, z: 0 }], -3, 10);
+  step(w, [{ unit: 0, grab: true }]);
+  assert.equal(w.fighters[0]!.action?.kind, "lift");
+  run(w, w.config.liftTime + 0.05);
+  assert.equal(w.fighters[0]!.carrying, 0);
+  assert.equal(w.arena.props[0]!.alive, false);
+});
+
+test("on ne ramasse ni un rocher ni une caisse trop loin", () => {
+  const rock = world([{ kind: "rock", x: -0.8, z: 0 }], -3, 10);
+  step(rock, [{ unit: 0, grab: true }]);
+  assert.equal(rock.fighters[0]!.action, null);
+  const far = world([{ kind: "crate", x: 2, z: 0 }], -3, 10);
+  step(far, [{ unit: 0, grab: true }]);
+  assert.equal(far.fighters[0]!.action, null);
+});
+
+test("une caisse lancée inflige ses dégâts et se brise", () => {
+  const w = world([{ kind: "crate", x: -4.6, z: 0 }], -6, 4);
+  step(w, [{ unit: 0, grab: true }]);
+  run(w, w.config.liftTime + 0.05);
+  step(w, [{ unit: 0, grab: true }]);
+  run(w, 1);
+  assert.equal(w.fighters[1]!.hp, 1000 - catalog.crate!.throwable!.damage);
+  assert.equal(w.projectiles.length, 0);
+  assert.ok(w.events.some((e) => e.type === "propBroken" && e.prop === 0));
+});
+
+test("frappé pendant qu'il porte, on lâche (et casse) l'objet", () => {
+  const w = world([{ kind: "crate", x: -4.6, z: 0 }], -6, -4.3);
+  w.fighters[1]!.pos.x = 10; // loin pendant la levée
+  step(w, [{ unit: 0, grab: true }]);
+  run(w, w.config.liftTime + 0.05);
+  w.fighters[1]!.pos.x = -4.6;
+  step(w, [{ unit: 1, light: true }]);
+  run(w, 0.3);
+  assert.equal(w.fighters[0]!.carrying, null);
+  assert.ok(w.fighters[0]!.hp < 1000);
+  assert.ok(w.events.some((e) => e.type === "propBroken"));
+});
+
+test("projeté contre un rocher, on prend des dégâts en plus", () => {
+  const heavy = (props: ArenaDef["props"]) => {
+    const w = world(props, -2, -0.5);
+    step(w, [{ unit: 0, heavy: true }]); // relâché aussitôt : pas de charge
+    run(w, 0.8);
+    return w;
+  };
+  const open = heavy([]);
+  assert.equal(open.fighters[1]!.hp, 900);
+  const wall = heavy([{ kind: "rock", x: 2, z: 0 }]);
+  assert.ok(wall.fighters[1]!.hp < 900 - 30, `PV : ${wall.fighters[1]!.hp}`);
+  assert.ok(wall.events.some((e) => e.type === "slam"));
+});

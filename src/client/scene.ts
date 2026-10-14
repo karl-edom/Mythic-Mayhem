@@ -185,6 +185,7 @@ export class ArenaView {
 
   /** Bits flying out of a broken prop. */
   private burst(p: Prop): void {
+    this.props[p.id]!.visible = false;
     for (let i = 0; i < 10; i++) {
       const m = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, 0.25), new THREE.MeshStandardMaterial({ color: p.kind.color }));
       m.position.set(p.x, p.height * 0.6, p.z);
@@ -228,9 +229,24 @@ export class ArenaView {
         if (o) blocking.add(o.userData.prop as number);
       }
     }
+    const flying = new Map(this.world.projectiles.filter((q) => q.prop !== undefined).map((q) => [q.prop!, q]));
     this.world.arena.props.forEach((p, i) => {
       const mesh = this.props[i]!;
-      mesh.visible = p.alive;
+      mesh.visible = p.alive || p.held !== null || p.flying;
+      mesh.rotation.set(0, 0, 0);
+      if (p.held !== null) {
+        // Carried overhead; while lifting it rises from the floor.
+        const f = this.world.fighters[p.held]!;
+        const lift = f.action?.kind === "lift" ? Math.min(1, f.action.t / this.world.config.liftTime) : 1;
+        mesh.position.set(f.pos.x, f.pos.y + lift * (FIGHTER_HEIGHT + 0.1), f.pos.z);
+        return;
+      }
+      const q = flying.get(i);
+      if (q) {
+        mesh.position.set(q.pos.x, q.pos.y - p.height / 2, q.pos.z);
+        mesh.rotation.set(this.world.time * 9, 0, 0);
+        return;
+      }
       if (!p.alive) return;
       const hides = blocking.has(i) || distToProp(p, cam.x, cam.z) < 1;
       mesh.traverse((o) => {
@@ -410,6 +426,7 @@ export class ArenaView {
   private syncProjectiles(): void {
     const seen = new Set<object>();
     for (const p of this.world.projectiles) {
+      if (p.prop !== undefined) continue; // drawn as the prop itself
       seen.add(p);
       let m = this.projectiles.get(p);
       if (!m) {

@@ -2,7 +2,7 @@
 // Built with textContent only: names from fan packs are never parsed as HTML.
 
 import type { Character } from "../brawl/character.ts";
-import { canSee, type BrawlWorld } from "../brawl/world.ts";
+import { canSee, grabbable, type BrawlWorld } from "../brawl/world.ts";
 import { KEY_HELP } from "./input.ts";
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?: HTMLElement, text?: string): HTMLElementTagNameMap[K] {
@@ -31,6 +31,7 @@ export class Hud {
   private lastEvent = 0;
   private bannerUntil = 0;
   private hidden: HTMLSpanElement | null = null;
+  private prompt: HTMLDivElement;
   private player: number;
 
   private world: BrawlWorld;
@@ -71,6 +72,7 @@ export class Hud {
       for (let k = 0; k < this.world.config.koToWin; k++) s.pips.push(el("div", "pip", box));
     });
     this.banner = el("div", "hud-banner", root);
+    this.prompt = el("div", "hud-prompt", root);
     this.help = el("div", "hud-help", root);
     for (const [k, v] of KEY_HELP) {
       const row = el("div", "row", this.help);
@@ -114,12 +116,17 @@ export class Hud {
     const me = w.fighters[this.player]!;
     const foe = w.fighters.find((f) => f.team !== me.team);
     this.hidden?.classList.toggle("on", !!foe && me.alive && foe.alive && !canSee(w, me, foe));
+    // Contextual prompt: what the grab button does right now.
+    const prompt = !me.alive ? "" : me.carrying !== null ? "F · lancer" : grabbable(w, me) && !me.action ? "F · ramasser" : "";
+    this.prompt.textContent = prompt;
+    this.prompt.classList.toggle("show", prompt !== "");
     const left = Math.max(0, w.config.timeLimit - w.time);
     this.timer.textContent = `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`;
 
     for (const e of w.events.slice(this.lastEvent)) {
       if (e.type === "ko") this.flash(`K.-O. ! ${names[e.target]} est à terre`);
       if (e.type === "guardBreak") this.flash("Garde brisée !", 0.6);
+      if (e.type === "slam") this.flash("Contre le mur !", 0.6);
     }
     this.lastEvent = w.events.length;
     if (performance.now() > this.bannerUntil && !w.over) this.banner.classList.remove("show");

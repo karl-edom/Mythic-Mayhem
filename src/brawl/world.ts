@@ -50,6 +50,17 @@ export interface BrawlConfig {
   friction: number;
   /** Seconds a light-attack press is remembered while busy. */
   inputBuffer: number;
+  /** Throwing props (decision 0006, step A2). */
+  grabReach: number;
+  liftTime: number;
+  carrySpeedFactor: number;
+  throwStartup: number;
+  throwRecovery: number;
+  throwSpeed: number;
+  throwRange: number;
+  /** A fighter knocked into a wall or prop faster than this takes slam damage. */
+  slamMinSpeed: number;
+  slamDamage: number;
 }
 
 export const BRAWL_CONFIG: BrawlConfig = {
@@ -76,6 +87,15 @@ export const BRAWL_CONFIG: BrawlConfig = {
   getUpInvulnerable: 0.4,
   friction: 30,
   inputBuffer: 0.2,
+  grabReach: 0.9,
+  liftTime: 0.35,
+  carrySpeedFactor: 0.75,
+  throwStartup: 0.25,
+  throwRecovery: 0.3,
+  throwSpeed: 20,
+  throwRange: 22,
+  slamMinSpeed: 7,
+  slamDamage: 60,
 };
 
 /** Height of a fighter's hurtbox capsule, metres (shared by everyone for now). */
@@ -92,7 +112,9 @@ export type Action =
   | { kind: "guardbroken"; until: number }
   | { kind: "knockdown"; until: number }
   | { kind: "guard" }
-  | { kind: "charge" };
+  | { kind: "charge" }
+  | { kind: "lift"; prop: number; t: number }
+  | { kind: "throw"; t: number; fired: boolean };
 
 export interface Fighter {
   id: number;
@@ -117,6 +139,10 @@ export interface Fighter {
   heavyHeld: boolean;
   /** Height of what the fighter stands on (0 = floor, or the top of a prop). */
   floor: number;
+  /** Prop carried overhead, or null. */
+  carrying: number | null;
+  /** Last enemy who hit this fighter: credited for wall slams. */
+  lastHitBy: number | null;
   /** Set when the fighter moved by its own will this tick (for rendering). */
   moving: boolean;
 }
@@ -130,6 +156,9 @@ export interface Projectile {
   speed: number;
   remaining: number;
   size: number;
+  /** A thrown prop: its id and its hit, instead of a special's. */
+  prop?: number;
+  hit?: HitSpec;
 }
 
 /** A telegraphed area: visible from creation, resolves at triggerAt. */
@@ -143,7 +172,7 @@ export interface Zone {
   triggerAt: number;
 }
 
-export type HitKind = "light" | "heavy" | "special";
+export type HitKind = "light" | "heavy" | "special" | "throw" | "slam";
 
 export type BrawlEvent =
   | { t: number; type: "hit"; source: number; target: number; amount: number; by: HitKind; knockdown: boolean }
@@ -154,6 +183,9 @@ export type BrawlEvent =
   | { t: number; type: "ko"; target: number; killer: number }
   | { t: number; type: "respawn"; unit: number }
   | { t: number; type: "propBroken"; prop: number; source: number }
+  | { t: number; type: "lift"; unit: number; prop: number }
+  | { t: number; type: "throw"; unit: number; prop: number }
+  | { t: number; type: "slam"; target: number; amount: number }
   | { t: number; type: "end"; winner: number | null };
 
 export interface Command {
@@ -165,6 +197,8 @@ export interface Command {
   light?: boolean;
   dodge?: boolean;
   special?: number;
+  /** Pick up a nearby throwable prop, or throw the one carried. */
+  grab?: boolean;
   /** Held buttons. */
   heavy?: boolean;
   guard?: boolean;
@@ -221,6 +255,8 @@ export function createBrawl(
       bufferedLightUntil: -Infinity,
       heavyHeld: false,
       floor: 0,
+      carrying: null,
+      lastHitBy: null,
       moving: false,
     })),
     projectiles: [],
@@ -275,14 +311,31 @@ function faceTarget(w: BrawlWorld, f: Fighter): void {
 function clampToArena(w: BrawlWorld, f: Fighter): void {
   const r = f.kit.stats.radius;
   const { halfW, halfD, props } = w.arena;
+  const speed = Math.hypot(f.vel.x, f.vel.z);
+  let struck: Prop | null | undefined; // undefined = nothing, null = arena wall
   for (const p of props)
-    if (p.alive && f.pos.y < p.height - 0.05 && pushOut(p, f.pos, r)) {
-      // Knockback into a prop stops dead.
-      f.vel.x = 0;
-      f.vel.z = 0;
-    }
-  f.pos.x = Math.max(-halfW + r, Math.min(halfW - r, f.pos.x));
-  f.pos.z = Math.max(-halfD + r, Math.min(halfD - r, f.pos.z));
+    if (p.alive && f.pos.y < p.height - 0.05 && pushOut(p, f.pos, r)) struck = p;
+  const x = Math.max(-halfW + r, Math.min(halfW - r, f.pos.x));
+  const z = Math.max(-halfD + r, Math.min(halfD - r, f.pos.z));
+  if (x !== f.pos.x || z !== f.pos.z) struck ??= null;
+  f.pos.x = x;
+  f.pos.z = z;
+  if (struck === undefined) return;
+  // Knockback into a wall or prop stops dead; hard enough, it hurts (and crates give way).
+  f.vel.x = 0;
+  f.vel.z = 0;
+  const stunned = f.action?.kind === "hitstun" || f.action?.kind === "knockdown";
+  if (stunned && speed >= w.config.slamMinSpeed) slam(w, f, speed, struck);
+}
+
+/** Wall slam: extra damage credited to whoever sent the fighter flying. */
+function slam(w: BrawlWorld, f: Fighter, speed: number, prop: Prop | null): void {
+  const src = f.lastHitBy !== null ? w.fighters[f.lastHitBy] : undefined;
+  if (!src || src.team === f.team) return;
+  const amount = w.config.slamDamage * Math.min(1.5, speed / w.config.knockdownSpeed);
+  if (prop) damageProp(w, src, prop, amount * 2);
+  w.events.push({ t: w.time, type: "slam", target: f.id, amount });
+  damage(w, src, f, amount);
 }
 
 /** Height of the highest prop top under the fighter that its feet were above at height `y`. */
@@ -291,6 +344,41 @@ function supportHeight(w: BrawlWorld, f: Fighter, y = f.pos.y): number {
   for (const p of w.arena.props)
     if (p.alive && p.height > top && p.height <= y + 0.05 && distToProp(p, f.pos.x, f.pos.z) < f.kit.stats.radius * 0.5) top = p.height;
   return top;
+}
+
+/** A carried or thrown prop shatters where it is. */
+function shatter(w: BrawlWorld, p: Prop, x: number, z: number, source: number): void {
+  p.x = x;
+  p.z = z;
+  p.alive = false;
+  p.held = null;
+  p.flying = false;
+  w.events.push({ t: w.time, type: "propBroken", prop: p.id, source });
+}
+
+/** Drops (and breaks) what a fighter is carrying, e.g. when hit. */
+function dropCarried(w: BrawlWorld, f: Fighter): void {
+  const id = f.carrying ?? (f.action?.kind === "lift" ? f.action.prop : null);
+  if (id === null) return;
+  f.carrying = null;
+  shatter(w, w.arena.props[id]!, f.pos.x, f.pos.z, f.id);
+}
+
+/** Nearest throwable prop within reach of a fighter (that nobody stands on). */
+export function grabbable(w: BrawlWorld, f: Fighter): Prop | undefined {
+  if (f.carrying !== null || !grounded(f)) return undefined;
+  let best: Prop | undefined;
+  let bestD = Infinity;
+  for (const p of w.arena.props) {
+    if (!p.alive || !p.kind.throwable) continue;
+    const d = distToProp(p, f.pos.x, f.pos.z) - f.kit.stats.radius;
+    const occupied = w.fighters.some((o) => o.alive && o.floor > 0 && distToProp(p, o.pos.x, o.pos.z) < o.kit.stats.radius);
+    if (d <= w.config.grabReach && d < bestD && !occupied) {
+      best = p;
+      bestD = d;
+    }
+  }
+  return best;
 }
 
 /** Damages a breakable prop; indestructible ones ignore it. */
@@ -316,7 +404,7 @@ export function strikeCenter(f: Fighter, s: Strike): V3 {
   return { x: f.pos.x + f.facing.x * s.reach, y: f.pos.y + FIGHTER_HEIGHT / 2, z: f.pos.z + f.facing.z * s.reach };
 }
 
-interface HitSpec {
+export interface HitSpec {
   damage: number;
   hitstun: number;
   knockback: number;
@@ -327,6 +415,8 @@ interface HitSpec {
 /** Resolves one hit. Returns false if it whiffed on an invulnerable target. */
 function applyHit(w: BrawlWorld, src: Fighter, target: Fighter, hit: HitSpec, from: V3): boolean {
   if (!target.alive || isInvulnerable(w, target)) return false;
+  if (src.team !== target.team) target.lastHitBy = src.id;
+  dropCarried(w, target);
   const c = w.config;
   const t = w.time;
   const dir = hnorm({ x: target.pos.x - from.x, y: 0, z: target.pos.z - from.z }, src.facing);
@@ -365,6 +455,7 @@ function damage(w: BrawlWorld, src: Fighter, target: Fighter, amount: number): v
   target.hp -= amount;
   if (target.hp > 0) return;
   target.hp = 0;
+  dropCarried(w, target);
   target.alive = false;
   target.action = null;
   target.respawnAt = w.time + w.config.respawnDelay;
@@ -437,6 +528,28 @@ const specialHit = (sp: Special): HitSpec => ({
 /** A free fighter decides what to start this tick. */
 function startAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, heavyPressed: boolean, lightWanted: boolean): void {
   const c = w.config;
+  // Carrying: hands are full. Grab or light attack throws; moving is slower; no guard, no other attack.
+  if (f.carrying !== null) {
+    if (cmd?.grab || lightWanted) {
+      faceTarget(w, f);
+      f.action = { kind: "throw", t: 0, fired: false };
+      f.bufferedLightUntil = -Infinity;
+      return;
+    }
+    if (cmd?.jump && grounded(f)) f.vel.y = f.kit.stats.jumpSpeed;
+    moveBy(w, f, cmd, c.carrySpeedFactor);
+    return;
+  }
+  if (cmd?.grab) {
+    const p = grabbable(w, f);
+    if (p) {
+      p.alive = false;
+      p.held = f.id;
+      f.action = { kind: "lift", prop: p.id, t: 0 };
+      w.events.push({ t: w.time, type: "lift", unit: f.id, prop: p.id });
+      return;
+    }
+  }
   if (cmd?.dodge && f.energy >= c.dodgeEnergyCost) {
     const t = lockTarget(w, f);
     const back = t ? hnorm({ x: f.pos.x - t.pos.x, y: 0, z: f.pos.z - t.pos.z }, f.facing) : f.facing;
@@ -469,10 +582,14 @@ function startAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, heavyP
     return;
   }
   if (cmd?.jump && grounded(f)) f.vel.y = f.kit.stats.jumpSpeed;
+  moveBy(w, f, cmd, 1);
+}
+
+function moveBy(w: BrawlWorld, f: Fighter, cmd: Command | undefined, factor: number): void {
   const mv = cmd?.move;
   if (mv && Math.hypot(mv.x, mv.z) > 1e-6) {
     const dir = hnorm({ x: mv.x, y: 0, z: mv.z }, f.facing);
-    const step = f.kit.stats.moveSpeed / c.tickRate;
+    const step = (f.kit.stats.moveSpeed * factor) / w.config.tickRate;
     f.pos.x += dir.x * step;
     f.pos.z += dir.z * step;
     f.moving = true;
@@ -575,6 +692,32 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
       if (!cmd?.charge) f.action = null;
       else f.energy = Math.min(c.energyMax, f.energy + c.energyChargeRate * dt);
       return;
+    case "lift":
+      a.t += dt;
+      if (a.t >= c.liftTime) {
+        f.carrying = a.prop;
+        f.action = null;
+      }
+      return;
+    case "throw": {
+      a.t += dt;
+      if (!a.fired && a.t >= c.throwStartup && f.carrying !== null) {
+        a.fired = true;
+        const p = w.arena.props[f.carrying]!;
+        const t = p.kind.throwable!;
+        f.carrying = null;
+        p.held = null;
+        p.flying = true;
+        w.projectiles.push({
+          owner: f.id, team: f.team, slot: -1, pos: { x: f.pos.x, y: f.pos.y + FIGHTER_HEIGHT * 0.8, z: f.pos.z },
+          dir: { ...f.facing }, speed: c.throwSpeed, remaining: c.throwRange, size: Math.max(p.halfW, p.halfD),
+          prop: p.id, hit: { damage: t.damage, hitstun: t.hitstun, knockback: t.knockback, guardBreak: false, by: "throw" },
+        });
+        w.events.push({ t: w.time, type: "throw", unit: f.id, prop: p.id });
+      }
+      if (a.t >= c.throwStartup + c.throwRecovery) f.action = null;
+      return;
+    }
   }
 }
 
@@ -629,22 +772,35 @@ function stepProjectiles(w: BrawlWorld): void {
   const dt = 1 / w.config.tickRate;
   w.projectiles = w.projectiles.filter((p) => {
     const owner = w.fighters[p.owner]!;
-    const sp = owner.kit.specials[p.slot]!;
+    const hit = p.hit ?? specialHit(owner.kit.specials[p.slot]!);
+    // A thrown prop shatters wherever its flight ends.
+    const finish = () => {
+      if (p.prop !== undefined) shatter(w, w.arena.props[p.prop]!, p.pos.x, p.pos.z, owner.id);
+      return false;
+    };
     const stepLen = Math.min(p.remaining, p.speed * dt);
     p.pos.x += p.dir.x * stepLen;
     p.pos.z += p.dir.z * stepLen;
     p.remaining -= stepLen;
+    if (p.prop !== undefined) {
+      // Thrown props drop slowly along their flight, and break on the floor.
+      p.pos.y -= (stepLen / w.config.throwRange) * 1.2;
+      const pr = w.arena.props[p.prop]!;
+      pr.x = p.pos.x;
+      pr.z = p.pos.z;
+    }
     for (const o of w.fighters) {
       if (o.team === p.team || !o.alive || !sphereTouches(p.pos, p.size, o)) continue;
-      if (applyHit(w, owner, o, specialHit(sp), { x: p.pos.x - p.dir.x, y: 0, z: p.pos.z - p.dir.z })) return false;
+      if (applyHit(w, owner, o, hit, { x: p.pos.x - p.dir.x, y: 0, z: p.pos.z - p.dir.z })) return finish();
     }
     // Props stop projectiles (and take the damage if they can break).
     const wall = w.arena.props.find((pr) => pr.alive && p.pos.y < pr.height && distToProp(pr, p.pos.x, p.pos.z) <= p.size * 0.5);
     if (wall) {
-      damageProp(w, owner, wall, sp.damage);
-      return false;
+      damageProp(w, owner, wall, hit.damage);
+      return finish();
     }
-    return p.remaining > 1e-9 && Math.abs(p.pos.x) < w.arena.halfW && Math.abs(p.pos.z) < w.arena.halfD;
+    const inside = Math.abs(p.pos.x) < w.arena.halfW && Math.abs(p.pos.z) < w.arena.halfD;
+    return p.remaining > 1e-9 && inside ? true : finish();
   });
 }
 
@@ -679,6 +835,8 @@ export function step(w: BrawlWorld, commands: Command[]): void {
         f.pos = { ...f.spawn };
         f.vel = { x: 0, y: 0, z: 0 };
         f.floor = 0;
+        f.carrying = null;
+        f.lastHitBy = null;
         f.action = null;
         f.respawnAt = Infinity;
         f.invulnerableUntil = w.time + c.respawnInvulnerable;
