@@ -32,6 +32,9 @@ export class Hud {
   private bannerUntil = 0;
   private hidden: HTMLSpanElement | null = null;
   private prompt: HTMLDivElement;
+  private combo: HTMLDivElement;
+  private comboCount = 0;
+  private comboUntil = 0;
   private player: number;
 
   private world: BrawlWorld;
@@ -57,7 +60,7 @@ export class Hud {
       const energy = el("div", "fill", enBar);
       for (const sp of f.kit.specials) {
         const mark = el("div", "cost-mark", enBar);
-        mark.style.left = `${sp.energyCost}%`;
+        mark.style[i === 0 ? "left" : "right"] = `${sp.energyCost}%`;
       }
       const specials = el("div", "hud-specials", panel);
       const specialEls = f.kit.specials.map((sp, s) =>
@@ -73,6 +76,7 @@ export class Hud {
     });
     this.banner = el("div", "hud-banner", root);
     this.prompt = el("div", "hud-prompt", root);
+    this.combo = el("div", "hud-combo", root);
     this.help = el("div", "hud-help", root);
     for (const [k, v] of KEY_HELP) {
       const row = el("div", "row", this.help);
@@ -94,8 +98,12 @@ export class Hud {
     this.help.classList.toggle("hidden");
   }
 
-  flash(text: string, seconds = 1.2): void {
-    this.banner.textContent = text;
+  flash(text: string, seconds = 1.2, sub = ""): void {
+    this.banner.replaceChildren();
+    el("div", "banner-main", this.banner, text);
+    if (sub) el("div", "banner-sub", this.banner, sub);
+    this.banner.classList.remove("show");
+    void this.banner.offsetWidth; // restart the entrance animation
     this.banner.classList.add("show");
     this.bannerUntil = performance.now() + seconds * 1000;
   }
@@ -124,11 +132,23 @@ export class Hud {
     this.timer.textContent = `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`;
 
     for (const e of w.events.slice(this.lastEvent)) {
-      if (e.type === "ko") this.flash(`K.-O. ! ${names[e.target]} est à terre`);
-      if (e.type === "guardBreak") this.flash("Garde brisée !", 0.6);
-      if (e.type === "slam") this.flash("Contre le mur !", 0.6);
+      // Combo counter: consecutive hits landed by the player.
+      if (e.type === "hit" && e.source === this.player) {
+        this.comboCount = performance.now() < this.comboUntil ? this.comboCount + 1 : 1;
+        this.comboUntil = performance.now() + 1100;
+        if (this.comboCount >= 2) {
+          this.combo.textContent = `${this.comboCount} HITS`;
+          this.combo.classList.remove("pop");
+          void this.combo.offsetWidth;
+          this.combo.classList.add("pop", "show");
+        }
+      }
+      if (e.type === "ko") this.flash("K.-O. !", 1.4, names[e.target] ? `${names[e.target]} est à terre` : "");
+      if (e.type === "guardBreak") this.flash("GARDE BRISÉE", 0.7);
+      if (e.type === "slam") this.flash("CONTRE LE MUR", 0.7);
     }
     this.lastEvent = w.events.length;
     if (performance.now() > this.bannerUntil && !w.over) this.banner.classList.remove("show");
+    if (performance.now() > this.comboUntil) this.combo.classList.remove("show");
   }
 }

@@ -185,3 +185,10 @@ test("épreuve : les combattants d'origine gagnent entre 40 % et 60 % contre le 
     assert.ok(rate >= BALANCED_BAND[0] && rate <= BALANCED_BAND[1], `${p.dir} : ${(rate * 100).toFixed(0)} %`);
   }
 });
+
+test("apparence : un look valide est lu, un look invalide est ignoré", async () => {
+  const { parseCharacter } = await import("../src/brawl/character.ts");
+  const ok = parseCharacter({ name: "X", look: { model: "mage", show: ["2H_Staff", "<script>"], tint: "#ff0000" } }, "x");
+  assert.deepEqual(ok.look, { model: "mage", show: ["2H_Staff"], tint: "#ff0000" });
+  assert.equal(parseCharacter({ look: { model: "dragon" } }, "x").look, undefined);
+});

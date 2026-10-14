@@ -24,6 +24,10 @@ Ces packs se partagent directement entre amis (archive, clé USB, dossier partag
 2. Le kit passe par le même validateur et le même budget que les personnages originaux, puis par la même **épreuve** (`npm run brawl -- --tune`, décision 0007) qui ajuste ses dégâts pour qu'il gagne environ la moitié de ses duels contre le panel de référence. Un personnage « culte » n'a pas de passe-droit, et en ajouter un ne demande jamais de retoucher les autres.
 3. Le dépôt peut contenir des personnages **originaux inspirés** d'un archétype (le sabreur rapide, le ninja à clones, l'élémentaire…), jamais un nom ni un visuel sous licence.
 
+## Apparence
+
+`character.json` peut choisir un modèle 3D et ses accessoires (`look`, voir `docs/design/visuels.md`). Exemple pour un sabreur : `"look": { "model": "rogue_hooded", "show": ["Knife", "Rogue_Cape"], "tint": "#ffd0d0" }`.
+
 ## Univers demandés par le porteur de projet
 
 Liste de travail, à compléter par toi : quels personnages, dans quel ordre.

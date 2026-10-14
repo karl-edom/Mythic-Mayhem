@@ -1,351 +1,145 @@
-// Three.js view of a BrawlWorld. Read-only: it never changes the simulation.
-// Readability first: every state that matters to the opponent has a visual cue.
-//   wind-up (startup) → faint hitbox outline · active hitbox → solid sphere
+// Three.js view of a BrawlWorld, in a cel-shaded anime style. Read-only: it
+// never changes the simulation. Readability first: every state that matters to
+// the opponent has a visual cue.
+//   wind-up (startup) → faint hitbox outline, then the blow's slash arc
 //   guard → bubble · guard broken → spinning stars · energy charge → aura column
-//   invulnerable → blinking · area special → ground ring filling up until impact
+//   invulnerable → blinking · area special → magic circle filling up until impact
 
 import * as THREE from "three";
+import { OutlineEffect } from "three/examples/jsm/effects/OutlineEffect.js";
+import { distToProp, segmentInterval, surfaceAt } from "../brawl/arena.ts";
 import type { Character } from "../brawl/character.ts";
 import type { Strike } from "../brawl/kit.ts";
-import { distToProp, type Prop } from "../brawl/arena.ts";
-import { FIGHTER_HEIGHT, lockTarget, strikeCenter, type BrawlWorld, type Fighter } from "../brawl/world.ts";
+import { FIGHTER_HEIGHT, bodyCenter, lockTarget, strikeCenter, type BrawlWorld, type Fighter } from "../brawl/world.ts";
+import { Animator } from "./animator.ts";
+import { buildEnvironment } from "./environment.ts";
+import { defaultLook, instantiate, weaponStyle, type ModelInstance, type ModelLibrary } from "./models.ts";
+import { glowTexture, magicCircleTexture, noOutline, toon } from "./toon.ts";
+import { Vfx } from "./vfx.ts";
 
 interface FighterView {
   root: THREE.Group;
-  body: THREE.Group;
-  bodyMat: THREE.MeshStandardMaterial;
-  accentMat: THREE.MeshStandardMaterial;
+  model: ModelInstance | null;
+  animator: Animator | null;
+  /** Body materials (model or fallback capsule), for the hit flash. */
+  materials: THREE.MeshToonMaterial[];
   shadow: THREE.Mesh;
   guard: THREE.Mesh;
   aura: THREE.Mesh;
   stars: THREE.Group;
-  hitbox: THREE.Mesh;
-  hitboxMat: THREE.MeshBasicMaterial;
-  chargeOrb: THREE.Mesh;
+  hitbox: THREE.Sprite;
+  chargeOrb: THREE.Sprite;
   flashUntil: number;
-}
-
-const SKY = 0xbfe8ff;
-
-const mat = (color: string | number) => new THREE.MeshStandardMaterial({ color, roughness: 0.8 });
-
-/** Simple, readable shapes per prop look. The collision shape is the prop's footprint and height. */
-function buildProp(p: Prop): THREE.Group {
-  const g = new THREE.Group();
-  const s = p.kind.shape;
-  const w = p.halfW * 2;
-  const d = p.halfD * 2;
-  const h = p.height;
-  const add = (m: THREE.Mesh, y: number) => {
-    m.position.y = y;
-    m.castShadow = true;
-    m.receiveShadow = true;
-    g.add(m);
-    return m;
-  };
-  if (p.rise) {
-    // Ramps and stairs: built along local +x rising, then turned to face their direction.
-    const run = p.rise.axis === "x" ? w : d;
-    const across = p.rise.axis === "x" ? d : w;
-    const body = new THREE.Group();
-    if (p.kind.look === "stairs") {
-      const n = Math.max(2, Math.round(h / 0.3));
-      for (let i = 0; i < n; i++) {
-        const sh = (h * (i + 1)) / n;
-        const step = new THREE.Mesh(new THREE.BoxGeometry(run / n, sh, across), mat(p.kind.color));
-        step.position.set(-run / 2 + (run / n) * (i + 0.5), sh / 2, 0);
-        step.castShadow = step.receiveShadow = true;
-        body.add(step);
-      }
-    } else {
-      const tri = new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(run, 0), new THREE.Vector2(run, h)]);
-      const geo = new THREE.ExtrudeGeometry(tri, { depth: across, bevelEnabled: false });
-      geo.translate(-run / 2, 0, -across / 2);
-      const wedge = new THREE.Mesh(geo, mat(p.kind.color));
-      wedge.castShadow = wedge.receiveShadow = true;
-      body.add(wedge);
-    }
-    // Local +x → world rising direction.
-    body.rotation.y = p.rise.axis === "x" ? (p.rise.sign > 0 ? 0 : Math.PI) : p.rise.sign > 0 ? -Math.PI / 2 : Math.PI / 2;
-    g.add(body);
-    return g;
-  }
-  switch (p.kind.look) {
-    case "platform":
-    case "terrace":
-    case "tower": {
-      add(new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(p.kind.color)), h / 2);
-      // A lighter rim on top reads as "you can stand here".
-      const rim = add(new THREE.Mesh(new THREE.BoxGeometry(w + 0.1, 0.15, d + 0.1), mat(0xf4ecd8)), h - 0.07);
-      rim.castShadow = false;
-      break;
-    }
-    case "tree":
-      add(new THREE.Mesh(new THREE.CylinderGeometry(p.halfW * 0.7, p.halfW, h * 0.45, 12), mat(0xa47148)), h * 0.225);
-      add(new THREE.Mesh(new THREE.SphereGeometry(p.halfW * 2.2, 16, 12), mat(p.kind.color)), h * 0.72);
-      break;
-    case "house": {
-      add(new THREE.Mesh(new THREE.BoxGeometry(w, h * 0.6, d), mat(p.kind.color)), h * 0.3);
-      const roof = add(new THREE.Mesh(new THREE.ConeGeometry(Math.hypot(w, d) / 2 + 0.3, h * 0.4, 4), mat(0xe76f51)), h * 0.8);
-      roof.rotation.y = Math.PI / 4;
-      roof.scale.set(w / Math.hypot(w, d) * 1.414, 1, d / Math.hypot(w, d) * 1.414);
-      break;
-    }
-    case "crate": {
-      add(new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(p.kind.color)), h / 2);
-      const band = add(new THREE.Mesh(new THREE.BoxGeometry(w * 1.02, h * 0.15, d * 1.02), mat(0x8d5a2b)), h / 2);
-      band.castShadow = false;
-      break;
-    }
-    case "fence":
-      for (let i = 0; i < 5; i++) {
-        const post = add(new THREE.Mesh(new THREE.BoxGeometry(0.15, h, 0.15), mat(p.kind.color)), h / 2);
-        const along = -0.5 + i / 4;
-        post.position.x = w > d ? along * (w - 0.2) : 0;
-        post.position.z = w > d ? 0 : along * (d - 0.2);
-      }
-      add(new THREE.Mesh(new THREE.BoxGeometry(w, 0.15, d), mat(p.kind.color)), h * 0.75);
-      add(new THREE.Mesh(new THREE.BoxGeometry(w, 0.15, d), mat(p.kind.color)), h * 0.35);
-      break;
-    case "rock": {
-      const r = add(new THREE.Mesh(new THREE.DodecahedronGeometry(1, 0), mat(p.kind.color)), h / 2);
-      r.scale.set(w / 2, h / 2, d / 2);
-      break;
-    }
-    default:
-      add(
-        s.type === "cylinder" ? new THREE.Mesh(new THREE.CylinderGeometry(p.halfW, p.halfW, h, 20), mat(p.kind.color)) : new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(p.kind.color)),
-        h / 2,
-      );
-  }
-  return g;
+  /** Last strike whose slash arc was spawned (so each blow draws one arc). */
+  slashKey: string;
+  wasAirborne: boolean;
 }
 
 export function createRenderer(canvas: HTMLCanvasElement): THREE.WebGLRenderer {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.05;
   return renderer;
 }
 
+/** Slash tilt per combo hit, so consecutive blows read as different swings. */
+const SLASH_TILT = [0.55, -0.55, 0.05, 1.1, -1.0];
+
 export class ArenaView {
   readonly scene = new THREE.Scene();
-  readonly camera = new THREE.PerspectiveCamera(60, 1, 0.1, 200);
+  readonly camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
   private fighters: FighterView[] = [];
-  private projectiles = new Map<object, THREE.Mesh>();
-  private zones = new Map<object, THREE.Group>();
+  private projectiles = new Map<object, THREE.Group>();
+  private zones = new Map<object, { group: THREE.Group; circle: THREE.Mesh; fill: THREE.Mesh; center: THREE.Vector3; color: string }>();
   private camPos = new THREE.Vector3(0, 6, 14);
   private camLook = new THREE.Vector3();
   private lastEvent = 0;
   private props: THREE.Object3D[] = [];
   private raycaster = new THREE.Raycaster();
-  private debris: { mesh: THREE.Mesh; vel: THREE.Vector3; until: number }[] = [];
+  private vfx: Vfx;
+  private outline: OutlineEffect;
+  private glow = glowTexture();
+  private circleTex = magicCircleTexture();
+  /** Hit-stop: animations freeze briefly on impact (visual only). */
+  private freezeUntil = 0;
+  /** Real-time moment until which the match plays in slow motion (after a K.-O.). */
+  slowUntil = 0;
+  private frame = 0;
 
   private renderer: THREE.WebGLRenderer;
   private world: BrawlWorld;
   private characters: Character[];
-  /** The fighter the camera follows (the local player). */
   private focus: number;
+  private library: ModelLibrary | null;
 
-  constructor(renderer: THREE.WebGLRenderer, world: BrawlWorld, characters: Character[], focus: number) {
+  constructor(renderer: THREE.WebGLRenderer, world: BrawlWorld, characters: Character[], focus: number, library: ModelLibrary | null) {
     this.renderer = renderer;
     this.world = world;
     this.characters = characters;
     this.focus = focus;
-    this.scene.background = new THREE.Color(SKY);
-    this.buildArena();
+    this.library = library;
+    this.outline = new OutlineEffect(renderer, { defaultThickness: 0.003, defaultColor: [0.08, 0.06, 0.1], defaultAlpha: 1 });
+    this.vfx = new Vfx(this.scene);
+    this.props = buildEnvironment(this.scene, world.arena).props;
     this.fighters = world.fighters.map((f) => this.buildFighter(f, characters[f.id]!));
     this.resize();
-  }
-
-  private buildArena(): void {
-    const { halfW, halfD, def } = this.world.arena;
-    const span = Math.max(halfW, halfD);
-    this.scene.fog = new THREE.Fog(SKY, span * 2, span * 5);
-    this.scene.add(new THREE.HemisphereLight(0xffffff, 0xd8c8a0, 1.6));
-    const sun = new THREE.DirectionalLight(0xfff4dd, 2.2);
-    sun.position.set(span * 0.6, span * 1.4, span * 0.4);
-    sun.castShadow = true;
-    sun.shadow.mapSize.set(4096, 4096);
-    Object.assign(sun.shadow.camera, { left: -span - 4, right: span + 4, top: span + 4, bottom: -span - 4, far: span * 4 });
-    this.scene.add(sun);
-
-    // Grass all around, the arena floor, a faint grid to read distances.
-    const grass = new THREE.Mesh(new THREE.PlaneGeometry(span * 8, span * 8), new THREE.MeshStandardMaterial({ color: 0x9be37a }));
-    grass.rotation.x = -Math.PI / 2;
-    grass.position.y = -0.02;
-    this.scene.add(grass);
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(halfW * 2, halfD * 2), new THREE.MeshStandardMaterial({ color: def.ground }));
-    floor.rotation.x = -Math.PI / 2;
-    floor.receiveShadow = true;
-    this.scene.add(floor);
-    const grid = new THREE.GridHelper(Math.max(halfW, halfD) * 2, Math.round(Math.max(halfW, halfD) / 2), 0xffffff, 0xffffff);
-    (grid.material as THREE.Material).opacity = 0.18;
-    (grid.material as THREE.Material).transparent = true;
-    grid.scale.set(halfW / Math.max(halfW, halfD), 1, halfD / Math.max(halfW, halfD));
-    grid.position.y = 0.01;
-    this.scene.add(grid);
-
-    // Low wall of colourful blocks along the four edges.
-    const colors = [0xff6b6b, 0xffd166, 0x06d6a0, 0x4cc9f0, 0xb388ff];
-    let k = 0;
-    const edge = (x0: number, z0: number, x1: number, z1: number) => {
-      const len = Math.hypot(x1 - x0, z1 - z0);
-      const n = Math.max(1, Math.round(len / 3));
-      for (let i = 0; i < n; i++) {
-        const t = (i + 0.5) / n;
-        const block = new THREE.Mesh(
-          new THREE.BoxGeometry((len / n) * 0.94, 1, 0.8),
-          new THREE.MeshStandardMaterial({ color: colors[k++ % colors.length] }),
-        );
-        block.position.set(x0 + (x1 - x0) * t, 0.5, z0 + (z1 - z0) * t);
-        block.rotation.y = -Math.atan2(z1 - z0, x1 - x0);
-        block.castShadow = true;
-        this.scene.add(block);
-      }
-    };
-    const o = 0.4;
-    edge(-halfW - o, -halfD - o, halfW + o, -halfD - o);
-    edge(halfW + o, -halfD - o, halfW + o, halfD + o);
-    edge(halfW + o, halfD + o, -halfW - o, halfD + o);
-    edge(-halfW - o, halfD + o, -halfW - o, -halfD - o);
-
-    for (const p of this.world.arena.props) {
-      const mesh = buildProp(p);
-      mesh.position.set(p.x, 0, p.z);
-      mesh.userData.prop = p.id;
-      this.scene.add(mesh);
-      this.props.push(mesh);
-    }
-  }
-
-  /** Bits flying out of a broken prop. */
-  private burst(p: Prop): void {
-    this.props[p.id]!.visible = false;
-    for (let i = 0; i < 10; i++) {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, 0.25), new THREE.MeshStandardMaterial({ color: p.kind.color }));
-      m.position.set(p.x, p.height * 0.6, p.z);
-      const a = Math.random() * Math.PI * 2;
-      const v = new THREE.Vector3(Math.cos(a) * (2 + Math.random() * 3), 4 + Math.random() * 4, Math.sin(a) * (2 + Math.random() * 3));
-      this.scene.add(m);
-      this.debris.push({ mesh: m, vel: v, until: performance.now() + 1200 });
-    }
-  }
-
-  private syncDebris(dt: number): void {
-    const now = performance.now();
-    this.debris = this.debris.filter((d) => {
-      d.vel.y -= 25 * dt;
-      d.mesh.position.addScaledVector(d.vel, dt);
-      if (d.mesh.position.y < 0.12) {
-        d.mesh.position.y = 0.12;
-        d.vel.set(d.vel.x * 0.5, 0, d.vel.z * 0.5);
-      }
-      d.mesh.rotation.x += dt * 8;
-      if (now < d.until) return true;
-      this.scene.remove(d.mesh);
-      return false;
-    });
-  }
-
-  /** Props between the camera and the player turn see-through, so the player is never lost behind a wall. */
-  private syncProps(): void {
-    const me = this.world.fighters[this.focus]!;
-    const cam = this.camera.position;
-    // Cast rays from the camera to the player's feet, chest and head: whatever they cross is in the way.
-    const blocking = new Set<number>();
-    for (const h of [0.2, FIGHTER_HEIGHT * 0.6, FIGHTER_HEIGHT]) {
-      const target = new THREE.Vector3(me.pos.x, me.pos.y + h, me.pos.z);
-      const dir = target.clone().sub(cam);
-      this.raycaster.set(cam, dir.clone().normalize());
-      this.raycaster.far = dir.length();
-      for (const hit of this.raycaster.intersectObjects(this.props, true)) {
-        let o: THREE.Object3D | null = hit.object;
-        while (o && o.userData.prop === undefined) o = o.parent;
-        if (o) blocking.add(o.userData.prop as number);
-      }
-    }
-    const flying = new Map(this.world.projectiles.filter((q) => q.prop !== undefined).map((q) => [q.prop!, q]));
-    this.world.arena.props.forEach((p, i) => {
-      const mesh = this.props[i]!;
-      mesh.visible = p.alive || p.held !== null || p.flying;
-      mesh.rotation.set(0, 0, 0);
-      if (p.held !== null) {
-        // Carried overhead; while lifting it rises from the floor.
-        const f = this.world.fighters[p.held]!;
-        const lift = f.action?.kind === "lift" ? Math.min(1, f.action.t / this.world.config.liftTime) : 1;
-        mesh.position.set(f.pos.x, f.pos.y + lift * (FIGHTER_HEIGHT + 0.1), f.pos.z);
-        return;
-      }
-      const q = flying.get(i);
-      if (q) {
-        mesh.position.set(q.pos.x, q.pos.y - p.height / 2, q.pos.z);
-        mesh.rotation.set(this.world.time * 9, 0, 0);
-        return;
-      }
-      if (!p.alive) return;
-      const hides = blocking.has(i) || distToProp(p, cam.x, cam.z) < 1;
-      mesh.traverse((o) => {
-        if (o instanceof THREE.Mesh) {
-          const m = o.material as THREE.MeshStandardMaterial;
-          m.transparent = hides;
-          m.opacity = hides ? 0.3 : 1;
-          m.depthWrite = !hides;
-        }
-      });
-      // Breakable props darken as they take damage.
-      if (p.kind.hp !== null) {
-        const k = 0.45 + 0.55 * Math.max(0, p.hp / p.kind.hp);
-        mesh.traverse((o) => {
-          if (o instanceof THREE.Mesh) (o.material as THREE.MeshStandardMaterial).color.set(p.kind.color).multiplyScalar(k);
-        });
-      }
-    });
   }
 
   private buildFighter(f: Fighter, ch: Character): FighterView {
     const r = f.kit.stats.radius;
     const root = new THREE.Group();
-    const body = new THREE.Group();
-    const bodyMat = new THREE.MeshStandardMaterial({ color: ch.colors.primary, roughness: 0.6 });
-    const accentMat = new THREE.MeshStandardMaterial({ color: ch.colors.secondary, roughness: 0.4 });
-    const torso = new THREE.Mesh(new THREE.CapsuleGeometry(r, FIGHTER_HEIGHT - 2 * r - 0.35, 6, 16), bodyMat);
-    torso.position.y = (FIGHTER_HEIGHT - 0.35) / 2;
-    torso.castShadow = true;
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.3, 16, 12), accentMat);
-    head.position.y = FIGHTER_HEIGHT - 0.25;
-    head.castShadow = true;
-    // The "nose" shows where the fighter faces (attacks come out this way).
-    const nose = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.5, 12), accentMat);
-    nose.rotation.x = Math.PI / 2;
-    nose.position.set(0, FIGHTER_HEIGHT * 0.55, r + 0.2);
-    body.add(torso, head, nose);
-    root.add(body);
+    let model: ModelInstance | null = null;
+    let animator: Animator | null = null;
+    let materials: THREE.MeshToonMaterial[];
+    if (this.library) {
+      const look = ch.look ?? defaultLook(f.kit.archetype);
+      model = instantiate(this.library, look);
+      animator = new Animator(model.mixer, this.library.clips, weaponStyle(look));
+      root.add(model.root);
+      materials = model.materials;
+    } else {
+      // Fallback while models are unavailable: a coloured capsule.
+      const m = toon(ch.colors.primary);
+      const body = new THREE.Mesh(new THREE.CapsuleGeometry(r, FIGHTER_HEIGHT - 2 * r, 6, 16), m);
+      body.position.y = FIGHTER_HEIGHT / 2;
+      body.castShadow = true;
+      root.add(body);
+      materials = [m];
+    }
 
     const shadow = new THREE.Mesh(
-      new THREE.CircleGeometry(r * 1.2, 24),
-      new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.25 }),
+      new THREE.CircleGeometry(r * 1.3, 24),
+      noOutline(new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.28, depthWrite: false })),
     );
     shadow.rotation.x = -Math.PI / 2;
     this.scene.add(shadow);
 
     const guard = new THREE.Mesh(
-      new THREE.SphereGeometry(FIGHTER_HEIGHT * 0.65, 20, 14),
-      new THREE.MeshBasicMaterial({ color: 0x7fdcff, transparent: true, opacity: 0.35, depthWrite: false }),
+      new THREE.SphereGeometry(FIGHTER_HEIGHT * 0.62, 24, 16),
+      noOutline(
+        new THREE.MeshBasicMaterial({ color: 0x7fdcff, transparent: true, opacity: 0.28, depthWrite: false, blending: THREE.AdditiveBlending }),
+      ),
     );
     guard.position.y = FIGHTER_HEIGHT / 2;
     root.add(guard);
 
     const aura = new THREE.Mesh(
-      new THREE.CylinderGeometry(r * 2, r * 2.4, FIGHTER_HEIGHT * 1.4, 24, 1, true),
-      new THREE.MeshBasicMaterial({ color: ch.colors.secondary, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false }),
+      new THREE.CylinderGeometry(r * 1.8, r * 2.6, FIGHTER_HEIGHT * 1.5, 24, 1, true),
+      noOutline(
+        new THREE.MeshBasicMaterial({
+          color: ch.colors.secondary, transparent: true, opacity: 0.3, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending,
+        }),
+      ),
     );
-    aura.position.y = FIGHTER_HEIGHT * 0.7;
+    aura.position.y = FIGHTER_HEIGHT * 0.72;
     root.add(aura);
 
     const stars = new THREE.Group();
     for (let i = 0; i < 3; i++) {
-      const s = new THREE.Mesh(new THREE.OctahedronGeometry(0.14), new THREE.MeshBasicMaterial({ color: 0xffd60a }));
+      const s = new THREE.Mesh(new THREE.OctahedronGeometry(0.13), toon(0xffd60a));
       const a = (i / 3) * Math.PI * 2;
       s.position.set(Math.cos(a) * 0.45, 0, Math.sin(a) * 0.45);
       stars.add(s);
@@ -353,18 +147,22 @@ export class ArenaView {
     stars.position.y = FIGHTER_HEIGHT + 0.35;
     root.add(stars);
 
-    const hitboxMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, depthWrite: false });
-    const hitbox = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), hitboxMat);
+    // Wind-up telegraph: energy gathering where the blow will land.
+    const hitbox = new THREE.Sprite(
+      noOutline(new THREE.SpriteMaterial({ map: this.glow, color: 0xffffff, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false })),
+    );
     this.scene.add(hitbox);
 
-    const chargeOrb = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 16, 12),
-      new THREE.MeshBasicMaterial({ color: 0xff9f1c, transparent: true, opacity: 0.7 }),
+    const chargeOrb = new THREE.Sprite(
+      noOutline(new THREE.SpriteMaterial({ map: this.glow, color: 0xff9f1c, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })),
     );
     root.add(chargeOrb);
 
     this.scene.add(root);
-    return { root, body, bodyMat, accentMat, shadow, guard, aura, stars, hitbox, hitboxMat, chargeOrb, flashUntil: 0 };
+    return {
+      root, model, animator, materials, shadow, guard, aura, stars, hitbox, chargeOrb,
+      flashUntil: 0, slashKey: "", wasAirborne: false,
+    };
   }
 
   resize(): void {
@@ -383,80 +181,214 @@ export class ArenaView {
     return { x: v.x / l, z: v.z / l };
   }
 
-  render(dt: number): void {
+  /** Simulation speed wanted by the view: slow motion right after a K.-O. */
+  timeScale(): number {
+    return performance.now() < this.slowUntil ? 0.3 : 1;
+  }
+
+  private center(f: Fighter): THREE.Vector3 {
+    const c = bodyCenter(f);
+    return new THREE.Vector3(c.x, c.y, c.z);
+  }
+
+  private onEvents(): void {
     const w = this.world;
-    const t = w.time;
+    const now = performance.now();
     for (const e of w.events.slice(this.lastEvent)) {
-      if (e.type === "hit" || e.type === "guardBreak") this.fighters[e.target]!.flashUntil = t + 0.12;
-      if (e.type === "propBroken") this.burst(w.arena.props[e.prop]!);
+      switch (e.type) {
+        case "hit": {
+          const big = e.knockdown || e.by === "heavy" || e.by === "special" || e.by === "throw";
+          this.fighters[e.target]!.flashUntil = w.time + 0.1;
+          this.vfx.hit(this.center(w.fighters[e.target]!), this.characters[e.source]!.colors.secondary, big);
+          this.freezeUntil = now + (big ? 110 : 55);
+          if (e.knockdown) this.vfx.groundWave(new THREE.Vector3(w.fighters[e.target]!.pos.x, w.fighters[e.target]!.floor, w.fighters[e.target]!.pos.z), 0xffffff, 3);
+          break;
+        }
+        case "block":
+          this.vfx.block(this.center(w.fighters[e.target]!));
+          break;
+        case "guardBreak":
+          this.fighters[e.target]!.flashUntil = w.time + 0.15;
+          this.vfx.hit(this.center(w.fighters[e.target]!), 0xffd60a, true);
+          this.freezeUntil = now + 140;
+          break;
+        case "slam": {
+          const t = w.fighters[e.target]!;
+          this.vfx.hit(this.center(t), 0xffffff, true);
+          this.vfx.dust(new THREE.Vector3(t.pos.x, t.floor, t.pos.z), 8);
+          break;
+        }
+        case "ko":
+          this.vfx.hit(this.center(w.fighters[e.target]!), 0xffffff, true);
+          this.vfx.ring(this.center(w.fighters[e.target]!), 0xff4d4d, 6);
+          this.slowUntil = now + 900;
+          this.freezeUntil = now + 160;
+          break;
+        case "propBroken": {
+          const p = w.arena.props[e.prop]!;
+          this.props[p.id]!.visible = false;
+          this.vfx.debris(new THREE.Vector3(p.x, Math.max(0.4, p.height * 0.6), p.z), p.kind.color);
+          break;
+        }
+        case "dodge":
+        case "lift": {
+          const f = w.fighters[e.unit]!;
+          this.vfx.dust(new THREE.Vector3(f.pos.x, f.floor, f.pos.z), 4);
+          break;
+        }
+        case "respawn":
+          this.vfx.groundWave(new THREE.Vector3(w.fighters[e.unit]!.pos.x, 0, w.fighters[e.unit]!.pos.z), 0x9fe6ff, 2.5);
+          break;
+        default:
+          break;
+      }
     }
     this.lastEvent = w.events.length;
+  }
 
-    w.fighters.forEach((f, i) => this.syncFighter(f, this.fighters[i]!, t));
+  render(dt: number): void {
+    this.frame++;
+    this.onEvents();
+    const frozen = performance.now() < this.freezeUntil;
+    this.world.fighters.forEach((f, i) => this.syncFighter(f, this.fighters[i]!, dt, frozen));
     this.syncProjectiles();
     this.syncZones();
     this.syncCamera(dt);
     this.syncProps();
-    this.syncDebris(dt);
-    this.renderer.render(this.scene, this.camera);
+    this.vfx.update(dt);
+    this.outline.render(this.scene, this.camera);
   }
 
-  private syncFighter(f: Fighter, v: FighterView, t: number): void {
-    v.root.visible = f.alive;
+  private syncFighter(f: Fighter, v: FighterView, dt: number, frozen: boolean): void {
+    const w = this.world;
+    const t = w.time;
+    const ch = this.characters[f.id]!;
+    // A fallen fighter stays on the ground (death animation) until respawn.
+    const shown = f.alive || v.model !== null;
+    v.root.visible = shown;
     v.shadow.visible = f.alive;
     v.hitbox.visible = false;
-    if (!f.alive) return;
     v.root.position.set(f.pos.x, f.pos.y, f.pos.z);
     v.root.rotation.y = Math.atan2(f.facing.x, f.facing.z);
     v.shadow.position.set(f.pos.x, f.floor + 0.02, f.pos.z);
     v.shadow.scale.setScalar(Math.max(0.4, 1 - (f.pos.y - f.floor) * 0.15));
+    v.animator?.update(w, f, dt, frozen);
 
     const a = f.action;
     const flashing = v.flashUntil > t;
-    v.bodyMat.emissive.setHex(flashing ? 0xffffff : 0x000000);
-    v.bodyMat.emissiveIntensity = flashing ? 0.9 : 0;
+    for (const m of v.materials) m.emissive.setHex(flashing ? 0xffffff : 0x000000);
 
-    const invulnerable = f.invulnerableUntil > t || (a?.kind === "dodge" && a.t < this.world.config.dodgeInvulnerable);
-    const blink = invulnerable && Math.floor(t * 12) % 2 === 0;
-    v.body.visible = !blink;
-
-    // Knocked down: lie on the back.
-    v.body.rotation.x = a?.kind === "knockdown" ? -Math.PI / 2.2 : a?.kind === "dodge" ? -0.35 : 0;
-    v.body.position.y = a?.kind === "knockdown" ? 0.3 : 0;
+    const invulnerable = f.alive && (f.invulnerableUntil > t || (a?.kind === "dodge" && a.t < w.config.dodgeInvulnerable));
+    if (v.model) v.model.root.visible = !(invulnerable && Math.floor(t * 14) % 2 === 0);
 
     v.guard.visible = a?.kind === "guard" || a?.kind === "blockstun";
+    if (v.guard.visible) (v.guard.material as THREE.MeshBasicMaterial).opacity = 0.22 + 0.06 * Math.sin(t * 12);
     v.aura.visible = a?.kind === "charge";
-    if (v.aura.visible) (v.aura.material as THREE.MeshBasicMaterial).opacity = 0.2 + 0.15 * Math.sin(t * 20);
+    if (v.aura.visible) {
+      (v.aura.material as THREE.MeshBasicMaterial).opacity = 0.22 + 0.12 * Math.sin(t * 22);
+      v.aura.rotation.y += dt * 3;
+    }
     v.stars.visible = a?.kind === "guardbroken";
     v.stars.rotation.y = t * 6;
 
     v.chargeOrb.visible = a?.kind === "heavy" && a.charging;
     if (a?.kind === "heavy" && a.charging) {
       const k = f.kit.heavy.maxCharge > 0 ? a.charge / f.kit.heavy.maxCharge : 0;
-      v.chargeOrb.scale.setScalar(0.15 + 0.35 * k);
-      v.chargeOrb.position.set(0, FIGHTER_HEIGHT * 0.55, f.kit.stats.radius + 0.5);
+      v.chargeOrb.scale.setScalar(0.4 + 1.2 * k + 0.1 * Math.sin(t * 30));
+      v.chargeOrb.position.set(0, FIGHTER_HEIGHT * 0.55, f.kit.stats.radius + 0.4);
     }
 
-    // Attack hitboxes: outline during wind-up (telegraph), solid while live.
+    // Attack telegraph: a faint wireframe of the hitbox during the wind-up, then one slash arc when it goes live.
     let strike: Strike | undefined;
     let at = 0;
+    let key = "";
+    let tilt = 0;
     if (a?.kind === "light") {
       strike = f.kit.light.hits[a.index];
       at = a.t;
-    } else if (a?.kind === "heavy" && !a.charging) {
+      key = `l${a.index}:${w.tick - Math.round(a.t * w.config.tickRate)}`;
+      tilt = SLASH_TILT[a.index % SLASH_TILT.length]!;
+    } else if (a?.kind === "heavy") {
       strike = f.kit.heavy;
-      at = a.t;
-    } else if (a?.kind === "heavy") strike = f.kit.heavy;
-    if (strike && at < strike.startup + strike.active) {
-      const live = at >= strike.startup;
+      at = a.charging ? 0 : a.t;
+      key = `h${w.tick - Math.round(a.t * w.config.tickRate)}`;
+      tilt = 1.2;
+    }
+    if (strike && at < strike.startup) {
       const c = strikeCenter(f, strike);
       v.hitbox.visible = true;
       v.hitbox.position.set(c.x, c.y, c.z);
-      v.hitbox.scale.setScalar(strike.size);
-      v.hitboxMat.color.set(a?.kind === "heavy" ? 0xff7b00 : 0xffffff);
-      v.hitboxMat.opacity = live ? 0.6 : 0.15;
-      v.hitboxMat.wireframe = !live;
+      const k = strike.startup > 0 ? at / strike.startup : 1;
+      v.hitbox.scale.setScalar(strike.size * (0.8 + 1.4 * k));
+      v.hitbox.material.color.set(a?.kind === "heavy" ? 0xff8a1c : ch.colors.secondary);
+      v.hitbox.material.opacity = 0.2 + 0.5 * k;
+    } else if (strike && at >= strike.startup && v.slashKey !== key) {
+      v.slashKey = key;
+      const origin = this.center(f).add(new THREE.Vector3(f.facing.x, 0, f.facing.z).multiplyScalar(0.2));
+      const color = a?.kind === "heavy" ? 0xffa53d : ch.colors.secondary;
+      this.vfx.slash(origin, Math.atan2(f.facing.x, f.facing.z), tilt, strike.reach + strike.size * (a?.kind === "heavy" ? 1.3 : 1), color);
     }
+
+    // Motion cues: speed lines when dashing, dust when landing.
+    const fast = a?.kind === "rush" || a?.kind === "dodge";
+    if (fast && this.frame % 2 === 0) {
+      const dir = a?.kind === "dodge" ? new THREE.Vector3(a.dir.x, 0, a.dir.z) : new THREE.Vector3(f.facing.x, 0, f.facing.z);
+      this.vfx.speedLines(this.center(f), dir, ch.colors.secondary);
+    }
+    const airborne = f.pos.y > f.floor + 0.05;
+    if (v.wasAirborne && !airborne && f.alive) this.vfx.dust(new THREE.Vector3(f.pos.x, f.floor, f.pos.z), 4);
+    v.wasAirborne = airborne;
+  }
+
+  /** Props between the camera and the player turn see-through, so the player is never lost behind a wall. */
+  private syncProps(): void {
+    const me = this.world.fighters[this.focus]!;
+    const cam = this.camera.position;
+    const blocking = new Set<number>();
+    for (const h of [0.2, FIGHTER_HEIGHT * 0.6, FIGHTER_HEIGHT]) {
+      const target = new THREE.Vector3(me.pos.x, me.pos.y + h, me.pos.z);
+      const dir = target.clone().sub(cam);
+      this.raycaster.set(cam, dir.clone().normalize());
+      this.raycaster.far = dir.length();
+      for (const hit of this.raycaster.intersectObjects(this.props, true)) {
+        let o: THREE.Object3D | null = hit.object;
+        while (o && o.userData.prop === undefined) o = o.parent;
+        if (o) blocking.add(o.userData.prop as number);
+      }
+    }
+    const flying = new Map(this.world.projectiles.filter((q) => q.prop !== undefined).map((q) => [q.prop!, q]));
+    this.world.arena.props.forEach((p, i) => {
+      const obj = this.props[i]!;
+      obj.visible = p.alive || p.held !== null || p.flying;
+      obj.rotation.set(0, 0, 0);
+      if (p.held !== null) {
+        const f = this.world.fighters[p.held]!;
+        const lift = f.action?.kind === "lift" ? Math.min(1, f.action.t / this.world.config.liftTime) : 1;
+        obj.position.set(f.pos.x, f.pos.y + lift * (FIGHTER_HEIGHT + 0.1), f.pos.z);
+        return;
+      }
+      const q = flying.get(i);
+      if (q) {
+        obj.position.set(q.pos.x, q.pos.y - p.height / 2, q.pos.z);
+        obj.rotation.set(this.world.time * 9, 0, 0);
+        return;
+      }
+      if (!p.alive) return;
+      const hides = blocking.has(i) || distToProp(p, cam.x, cam.z) < 1;
+      const damage = p.kind.hp !== null ? 0.5 + 0.5 * Math.max(0, p.hp / p.kind.hp) : 1;
+      obj.traverse((o) => {
+        if (!(o instanceof THREE.Mesh)) return;
+        const m = o.material as THREE.MeshToonMaterial;
+        m.userData.baseColor ??= m.color.clone();
+        m.color.copy(m.userData.baseColor as THREE.Color).multiplyScalar(damage);
+        m.transparent = hides;
+        m.opacity = hides ? 0.3 : 1;
+        m.depthWrite = !hides;
+        // The ink outline would stay opaque around a see-through prop: hide it too.
+        const outline = m.userData.outlineParameters as { visible?: boolean } | undefined;
+        if (outline) outline.visible = !hides;
+      });
+    });
   }
 
   private syncProjectiles(): void {
@@ -464,57 +396,75 @@ export class ArenaView {
     for (const p of this.world.projectiles) {
       if (p.prop !== undefined) continue; // drawn as the prop itself
       seen.add(p);
-      let m = this.projectiles.get(p);
-      if (!m) {
+      let g = this.projectiles.get(p);
+      if (!g) {
         const ch = this.characters[p.owner]!;
-        m = new THREE.Mesh(new THREE.SphereGeometry(p.size, 16, 12), new THREE.MeshBasicMaterial({ color: ch.colors.secondary }));
-        this.scene.add(m);
-        this.projectiles.set(p, m);
+        g = new THREE.Group();
+        const halo = new THREE.Sprite(
+          noOutline(new THREE.SpriteMaterial({ map: this.glow, color: ch.colors.secondary, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })),
+        );
+        halo.scale.setScalar(p.size * 3.4);
+        const core = new THREE.Sprite(
+          noOutline(new THREE.SpriteMaterial({ map: this.glow, color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })),
+        );
+        core.scale.setScalar(p.size * 0.9);
+        g.add(halo, core);
+        this.scene.add(g);
+        this.projectiles.set(p, g);
       }
-      m.position.set(p.pos.x, p.pos.y, p.pos.z);
+      g.position.set(p.pos.x, p.pos.y, p.pos.z);
+      if (this.frame % 2 === 0) this.vfx.speedLines(g.position.clone(), new THREE.Vector3(p.dir.x, p.dir.y, p.dir.z), this.characters[p.owner]!.colors.secondary);
     }
-    for (const [p, m] of this.projectiles)
+    for (const [p, g] of this.projectiles)
       if (!seen.has(p)) {
-        this.scene.remove(m);
+        this.vfx.ring(g.position.clone(), 0xffffff, 1.5);
+        this.scene.remove(g);
         this.projectiles.delete(p);
       }
   }
 
+  /** Area specials: a magic circle in the owner's colour, filling up until the strike. */
   private syncZones(): void {
     const seen = new Set<object>();
     const t = this.world.time;
     for (const z of this.world.zones) {
       seen.add(z);
-      let g = this.zones.get(z);
-      if (!g) {
+      let entry = this.zones.get(z);
+      if (!entry) {
         const color = this.characters[z.owner]!.colors.primary;
-        g = new THREE.Group();
-        const ring = new THREE.Mesh(
-          new THREE.RingGeometry(z.radius - 0.12, z.radius, 64),
-          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9 }),
+        const group = new THREE.Group();
+        const circle = new THREE.Mesh(
+          new THREE.PlaneGeometry(z.radius * 2, z.radius * 2),
+          noOutline(new THREE.MeshBasicMaterial({ map: this.circleTex, color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })),
         );
         const fill = new THREE.Mesh(
-          new THREE.CircleGeometry(z.radius, 64),
-          new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.35, depthWrite: false }),
+          new THREE.CircleGeometry(z.radius, 48),
+          noOutline(new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.25, depthWrite: false, blending: THREE.AdditiveBlending })),
         );
-        fill.name = "fill";
-        g.add(ring, fill);
-        g.rotation.x = -Math.PI / 2;
-        g.position.set(z.center.x, z.center.y + 0.03, z.center.z);
-        this.scene.add(g);
-        this.zones.set(z, g);
+        circle.rotation.x = fill.rotation.x = -Math.PI / 2;
+        fill.position.y = 0.01;
+        group.add(circle, fill);
+        group.position.set(z.center.x, z.center.y + 0.04, z.center.z);
+        this.scene.add(group);
+        entry = { group, circle, fill, center: group.position.clone(), color };
+        this.zones.set(z, entry);
       }
       const k = Math.min(1, (t - z.createdAt) / Math.max(1e-6, z.triggerAt - z.createdAt));
-      g.getObjectByName("fill")!.scale.setScalar(Math.max(0.01, k));
+      entry.fill.scale.setScalar(Math.max(0.01, k));
+      entry.circle.rotation.z = t * 1.5;
+      (entry.circle.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.5 * k;
     }
-    for (const [z, g] of this.zones)
+    for (const [z, e] of this.zones)
       if (!seen.has(z)) {
-        this.scene.remove(g);
+        // The circle resolves: a burst of light where it struck.
+        this.vfx.groundWave(e.center, e.color, (z as { radius: number }).radius * 1.6);
+        this.vfx.ring(e.center.clone().setY(e.center.y + 1), e.color, (z as { radius: number }).radius * 1.5);
+        this.scene.remove(e.group);
         this.zones.delete(z);
       }
   }
 
-  /** Lock-on camera: behind the player, looking towards the opponent. */
+  /** Lock-on camera: behind the player, looking towards the opponent, with a little shake on impacts. */
   private syncCamera(dt: number): void {
     const me = this.world.fighters[this.focus]!;
     const foe = lockTarget(this.world, me);
@@ -526,29 +476,82 @@ export class ArenaView {
       const dir = o.clone().sub(p).setY(0);
       if (dir.lengthSq() < 1e-6) dir.set(0, 0, -1);
       dir.normalize();
-      // Over the right shoulder, high enough to see the opponent past the player.
       const right = new THREE.Vector3(-dir.z, 0, dir.x);
-      wantPos = p.clone().addScaledVector(dir, -7.5).addScaledVector(right, 1.8).add(new THREE.Vector3(0, 4.2, 0));
-      // Aim between the two, but never so far ahead that the player leaves the frame on a big map.
+      wantPos = p.clone().addScaledVector(dir, -7).addScaledVector(right, 1.6).add(new THREE.Vector3(0, 3.6, 0));
       const ahead = Math.min(p.distanceTo(o) * 0.6, 4);
-      wantLook = p.clone().addScaledVector(dir, ahead).add(new THREE.Vector3(0, 1, 0));
+      wantLook = p.clone().addScaledVector(dir, ahead).add(new THREE.Vector3(0, 1.1, 0));
     } else {
-      wantPos = new THREE.Vector3(0, 14, 22);
-      wantLook = new THREE.Vector3(0, 0, 0);
+      wantPos = p.clone().add(new THREE.Vector3(0, 9, 12));
+      wantLook = p.clone();
     }
-    // Stay inside the walls: near an edge the camera comes closer instead of looking through the wall.
     const { halfW, halfD } = this.world.arena;
     const cx = Math.max(-halfW + 0.5, Math.min(halfW - 0.5, wantPos.x));
     const cz = Math.max(-halfD + 0.5, Math.min(halfD - 0.5, wantPos.z));
-    // ...and rises by what it lost, to keep the player and the opponent in frame.
-    wantPos.y += Math.hypot(cx - wantPos.x, cz - wantPos.z) * 0.3;
+    const lost = Math.hypot(cx - wantPos.x, cz - wantPos.z);
+    wantPos.y += lost * 0.45;
     wantPos.x = cx;
     wantPos.z = cz;
-    const k = 1 - Math.exp(-dt * 6);
+    // Spring arm: a prop between the player's head and the camera pulls the camera in front of it.
+    const head = p.clone().add(new THREE.Vector3(0, 1.6, 0));
+    const hit = this.firstBlock(head, wantPos);
+    let pulled = lost / 5;
+    if (hit < 1) {
+      wantPos = head.clone().lerp(wantPos, Math.max(0.12, hit - 0.06));
+      wantPos.y += 0.8 * (1 - hit);
+      pulled = Math.max(pulled, 1 - hit);
+    }
+    // Pushed close by a wall or a prop: aim nearer the player so they stay in frame.
+    wantLook.lerp(p.clone().add(new THREE.Vector3(0, 1.1, 0)), Math.min(1, pulled));
+    // Moving in (to avoid an obstacle) is immediate; moving back out is smooth.
+    const closer = wantPos.distanceTo(head) < this.camPos.distanceTo(head) - 0.2;
+    const k = 1 - Math.exp(-dt * (closer ? 25 : 6));
     this.camPos.lerp(wantPos, k);
     this.camLook.lerp(wantLook, k);
-    this.camera.position.copy(this.camPos);
+    const s = this.vfx.shake;
+    const jitter = new THREE.Vector3((Math.random() - 0.5) * s, (Math.random() - 0.5) * s, (Math.random() - 0.5) * s);
+    this.camera.position.copy(this.camPos).add(jitter);
     this.camera.lookAt(this.camLook);
+  }
+
+  /** First point (0..1) where segment a→b enters a standing prop below its top; 1 if clear. */
+  private firstBlock(a: THREE.Vector3, b: THREE.Vector3): number {
+    let first = 1;
+    for (const pr of this.world.arena.props) {
+      if (!pr.alive) continue;
+      const iv = segmentInterval(pr, a, b);
+      if (!iv) continue;
+      for (const t of iv) {
+        const x = a.x + (b.x - a.x) * t;
+        const z = a.z + (b.z - a.z) * t;
+        if (a.y + (b.y - a.y) * t < surfaceAt(pr, x, z) + 0.3 && t < first) first = t;
+      }
+    }
+    return first;
+  }
+
+  private showcaseFrame: { anchor: THREE.Vector3; dir: THREE.Vector3 } | null = null;
+
+  /** Menu backdrop framing: fighters at `anchor`, facing `dir`, camera in front of them. */
+  showcaseAt(anchor: { x: number; z: number }, dir: { x: number; z: number }): void {
+    this.showcaseFrame = { anchor: new THREE.Vector3(anchor.x, 0, anchor.z), dir: new THREE.Vector3(dir.x, 0, dir.z).normalize() };
+  }
+
+  /** Menu backdrop: the chosen fighters idle while the camera sways gently. */
+  showcase(dt: number): void {
+    this.frame++;
+    const w = this.world;
+    const t = performance.now() / 1000;
+    const f = this.showcaseFrame ?? { anchor: new THREE.Vector3(), dir: new THREE.Vector3(0, 0, 1) };
+    const side = new THREE.Vector3(-f.dir.z, 0, f.dir.x);
+    this.camera.position
+      .copy(f.anchor)
+      .addScaledVector(f.dir, 5.4)
+      .addScaledVector(side, Math.sin(t * 0.35) * 0.8)
+      .add(new THREE.Vector3(0, 1.7 + Math.sin(t * 0.5) * 0.1, 0));
+    this.camera.lookAt(f.anchor.clone().add(new THREE.Vector3(0, 1.15, 0)));
+    w.fighters.forEach((fi, i) => this.syncFighter(fi, this.fighters[i]!, dt, false));
+    this.vfx.update(dt);
+    this.outline.render(this.scene, this.camera);
   }
 
   dispose(): void {
@@ -561,3 +564,4 @@ export class ArenaView {
     this.scene.clear();
   }
 }
+
