@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as THREE from "three";
-import { Retargeter, clenchFists } from "../src/client/retarget.ts";
+import { Retargeter, amplifyClip, clenchFists } from "../src/client/retarget.ts";
 
 function bone(name: string, parent: THREE.Object3D, pos: [number, number, number], rot = new THREE.Quaternion()): THREE.Object3D {
   const b = new THREE.Bone();
@@ -82,4 +82,21 @@ test("poings fermés : les doigts se replient vers la paume (vers le bas en pose
   const after = tip.getWorldPosition(new THREE.Vector3());
   assert.ok(after.y < before.y - 0.02, `bout du doigt ${before.y} → ${after.y}`);
   assert.ok(Math.abs(after.z - before.z) < 1e-6, "le doigt reste dans le plan de la main");
+});
+
+test("amplification : chaque articulation va k fois plus loin de la pose de départ, le départ est intact", () => {
+  const start = new THREE.Quaternion().setFromEuler(new THREE.Euler(0.3, 0.2, 0));
+  const turn = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0.4);
+  const end = start.clone().multiply(turn);
+  const clip = new THREE.AnimationClip("a", 1, [
+    new THREE.QuaternionKeyframeTrack("b.quaternion", [0, 1], [...start.toArray(), ...end.toArray()]),
+    new THREE.VectorKeyframeTrack("b.position", [0, 1], [0, 1, 0, 0.2, 1.1, 0]),
+  ]);
+  const out = amplifyClip(clip, 1.5);
+  const v = out.tracks[0]!.values;
+  assert.ok(new THREE.Quaternion().fromArray(v, 0).angleTo(start) < 1e-6);
+  const want = start.clone().multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), 0.6));
+  assert.ok(new THREE.Quaternion().fromArray(v, 4).angleTo(want) < 1e-5);
+  assert.deepEqual(Array.from(out.tracks[1]!.values).map((x) => +x.toFixed(4)), [0, 1, 0, 0.3, 1.15, 0]);
+  assert.ok(Math.abs(clip.tracks[0]!.values[4]! - end.x) < 1e-6, "le clip d'origine n'est pas modifié");
 });

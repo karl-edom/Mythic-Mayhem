@@ -221,6 +221,13 @@ window.addEventListener("resize", () => {
   showcase?.resize();
 });
 
+/**
+ * Game tempo: the fixed-step simulation runs at 80 % of real time. Everything slows
+ * together (moves, animations, projectiles), so balance is unchanged; fights are just
+ * easier to read and to react to.
+ */
+const GAME_SPEED = 0.8;
+
 let last = performance.now();
 let acc = 0;
 function frame(now: number): void {
@@ -231,7 +238,7 @@ function frame(now: number): void {
   if (g && !g.paused && !g.world.over) {
     const tick = 1 / g.world.config.tickRate;
     // Slow motion after a K.-O.: the simulation simply advances slower.
-    acc += dt * g.view.timeScale();
+    acc += dt * GAME_SPEED * g.view.timeScale();
     while (acc >= tick && !g.world.over) {
       acc -= tick;
       const me = input.command(0, g.view.forward());
@@ -240,7 +247,7 @@ function frame(now: number): void {
     g.hud.update(g.names);
     if (g.world.over) showEnd(g);
   }
-  if (g) g.view.render(dt * (g.paused ? 0 : g.view.timeScale()));
+  if (g) g.view.render(dt * (g.paused ? 0 : GAME_SPEED * g.view.timeScale()));
   else if (showcase) showcase.showcase(dt);
   else renderer.clear();
   requestAnimationFrame(frame);

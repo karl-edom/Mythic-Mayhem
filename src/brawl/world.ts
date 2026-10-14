@@ -63,6 +63,17 @@ export interface BrawlConfig {
   /** A fighter knocked into a wall or prop faster than this takes slam damage. */
   slamMinSpeed: number;
   slamDamage: number;
+  /**
+   * Breaker (« Dégagement »): pressed while taking hits, blocking or guarding, it spends
+   * energy to push every nearby enemy away, without damage, invulnerable for its duration.
+   */
+  breakerCost: number;
+  breakerRadius: number;
+  /** Push speed (before the target's weight). */
+  breakerPush: number;
+  /** Stun on pushed enemies, seconds. */
+  breakerStun: number;
+  breakerDuration: number;
 }
 
 export const BRAWL_CONFIG: BrawlConfig = {
@@ -98,6 +109,11 @@ export const BRAWL_CONFIG: BrawlConfig = {
   throwRange: 22,
   slamMinSpeed: 7,
   slamDamage: 60,
+  breakerCost: 50,
+  breakerRadius: 3,
+  breakerPush: 12,
+  breakerStun: 0.35,
+  breakerDuration: 0.4,
 };
 
 /** Height of a fighter's hurtbox capsule, metres (shared by everyone for now). */
@@ -111,6 +127,7 @@ export type Action =
   | { kind: "special"; slot: number; t: number; fired: boolean }
   | { kind: "rush"; slot: number; remaining: number }
   | { kind: "dodge"; dir: V3; t: number }
+  | { kind: "breaker"; t: number }
   | { kind: "hitstun"; until: number }
   | { kind: "blockstun"; until: number }
   | { kind: "guardbroken"; until: number }
@@ -184,6 +201,7 @@ export type BrawlEvent =
   | { t: number; type: "guardBreak"; source: number; target: number; amount: number; by: HitKind }
   | { t: number; type: "special"; unit: number; slot: number }
   | { t: number; type: "dodge"; unit: number }
+  | { t: number; type: "breaker"; unit: number }
   | { t: number; type: "ko"; target: number; killer: number }
   | { t: number; type: "respawn"; unit: number }
   | { t: number; type: "propBroken"; prop: number; source: number }
@@ -297,7 +315,37 @@ export const canSee = (w: BrawlWorld, a: Fighter, b: Fighter) =>
   hdist(a.pos, b.pos) <= SENSE_RANGE ||
   !sightBlocked(w.arena, { ...a.pos, y: a.pos.y + EYE_HEIGHT }, { ...b.pos, y: b.pos.y + EYE_HEIGHT });
 export const isInvulnerable = (w: BrawlWorld, f: Fighter) => 
-  f.invulnerableUntil > w.time || (f.action?.kind === "dodge" && f.action.t < w.config.dodgeInvulnerable);
+  f.invulnerableUntil > w.time ||
+  (f.action?.kind === "dodge" && f.action.t < w.config.dodgeInvulnerable) ||
+  f.action?.kind === "breaker";
+
+/** States from which the breaker can be used: under pressure, but not already on the floor or guard-broken. */
+const BREAKABLE = new Set<Action["kind"]>(["hitstun", "blockstun", "guard"]);
+export const canBreak = (w: BrawlWorld, f: Fighter) =>
+  f.alive && f.action !== null && BREAKABLE.has(f.action.kind) && f.energy >= w.config.breakerCost;
+
+/** Breaker: pushes nearby enemies away (no damage) and frees the fighter. */
+function breaker(w: BrawlWorld, f: Fighter): void {
+  const c = w.config;
+  f.energy -= c.breakerCost;
+  f.action = { kind: "breaker", t: 0 };
+  f.vel.x = 0;
+  f.vel.z = 0;
+  w.events.push({ t: w.time, type: "breaker", unit: f.id });
+  for (const o of w.fighters) {
+    if (o.team === f.team || !o.alive || isInvulnerable(w, o)) continue;
+    if (hdist(o.pos, f.pos) > c.breakerRadius + o.kit.stats.radius || Math.abs(o.pos.y - f.pos.y) > FIGHTER_HEIGHT) continue;
+    dropCarried(w, o);
+    // No damage, not even a wall slam: the breaker only buys space.
+    o.lastHitBy = null;
+    const dir = hnorm({ x: o.pos.x - f.pos.x, y: 0, z: o.pos.z - f.pos.z }, f.facing);
+    const speed = c.breakerPush / o.kit.stats.weight;
+    o.vel.x = dir.x * speed;
+    o.vel.z = dir.z * speed;
+    // Interrupts whatever the enemy was doing (a rush or a charge included).
+    o.action = { kind: "hitstun", until: w.time + c.breakerStun };
+  }
+}
 
 /** The fighter a unit is locked on to: nearest living enemy. */
 export function lockTarget(w: BrawlWorld, f: Fighter): Fighter | undefined {
@@ -700,6 +748,10 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
       if (a.t >= c.dodgeDuration) f.action = null;
       return;
     }
+    case "breaker":
+      a.t += dt;
+      if (a.t >= c.breakerDuration) f.action = null;
+      return;
     case "hitstun":
     case "blockstun":
     case "guardbroken":
@@ -894,7 +946,8 @@ export function step(w: BrawlWorld, commands: Command[]): void {
     const heavyPressed = !!cmd?.heavy && !f.heavyHeld;
     f.heavyHeld = !!cmd?.heavy;
     if (f.action?.kind !== "charge") f.energy = Math.min(c.energyMax, f.energy + c.energyRegen * dt);
-    if (f.action) advanceAction(w, f, cmd, lightWanted);
+    if (cmd?.dodge && canBreak(w, f)) breaker(w, f);
+    else if (f.action) advanceAction(w, f, cmd, lightWanted);
     else startAction(w, f, cmd, heavyPressed, lightWanted);
     if (f.alive) physics(w, f);
   }

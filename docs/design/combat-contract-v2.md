@@ -24,6 +24,7 @@ Règle du projet : toute capacité précise son contre-jeu et son indicateur vis
 | Garde (L, maintenir) | ne prend que 10 % des dégâts, court blocage de 0,2 s | attaque lourde, spéciale brise-garde | bulle bleue |
 | Garde brisée | assommé 1 s | — (punition) | étoiles jaunes qui tournent + bannière |
 | Esquive (Maj) | 3,5 m en 0,3 s, invulnérable les 0,2 premières s, coûte 15 d'énergie | attendre la fin de l'esquive | personnage penché, clignotement |
+| Dégagement (Maj pendant qu'on encaisse des coups, un coup bloqué ou en garde) | coûte **50 d'énergie** ; repousse tout ennemi à moins de 3 m (vitesse 12 ÷ poids) et l'interrompt 0,35 s, **sans aucun dégât** (ni choc contre un mur) ; invulnérable pendant 0,4 s. Impossible au sol ou garde brisée (décision 0010) | relâcher la pression pour le pousser à dépenser sa jauge, puis punir ; le garder à court d'énergie (il ne peut plus lancer de spéciale) | onde de choc blanche à la taille de sa portée, bannière « DÉGAGEMENT », pastille « dégagement » allumée dans la barre quand elle est disponible |
 | Saut (Espace) | évite les zones au sol | frapper en l'air (les zones ne touchent pas au-dessus de 1,5 m) | ombre au sol qui rétrécit |
 | Recharge (E, maintenir) | +35 énergie/s, immobile et sans garde | frapper | colonne d'aura colorée |
 | Spéciale projectile | part vers la cible, touche le premier ennemi | esquive latérale, garde | sphère colorée |

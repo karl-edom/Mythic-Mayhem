@@ -194,3 +194,44 @@ test("apparence : un look valide est lu, un look invalide est ignoré", async ()
   const anime = parseCharacter({ look: { model: "shino", show: ["Kunai"], tint: "#ffffff", hair: "#ff0000", outfit: "rouge" } }, "x");
   assert.deepEqual(anime.look, { model: "shino", show: ["Kunai"], tint: "#ffffff", hair: "#ff0000" });
 });
+
+test("dégagement : sous les coups, il repousse l'agresseur sans dégâts et coûte 50 d'énergie", () => {
+  const w = duel(fighter(), fighter());
+  step(w, [{ unit: 0, light: true }]);
+  run(w, 0.12); // le premier coup touche : le défenseur (1) est en hitstun
+  const victim = w.fighters[1]!;
+  const attacker = w.fighters[0]!;
+  assert.equal(victim.action?.kind, "hitstun");
+  victim.energy = 60;
+  const hpBefore = attacker.hp;
+  const gapBefore = Math.abs(victim.pos.x - attacker.pos.x);
+  step(w, [{ unit: 1, dodge: true }]);
+  assert.equal(victim.action?.kind, "breaker");
+  assert.ok(Math.abs(victim.energy - (60 - BRAWL_CONFIG.breakerCost)) < 0.1);
+  assert.equal(attacker.action?.kind, "hitstun", "l'agresseur est interrompu");
+  run(w, 0.3);
+  assert.equal(attacker.hp, hpBefore, "aucun dégât");
+  assert.ok(Math.abs(victim.pos.x - attacker.pos.x) > gapBefore + 1.5, "de la distance est regagnée");
+});
+
+test("dégagement : invulnérable pendant l'onde, impossible sans énergie ou depuis le sol", () => {
+  const w = duel(fighter(), fighter());
+  const [a, b] = w.fighters as [typeof w.fighters[0], typeof w.fighters[0]];
+  b.action = { kind: "hitstun", until: w.time + 1 };
+  b.energy = 40;
+  step(w, [{ unit: 1, dodge: true }]);
+  assert.equal(b.action?.kind, "hitstun", "pas assez d'énergie");
+  b.energy = 100;
+  b.action = { kind: "knockdown", until: w.time + 1 };
+  step(w, [{ unit: 1, dodge: true }]);
+  assert.equal(b.action?.kind, "knockdown", "pas depuis le sol");
+  b.action = { kind: "guard" };
+  step(w, [{ unit: 1, dodge: true }]);
+  assert.equal(b.action?.kind, "breaker", "possible depuis la garde");
+  // Un coup pendant l'onde ne fait rien.
+  a.action = null;
+  a.pos = { x: b.pos.x - 1.2, y: 0, z: 0 };
+  step(w, [{ unit: 0, light: true }]);
+  run(w, 0.15);
+  assert.equal(b.hp, 1000);
+});

@@ -236,6 +236,16 @@ export class ArenaView {
           this.vfx.dust(new THREE.Vector3(f.pos.x, f.floor, f.pos.z), 4);
           break;
         }
+        case "breaker": {
+          // Visual indicator of the breaker: a white shockwave the size of its reach.
+          const f = w.fighters[e.unit]!;
+          const c = this.center(f);
+          this.vfx.ring(c, 0xffffff, w.config.breakerRadius * 2);
+          this.vfx.groundWave(new THREE.Vector3(f.pos.x, f.floor, f.pos.z), 0xbfefff, w.config.breakerRadius * 1.6);
+          this.fighters[e.unit]!.flashUntil = w.time + 0.12;
+          this.freezeUntil = now + 90;
+          break;
+        }
         case "respawn":
           this.vfx.groundWave(new THREE.Vector3(w.fighters[e.unit]!.pos.x, 0, w.fighters[e.unit]!.pos.z), 0x9fe6ff, 2.5);
           break;
@@ -279,6 +289,7 @@ export class ArenaView {
     for (const m of v.materials) m.emissive.setHex(flashing ? 0xffffff : 0x000000);
 
     const invulnerable = f.alive && (f.invulnerableUntil > t || (a?.kind === "dodge" && a.t < w.config.dodgeInvulnerable));
+    // (The breaker is invulnerable too, but its shockwave already shows it: no blinking.)
     if (v.model) v.model.root.visible = !(invulnerable && Math.floor(t * 14) % 2 === 0);
 
     v.guard.visible = a?.kind === "guard" || a?.kind === "blockstun";
@@ -345,11 +356,12 @@ export class ArenaView {
     const me = this.world.fighters[this.focus]!;
     const cam = this.camera.position;
     const blocking = new Set<number>();
-    for (const h of [0.2, FIGHTER_HEIGHT * 0.6, FIGHTER_HEIGHT]) {
+    for (const h of [0.6, FIGHTER_HEIGHT * 0.6, FIGHTER_HEIGHT]) {
       const target = new THREE.Vector3(me.pos.x, me.pos.y + h, me.pos.z);
       const dir = target.clone().sub(cam);
       this.raycaster.set(cam, dir.clone().normalize());
-      this.raycaster.far = dir.length();
+      // Stop short of the player: the stairs or crate they stand on must not count as "in the way".
+      this.raycaster.far = Math.max(0, dir.length() - 0.8);
       for (const hit of this.raycaster.intersectObjects(this.props, true)) {
         let o: THREE.Object3D | null = hit.object;
         while (o && o.userData.prop === undefined) o = o.parent;
@@ -374,7 +386,9 @@ export class ArenaView {
         return;
       }
       if (!p.alive) return;
-      const hides = blocking.has(i) || distToProp(p, cam.x, cam.z) < 1;
+      // Trees reach well beyond their trunk: keep the camera out of the foliage.
+      const reach = p.kind.look === "tree" ? 2.6 : 1;
+      const hides = blocking.has(i) || distToProp(p, cam.x, cam.z) < reach;
       const damage = p.kind.hp !== null ? 0.5 + 0.5 * Math.max(0, p.hp / p.kind.hp) : 1;
       obj.traverse((o) => {
         if (!(o instanceof THREE.Mesh)) return;
@@ -382,7 +396,8 @@ export class ArenaView {
         m.userData.baseColor ??= m.color.clone();
         m.color.copy(m.userData.baseColor as THREE.Color).multiplyScalar(damage);
         m.transparent = hides;
-        m.opacity = hides ? 0.3 : 1;
+        // Faint enough that the player seen through it does not look like a ghost.
+        m.opacity = hides ? 0.12 : 1;
         m.depthWrite = !hides;
         // The ink outline would stay opaque around a see-through prop: hide it too.
         const outline = m.userData.outlineParameters as { visible?: boolean } | undefined;

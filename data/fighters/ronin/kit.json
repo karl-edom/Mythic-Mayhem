@@ -12,7 +12,17 @@
   "light": {
     "hits": [
       {
-        "damage": 25,
+        "damage": 23,
+        "startup": 0.1,
+        "active": 0.08,
+        "recovery": 0.18,
+        "reach": 1.1,
+        "size": 0.7,
+        "hitstun": 0.35,
+        "knockback": 2
+      },
+      {
+        "damage": 23,
         "startup": 0.1,
         "active": 0.08,
         "recovery": 0.18,
@@ -23,16 +33,6 @@
       },
       {
         "damage": 25,
-        "startup": 0.1,
-        "active": 0.08,
-        "recovery": 0.18,
-        "reach": 1.1,
-        "size": 0.7,
-        "hitstun": 0.35,
-        "knockback": 2
-      },
-      {
-        "damage": 28,
         "startup": 0.12,
         "active": 0.08,
         "recovery": 0.2,
@@ -42,7 +42,7 @@
         "knockback": 3
       },
       {
-        "damage": 45,
+        "damage": 41,
         "startup": 0.15,
         "active": 0.1,
         "recovery": 0.4,
@@ -54,7 +54,7 @@
     ]
   },
   "heavy": {
-    "damage": 99,
+    "damage": 90,
     "startup": 0.45,
     "active": 0.1,
     "recovery": 0.5,
@@ -77,7 +77,7 @@
         "speed": 25,
         "size": 0.8
       },
-      "damage": 106,
+      "damage": 96,
       "hitstun": 0.6,
       "knockback": 13,
       "guardBreak": false
@@ -93,7 +93,7 @@
         "range": 12,
         "size": 0.6
       },
-      "damage": 72,
+      "damage": 65,
       "hitstun": 0.5,
       "knockback": 6,
       "guardBreak": false
@@ -109,7 +109,7 @@
         "radius": 2.5,
         "delay": 0.5
       },
-      "damage": 142,
+      "damage": 129,
       "hitstun": 0.7,
       "knockback": 14,
       "guardBreak": true

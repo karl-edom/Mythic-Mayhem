@@ -219,3 +219,46 @@ export function clenchFists(root: THREE.Object3D, angle = 1.25): void {
     }
   }
 }
+
+/**
+ * Exaggerates a clip: every joint moves `k` times as far from the clip's first pose
+ * (rotations scaled by angle, hips displacement scaled too). Attacks start from a
+ * guard stance, so wind-ups and follow-throughs grow; looping clips stay seamless
+ * (their last frame equals the first, which is left unchanged). Angles are capped
+ * below a half turn so that nothing flips over.
+ */
+export function amplifyClip(clip: THREE.AnimationClip, k: number): THREE.AnimationClip {
+  if (k === 1) return clip;
+  const ref = new THREE.Quaternion();
+  const q = new THREE.Quaternion();
+  const axis = new THREE.Vector3();
+  const tracks = clip.tracks.map((t) => {
+    const out = t.clone();
+    const v = out.values;
+    if (t instanceof THREE.QuaternionKeyframeTrack) {
+      ref.fromArray(v, 0);
+      const inv = ref.clone().invert();
+      for (let i = 4; i < v.length; i += 4) {
+        q.fromArray(v, i).premultiply(inv); // ref⁻¹ · q
+        if (q.w < 0) q.set(-q.x, -q.y, -q.z, -q.w);
+        const angle = 2 * Math.acos(Math.min(1, q.w));
+        if (angle < 1e-5) continue;
+        axis.set(q.x, q.y, q.z).normalize();
+        q.setFromAxisAngle(axis, Math.min(angle * k, Math.PI * 0.95));
+        ref.clone().multiply(q).toArray(v, i);
+      }
+    } else if (t instanceof THREE.VectorKeyframeTrack) {
+      for (let i = 3; i < v.length; i++) v[i] = v[i % 3]! + (v[i]! - v[i % 3]!) * k;
+    }
+    return out;
+  });
+  return new THREE.AnimationClip(clip.name, clip.duration, tracks);
+}
+
+/** How much each kind of clip is exaggerated on slim anime bodies (chibi moves are small). */
+export function amplitudeFor(name: string): number {
+  if (/Attack|Spellcast_Shoot|Spellcast_Long|Throw|Ranged/.test(name)) return 1.5;
+  if (/Hit_|Block_Hit|Dodge|Death|Lie_StandUp|Cheer|Jump_Start|Jump_Land|PickUp/.test(name)) return 1.3;
+  if (/Running|Walking/.test(name)) return 1.2;
+  return 1;
+}

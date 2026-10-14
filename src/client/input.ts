@@ -10,6 +10,7 @@ export const KEY_HELP: [string, string][] = [
   ["K (maintenir)", "attaque lourde, chargeable, brise la garde"],
   ["L (maintenir)", "garde"],
   ["Maj", "esquive (invulnérable au début)"],
+  ["Maj sous les coups ou en garde", "dégagement : repousse l'adversaire (50 d'énergie)"],
   ["U / I / O", "spéciales 1 / 2 / 3"],
   ["F", "ramasser une caisse ou un tonneau, puis lancer"],
   ["E (maintenir)", "recharger l'énergie"],

@@ -9,7 +9,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { ANIME_MODELS, MODELS, isAnime, type Look, type ModelId } from "../brawl/character.ts";
 import type { Archetype } from "../brawl/kit.ts";
-import { KAYKIT_TO_HUMANOID, Retargeter, clenchFists } from "./retarget.ts";
+import { KAYKIT_TO_HUMANOID, Retargeter, amplifyClip, amplitudeFor, clenchFists } from "./retarget.ts";
 import { noOutline, outlineOf, toToon } from "./toon.ts";
 import { buildWeapon } from "./weapons.ts";
 
@@ -132,7 +132,7 @@ export async function loadModels(base: string, onProgress?: (done: number, total
 function animeClips(lib: ModelLibrary, t: AnimeTemplate): Map<string, THREE.AnimationClip> {
   if (!t.clips) {
     const r = new Retargeter({ source: lib.rig, target: t.rig, map: KAYKIT_TO_HUMANOID, armDrop: 0.5 });
-    t.clips = new Map([...lib.clips].map(([name, clip]) => [name, r.retarget(clip)] as const));
+    t.clips = new Map([...lib.clips].map(([name, clip]) => [name, amplifyClip(r.retarget(clip), amplitudeFor(name))] as const));
   }
   return t.clips;
 }

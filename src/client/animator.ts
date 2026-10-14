@@ -118,6 +118,8 @@ export class Animator {
       }
       case "rush":
         return { clip: "Running_B", key: "rush", loop: true, speed: 2.2, fade: 0.04 };
+      case "breaker":
+        return { clip: "Spellcast_Raise", key: `breaker${w.tick - Math.round(a.t * c.tickRate)}`, duration: c.breakerDuration, fade: 0.03 };
       case "dodge": {
         const side = a.dir.x * -facing.z + a.dir.z * facing.x;
         const fwd = a.dir.x * facing.x + a.dir.z * facing.z;

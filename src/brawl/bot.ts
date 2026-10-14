@@ -2,7 +2,7 @@
 // player produces. One personality for every kit; parameters tune its level.
 
 import { distToProp, segmentInterval, surfaceAt, type Arena } from "./arena.ts";
-import { canSee, grabbable, hdist, lockTarget, type BrawlWorld, type Command, type Fighter } from "./world.ts";
+import { canBreak, canSee, grabbable, hdist, lockTarget, type BrawlWorld, type Command, type Fighter } from "./world.ts";
 
 export interface BrawlBotParams {
   /** Chance per decision to react to an incoming heavy or special (dodge or guard). */
@@ -176,6 +176,11 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
   // Keep held buttons consistent with what we started.
   if (me.action?.kind === "heavy" && me.action.charging) {
     cmd.heavy = w.time < bot.chargeHeavyUntil;
+    return cmd;
+  }
+  // Under pressure (taking hits or blocking): break out now and then, more often the sharper the bot.
+  if (canBreak(w, me) && bot.random() < p.reactivity * 0.04) {
+    cmd.dodge = true;
     return cmd;
   }
   if (w.time < bot.guardUntil) {

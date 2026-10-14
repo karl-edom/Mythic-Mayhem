@@ -66,6 +66,8 @@ export class Hud {
       const specialEls = f.kit.specials.map((sp, s) =>
         el("div", "special", specials, `${i === player ? SPECIAL_KEYS[s] + " · " : ""}${sp.id} (${sp.energyCost})`),
       );
+      // The breaker is everyone's escape: shown with the specials, lit when affordable.
+      specialEls.push(el("div", "special breaker", specials, `${i === player ? "Maj · " : ""}dégagement (${world.config.breakerCost})`));
       if (i === 0) top.appendChild(this.center());
       this.sides.push({ hp, hpLag, energy, specials: specialEls, pips: [] });
     });
@@ -118,6 +120,7 @@ export class Hud {
       s.hpLag.style.width = `${Math.max(hp, lag - 0.6)}%`;
       s.energy.style.width = `${(100 * f.energy) / w.config.energyMax}%`;
       f.kit.specials.forEach((sp, k) => s.specials[k]!.classList.toggle("ready", f.alive && f.energy >= sp.energyCost));
+      s.specials.at(-1)!.classList.toggle("ready", f.alive && f.energy >= w.config.breakerCost);
       s.pips.forEach((p, k) => p.classList.toggle("on", k < (w.score[i] ?? 0)));
     });
     // Readability cue for hiding: the player knows when the opponent cannot see them.
@@ -146,6 +149,7 @@ export class Hud {
       if (e.type === "ko") this.flash("K.-O. !", 1.4, names[e.target] ? `${names[e.target]} est à terre` : "");
       if (e.type === "guardBreak") this.flash("GARDE BRISÉE", 0.7);
       if (e.type === "slam") this.flash("CONTRE LE MUR", 0.7);
+      if (e.type === "breaker") this.flash("DÉGAGEMENT", 0.6);
     }
     this.lastEvent = w.events.length;
     if (performance.now() > this.bannerUntil && !w.over) this.banner.classList.remove("show");
