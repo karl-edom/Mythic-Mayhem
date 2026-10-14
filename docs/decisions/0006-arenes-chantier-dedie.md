@@ -1,6 +1,6 @@
 # 0006 — Arènes : un chantier à part entière
 
-Date : 2026-10-14. Statut : **acceptée pour A1 et A2** (faites) ; étapes suivantes **proposées**. Règle de K.-O. tranchée : on **garde la barre de vie** (J-Stars), pas l'éjection façon Smash.
+Date : 2026-10-14. Statut : **A1, A2 et A4 faites** ; A3 (objets dangereux) **écartée** par le porteur de projet ; prochaines étapes : refonte visuelle, puis A5. Règle de K.-O. tranchée : on **garde la barre de vie** (J-Stars), pas l'éjection façon Smash.
 
 ## Demande du porteur de projet
 
@@ -16,8 +16,8 @@ Le chantier avance par étapes courtes et jouables :
 | --- | --- | --- |
 | **A1** | cartes plus grandes (56 × 40 m et 62 × 44 m, contre un disque de 32 m), obstacles solides, éléments cassables, on peut monter sur les petits, on peut se cacher | **faite** |
 | **A2** | **ramasser et lancer** une caisse ou un tonneau (touche F) ; **projeter l'adversaire contre un mur** ou un élément inflige des dégâts en plus | **faite** |
-| A3 | éléments **dangereux** : tonneau explosif (dégâts de zone quand il casse), objets qui tombent | proposée |
-| A4 | **hauteur** : toits et plateformes où grimper, plusieurs niveaux | proposée |
+| A3 | éléments **dangereux** : tonneau explosif (dégâts de zone quand il casse), objets qui tombent | **écartée** |
+| **A4** | **hauteur** : plateformes, terrasses et tours, reliées par des rampes et des escaliers | **faite** |
 | A5 | **éditeur de cartes** (d'abord le format de données documenté, puis un éditeur visuel) | proposée |
 
 ## Règles introduites par A1, avec contre-jeu et indicateur visuel
@@ -44,3 +44,18 @@ S'éclipser sert aujourd'hui à **recharger son énergie** (touche E) à l'abri.
 Les objets à lancer sont décrits dans le catalogue (`throwable` dans `data/arenas/props.json`) : en ajouter un se fait sans code. Ils font partie du décor, pas du kit : ils ne comptent pas dans le budget des personnages.
 
 Mesure (bots, 20 duels par carte) : environ 4 lancers, 5 à 6 chocs contre un mur et 8 objets cassés par match.
+
+## Règles introduites par A4 (la hauteur), avec contre-jeu et indicateur visuel
+
+| Règle | Contre-jeu | Indicateur visuel |
+| --- | --- | --- |
+| **Rampes et escaliers** (`"type": "ramp"` dans le catalogue, `"dir"` dans la carte) : on les monte en marchant ; toute marche de 45 cm au plus se franchit sans sauter, et on suit une pente en descendant | — | pente ou marches dessinées |
+| **Plateformes** (tour de ruines 3 m, terrasse 1,5 m, tour de guet 4 m) : au-delà de la hauteur de saut (~1,8 m), on n'y accède que par une rampe ; on tombe de leurs bords | monter par la rampe, ou tirer d'en bas | rebord clair sur le dessus |
+| **Ligne de vue en 3D** : on voit par-dessus un muret depuis une hauteur | se mettre sous un toit ou derrière un élément plus haut | étiquette « Hors de vue » |
+| **Les tirs visent la cible en hauteur** (projectiles et objets lancés partent vers son corps) ; un bord de plateforme peut arrêter un tir trop rasant | se cacher derrière le rebord | trajectoire visible |
+| **Les zones frappent un seul niveau** : celui de la cible (ou du sol à l'endroit visé) | changer d'étage avant l'impact | l'anneau s'affiche à cet étage |
+| Le **bot** rejoint un adversaire perché par la rampe la plus proche, et contourne les obstacles hauts par leurs coins | — | — |
+
+Cartes mises à jour : la Clairière a deux tours de ruines avec rampes et une terrasse centrale à escaliers ; le Village a deux tours de guet (grands escaliers) et deux terrasses.
+
+Effet mesuré sur l'équilibre (bots, 20 duels) : Kaminari contre Rōnin passe à 35 % (Clairière) et 33 % (Village) — les hauteurs et les recoins favorisent le sabreur. C'est un effet de carte ; l'épreuve d'équilibrage se joue en terrain vague et n'est pas affectée.

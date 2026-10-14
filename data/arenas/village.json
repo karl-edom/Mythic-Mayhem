@@ -186,14 +186,48 @@
    "z": 6
   },
   {
-   "kind": "pillar",
-   "x": -7,
+   "kind": "watchtower",
+   "x": -9,
    "z": 7
   },
   {
-   "kind": "pillar",
-   "x": 7,
+   "kind": "stairs-tall",
+   "x": -3,
+   "z": 7,
+   "dir": "-x"
+  },
+  {
+   "kind": "watchtower",
+   "x": 9,
    "z": -7
+  },
+  {
+   "kind": "stairs-tall",
+   "x": 3,
+   "z": -7,
+   "dir": "+x"
+  },
+  {
+   "kind": "terrace",
+   "x": -20,
+   "z": 0
+  },
+  {
+   "kind": "stairs",
+   "x": -13.25,
+   "z": 0,
+   "dir": "-x"
+  },
+  {
+   "kind": "terrace",
+   "x": 20,
+   "z": 0
+  },
+  {
+   "kind": "stairs",
+   "x": 13.25,
+   "z": 0,
+   "dir": "+x"
   }
  ]
 }

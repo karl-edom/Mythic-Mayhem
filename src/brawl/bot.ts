@@ -1,7 +1,7 @@
 // Generic brawler bot: reads only the world state, outputs the same Command a
 // player produces. One personality for every kit; parameters tune its level.
 
-import { distToProp } from "./arena.ts";
+import { distToProp, segmentInterval, surfaceAt, type Arena } from "./arena.ts";
 import { canSee, grabbable, hdist, lockTarget, type BrawlWorld, type Command, type Fighter } from "./world.ts";
 
 export interface BrawlBotParams {
@@ -40,13 +40,80 @@ export interface BrawlBot {
   detourUntil: number;
   /** Prop the bot is walking to, to pick it up and throw it. */
   fetch: { prop: number; until: number } | null;
+  /** Way up to an opponent standing too high to reach by jumping: foot of a ramp, its top, then off it. */
+  route: { points: { x: number; z: number }[]; until: number } | null;
 }
 
 export function createBot(random: () => number, params: BrawlBotParams = BOT_LEVELS.normal): BrawlBot {
   return {
     params, random, nextThinkAt: 0, guardUntil: 0, chargeHeavyUntil: 0, strafe: random() < 0.5 ? 1 : -1,
-    lastSeen: null, lastSeenAt: -Infinity, wander: null, prevPos: { x: 0, z: 0 }, stuckTicks: 0, detourUntil: 0, fetch: null,
+    lastSeen: null, lastSeenAt: -Infinity, wander: null, prevPos: { x: 0, z: 0 }, stuckTicks: 0, detourUntil: 0, fetch: null, route: null,
   };
+}
+
+/** Above this, an opponent is out of reach of a jump: the bot looks for a ramp or stairs. */
+const CLIMB_NEEDED = 1.2;
+
+/** Ramp (or stairs) whose top is closest to `to`, as walking points: below its foot, up it, onto what it leads to. */
+function routeUp(arena: Arena, to: { x: number; z: number }, minTop: number): { x: number; z: number }[] | null {
+  let best: { pts: { x: number; z: number }[]; d: number } | null = null;
+  for (const p of arena.props) {
+    if (!p.alive || !p.rise || p.height < minTop) continue;
+    const half = p.rise.axis === "x" ? p.halfW : p.halfD;
+    const at = (k: number) =>
+      p.rise!.axis === "x" ? { x: p.x + p.rise!.sign * k, z: p.z } : { x: p.x, z: p.z + p.rise!.sign * k };
+    const top = at(half + 1);
+    const d = Math.hypot(top.x - to.x, top.z - to.z);
+    if (!best || d < best.d) best = { pts: [at(-half - 1), at(half - 0.3), top], d };
+  }
+  return best?.pts ?? null;
+}
+
+/** Where to walk to reach the opponent: straight at them, or by the way up if they are perched. */
+function chasePoint(w: BrawlWorld, me: Fighter, bot: BrawlBot, foe: Fighter): { x: number; z: number } {
+  if (foe.floor - me.pos.y <= CLIMB_NEEDED) {
+    bot.route = null;
+    return foe.pos;
+  }
+  if (!bot.route || w.time > bot.route.until) {
+    const pts = routeUp(w.arena, foe.pos, foe.floor - 0.5);
+    bot.route = pts ? { points: pts, until: w.time + 12 } : null;
+  }
+  const r = bot.route;
+  if (!r || r.points.length === 0) return foe.pos;
+  if (Math.hypot(me.pos.x - r.points[0]!.x, me.pos.z - r.points[0]!.z) < 1) r.points.shift();
+  return r.points[0] ?? foe.pos;
+}
+
+/**
+ * If a prop too tall to step onto stands on the straight line to `goal`, returns
+ * the corner of that prop (with some margin) giving the shortest way round.
+ */
+function steerAround(w: BrawlWorld, me: Fighter, goal: { x: number; z: number }): { x: number; z: number } {
+  let first: { p: (typeof w.arena.props)[number]; t: number } | null = null;
+  for (const p of w.arena.props) {
+    if (!p.alive || distToProp(p, goal.x, goal.z) === 0) continue;
+    const iv = segmentInterval(p, me.pos, goal);
+    if (!iv) continue;
+    const x = me.pos.x + (goal.x - me.pos.x) * iv[0];
+    const z = me.pos.z + (goal.z - me.pos.z) * iv[0];
+    if (surfaceAt(p, x, z) <= me.pos.y + 0.45) continue; // can walk onto it
+    if (!first || iv[0] < first.t) first = { p, t: iv[0] };
+  }
+  if (!first) return goal;
+  const p = first.p;
+  const m = me.kit.stats.radius + 0.6;
+  const corners = [
+    { x: p.x - p.halfW - m, z: p.z - p.halfD - m },
+    { x: p.x + p.halfW + m, z: p.z - p.halfD - m },
+    { x: p.x - p.halfW - m, z: p.z + p.halfD + m },
+    { x: p.x + p.halfW + m, z: p.z + p.halfD + m },
+  ];
+  const cost = (c: { x: number; z: number }) =>
+    Math.hypot(c.x - me.pos.x, c.z - me.pos.z) + Math.hypot(goal.x - c.x, goal.z - c.z);
+  // Skip a corner we are already standing at, so we move on to the next leg.
+  const usable = corners.filter((c) => Math.hypot(c.x - me.pos.x, c.z - me.pos.z) > 0.6);
+  return (usable.length ? usable : corners).sort((a, b) => cost(a) - cost(b))[0]!;
 }
 
 /** Seconds the bot keeps heading for the last place it saw its opponent. */
@@ -56,7 +123,8 @@ const TRAIL_MEMORY = 4;
  * Walks towards a point, going around obstacles: when the bot stops making
  * progress it sidesteps for a moment, and jumps (low props can be cleared).
  */
-function walkTo(w: BrawlWorld, me: Fighter, bot: BrawlBot, to: { x: number; z: number }, cmd: Command): void {
+function walkTo(w: BrawlWorld, me: Fighter, bot: BrawlBot, goal: { x: number; z: number }, cmd: Command): void {
+  const to = steerAround(w, me, goal);
   const dx = to.x - me.pos.x;
   const dz = to.z - me.pos.z;
   const d = Math.hypot(dx, dz) || 1;
@@ -101,7 +169,9 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
   const p = bot.params;
   const d = hdist(me.pos, foe.pos);
   const toFoe = { x: (foe.pos.x - me.pos.x) / (d || 1), z: (foe.pos.z - me.pos.z) / (d || 1) };
-  const reach = me.kit.stats.radius + foe.kit.stats.radius + (me.kit.light.hits[0]?.reach ?? 1);
+  // Out of reach above us counts as far: no swinging at the underside of a platform.
+  const perched = foe.floor - me.pos.y > CLIMB_NEEDED;
+  const reach = perched ? -1 : me.kit.stats.radius + foe.kit.stats.radius + (me.kit.light.hits[0]?.reach ?? 1);
 
   // Keep held buttons consistent with what we started.
   if (me.action?.kind === "heavy" && me.action.charging) {
@@ -136,7 +206,8 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
   }
   if (!seen && !me.action) {
     if (bot.lastSeen && w.time - bot.lastSeenAt < TRAIL_MEMORY && hdist(me.pos, { ...bot.lastSeen, y: 0 }) > 1) {
-      walkTo(w, me, bot, bot.lastSeen, cmd);
+      // Lost from sight because perched above us: take the way up rather than walk under them.
+      walkTo(w, me, bot, perched ? chasePoint(w, me, bot, foe) : bot.lastSeen, cmd);
     } else {
       bot.lastSeen = null;
       if (!bot.wander || hdist(me.pos, { ...bot.wander, y: 0 }) < 1.5)
@@ -153,7 +224,7 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
   // Carrying a prop: get in range, then throw it.
   if (me.carrying !== null && !me.action) {
     if (d < 14 && bot.random() < 0.15) cmd.grab = true;
-    else walkTo(w, me, bot, foe.pos, cmd);
+    else walkTo(w, me, bot, chasePoint(w, me, bot, foe), cmd);
     bot.prevPos = { x: me.pos.x, z: me.pos.z };
     return cmd;
   }
@@ -180,7 +251,7 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
   }
   if (me.action) return cmd;
   if (w.time < bot.nextThinkAt) {
-    if (d > reach) walkTo(w, me, bot, foe.pos, cmd);
+    if (d > reach) walkTo(w, me, bot, chasePoint(w, me, bot, foe), cmd);
     bot.prevPos = { x: me.pos.x, z: me.pos.z };
     return cmd;
   }
@@ -231,8 +302,8 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
     return cmd;
   }
   if (bot.random() < 0.08 && me.energy >= 40) bot.strafe = -bot.strafe;
-  walkTo(w, me, bot, foe.pos, cmd);
-  if (w.time >= bot.detourUntil && cmd.move) {
+  walkTo(w, me, bot, chasePoint(w, me, bot, foe), cmd);
+  if (w.time >= bot.detourUntil && cmd.move && !perched) {
     const lateral = d < 6 ? 0.5 : 0.2;
     cmd.move = { x: toFoe.x - toFoe.z * bot.strafe * lateral, z: toFoe.z + toFoe.x * bot.strafe * lateral };
   }

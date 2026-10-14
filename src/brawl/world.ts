@@ -3,7 +3,9 @@
 // step(world, commands). Local input, bots and (later) the network all feed
 // the same Command type. Positions are metres, y is up, the floor is y = 0.
 
-import { OPEN_ARENA, buildArena, distToProp, pushOut, sightBlocked, type Arena, type Prop } from "./arena.ts";
+import {
+  EYE_HEIGHT, OPEN_ARENA, buildArena, distToProp, groundHeight, pushOut, sightBlocked, surfaceAt, type Arena, type Prop,
+} from "./arena.ts";
 import type { FighterKit, Special, Strike } from "./kit.ts";
 
 export interface V3 {
@@ -100,6 +102,8 @@ export const BRAWL_CONFIG: BrawlConfig = {
 
 /** Height of a fighter's hurtbox capsule, metres (shared by everyone for now). */
 export const FIGHTER_HEIGHT = 1.8;
+/** A walking fighter climbs any step up to this height (stairs, ramps) without jumping. */
+export const STEP_UP = 0.45;
 
 export type Action =
   | { kind: "light"; index: number; t: number; hit: boolean }
@@ -290,7 +294,8 @@ export const SENSE_RANGE = 2.5;
 
 /** True if nothing tall stands between the two fighters (they can see each other). */
 export const canSee = (w: BrawlWorld, a: Fighter, b: Fighter) =>
-  hdist(a.pos, b.pos) <= SENSE_RANGE || !sightBlocked(w.arena, a.pos, b.pos);
+  hdist(a.pos, b.pos) <= SENSE_RANGE ||
+  !sightBlocked(w.arena, { ...a.pos, y: a.pos.y + EYE_HEIGHT }, { ...b.pos, y: b.pos.y + EYE_HEIGHT });
 export const isInvulnerable = (w: BrawlWorld, f: Fighter) => 
   f.invulnerableUntil > w.time || (f.action?.kind === "dodge" && f.action.t < w.config.dodgeInvulnerable);
 
@@ -314,7 +319,7 @@ function clampToArena(w: BrawlWorld, f: Fighter): void {
   const speed = Math.hypot(f.vel.x, f.vel.z);
   let struck: Prop | null | undefined; // undefined = nothing, null = arena wall
   for (const p of props)
-    if (p.alive && f.pos.y < p.height - 0.05 && pushOut(p, f.pos, r)) struck = p;
+    if (p.alive && f.pos.y + STEP_UP < topAtContact(p, f) && pushOut(p, f.pos, r)) struck = p;
   const x = Math.max(-halfW + r, Math.min(halfW - r, f.pos.x));
   const z = Math.max(-halfD + r, Math.min(halfD - r, f.pos.z));
   if (x !== f.pos.x || z !== f.pos.z) struck ??= null;
@@ -338,11 +343,19 @@ function slam(w: BrawlWorld, f: Fighter, speed: number, prop: Prop | null): void
   damage(w, src, f, amount);
 }
 
-/** Height of the highest prop top under the fighter that its feet were above at height `y`. */
+/** Height of the prop's top where the fighter touches it (matters for ramps and their sides). */
+function topAtContact(p: Prop, f: Fighter): number {
+  return surfaceAt(p, f.pos.x, f.pos.z);
+}
+
+/** Height of the highest top under the fighter that is not above `y` (+ a small tolerance). */
 function supportHeight(w: BrawlWorld, f: Fighter, y = f.pos.y): number {
   let top = 0;
-  for (const p of w.arena.props)
-    if (p.alive && p.height > top && p.height <= y + 0.05 && distToProp(p, f.pos.x, f.pos.z) < f.kit.stats.radius * 0.5) top = p.height;
+  for (const p of w.arena.props) {
+    if (!p.alive || distToProp(p, f.pos.x, f.pos.z) >= f.kit.stats.radius * 0.5) continue;
+    const s = surfaceAt(p, f.pos.x, f.pos.z);
+    if (s > top && s <= y + 0.05) top = s;
+  }
   return top;
 }
 
@@ -498,12 +511,22 @@ function startSpecial(w: BrawlWorld, f: Fighter, slot: number): void {
   w.events.push({ t: w.time, type: "special", unit: f.id, slot });
 }
 
+/** Unit 3D direction from `from` to the locked target's body (straight ahead if none). */
+function aimAt(w: BrawlWorld, f: Fighter, from: V3): V3 {
+  const t = lockTarget(w, f);
+  if (!t) return { ...f.facing };
+  const c = bodyCenter(t);
+  const d = { x: c.x - from.x, y: c.y - from.y, z: c.z - from.z };
+  const l = Math.hypot(d.x, d.y, d.z);
+  return l > 1e-9 ? { x: d.x / l, y: d.y / l, z: d.z / l } : { ...f.facing };
+}
+
 function fireSpecial(w: BrawlWorld, f: Fighter, slot: number, sp: Special): void {
   const d = sp.delivery;
   switch (d.type) {
     case "projectile":
       w.projectiles.push({
-        owner: f.id, team: f.team, slot, pos: bodyCenter(f), dir: { ...f.facing }, speed: d.speed, remaining: d.range, size: d.size,
+        owner: f.id, team: f.team, slot, pos: bodyCenter(f), dir: aimAt(w, f, bodyCenter(f)), speed: d.speed, remaining: d.range, size: d.size,
       });
       return;
     case "rush":
@@ -512,9 +535,13 @@ function fireSpecial(w: BrawlWorld, f: Fighter, slot: number, sp: Special): void
     case "area": {
       const t = lockTarget(w, f);
       const reach = Math.min(t ? hdist(f.pos, t.pos) : d.castRange, d.castRange);
+      const x = f.pos.x + f.facing.x * reach;
+      const z = f.pos.z + f.facing.z * reach;
+      // On the level of whatever stands there: the target's floor, a roof, or the ground.
+      const y = t && reach >= hdist(f.pos, t.pos) - 0.5 ? t.floor : groundHeight(w.arena, x, z);
       w.zones.push({
         owner: f.id, team: f.team, slot, radius: d.radius, createdAt: w.time, triggerAt: w.time + d.delay,
-        center: { x: f.pos.x + f.facing.x * reach, y: 0, z: f.pos.z + f.facing.z * reach },
+        center: { x, y, z },
       });
       return;
     }
@@ -710,7 +737,7 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
         p.flying = true;
         w.projectiles.push({
           owner: f.id, team: f.team, slot: -1, pos: { x: f.pos.x, y: f.pos.y + FIGHTER_HEIGHT * 0.8, z: f.pos.z },
-          dir: { ...f.facing }, speed: c.throwSpeed, remaining: c.throwRange, size: Math.max(p.halfW, p.halfD),
+          dir: aimAt(w, f, { x: f.pos.x, y: f.pos.y + FIGHTER_HEIGHT * 0.8, z: f.pos.z }), speed: c.throwSpeed, remaining: c.throwRange, size: Math.max(p.halfW, p.halfD),
           prop: p.id, hit: { damage: t.damage, hitstun: t.hitstun, knockback: t.knockback, guardBreak: false, by: "throw" },
         });
         w.events.push({ t: w.time, type: "throw", unit: f.id, prop: p.id });
@@ -732,7 +759,17 @@ function physics(w: BrawlWorld, f: Fighter): void {
     f.vel.x *= k;
     f.vel.z *= k;
   }
+  const wasGrounded = f.pos.y <= f.floor + 1e-6 && f.vel.y <= 0;
   clampToArena(w, f);
+  if (wasGrounded) {
+    // Walking: climb steps and slopes up to STEP_UP, follow them down by as much; a bigger drop is a fall.
+    const support = supportHeight(w, f, f.pos.y + STEP_UP);
+    if (support >= f.pos.y - STEP_UP) {
+      f.pos.y = support;
+      f.floor = support;
+      return;
+    }
+  }
   f.floor = supportHeight(w, f);
   if (f.pos.y > f.floor || f.vel.y > 0) {
     const before = f.pos.y;
@@ -780,6 +817,7 @@ function stepProjectiles(w: BrawlWorld): void {
     };
     const stepLen = Math.min(p.remaining, p.speed * dt);
     p.pos.x += p.dir.x * stepLen;
+    p.pos.y += p.dir.y * stepLen;
     p.pos.z += p.dir.z * stepLen;
     p.remaining -= stepLen;
     if (p.prop !== undefined) {
@@ -794,12 +832,14 @@ function stepProjectiles(w: BrawlWorld): void {
       if (applyHit(w, owner, o, hit, { x: p.pos.x - p.dir.x, y: 0, z: p.pos.z - p.dir.z })) return finish();
     }
     // Props stop projectiles (and take the damage if they can break).
-    const wall = w.arena.props.find((pr) => pr.alive && p.pos.y < pr.height && distToProp(pr, p.pos.x, p.pos.z) <= p.size * 0.5);
+    const wall = w.arena.props.find(
+      (pr) => pr.alive && p.pos.y < surfaceAt(pr, p.pos.x, p.pos.z) && distToProp(pr, p.pos.x, p.pos.z) <= p.size * 0.5,
+    );
     if (wall) {
       damageProp(w, owner, wall, hit.damage);
       return finish();
     }
-    const inside = Math.abs(p.pos.x) < w.arena.halfW && Math.abs(p.pos.z) < w.arena.halfD;
+    const inside = Math.abs(p.pos.x) < w.arena.halfW && Math.abs(p.pos.z) < w.arena.halfD && p.pos.y > 0;
     return p.remaining > 1e-9 && inside ? true : finish();
   });
 }
@@ -810,7 +850,10 @@ function stepZones(w: BrawlWorld): void {
     const owner = w.fighters[z.owner]!;
     const sp = owner.kit.specials[z.slot]!;
     for (const o of w.fighters)
-      if (o.team !== z.team && o.alive && hdist(o.pos, z.center) <= z.radius + o.kit.stats.radius && o.pos.y < o.floor + 1.5)
+      if (
+        o.team !== z.team && o.alive && hdist(o.pos, z.center) <= z.radius + o.kit.stats.radius &&
+        Math.abs(o.floor - z.center.y) < 0.6 && o.pos.y < o.floor + 1.5
+      )
         applyHit(w, owner, o, specialHit(sp), z.center);
     for (const p of w.arena.props) if (p.alive && distToProp(p, z.center.x, z.center.z) <= z.radius) damageProp(w, owner, p, sp.damage);
     return false;

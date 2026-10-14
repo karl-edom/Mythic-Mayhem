@@ -1,7 +1,7 @@
 {
  "schemaVersion": 1,
  "id": "clairiere",
- "name": "Clairi\u00e8re des ruines",
+ "name": "Clairière des ruines",
  "width": 56,
  "depth": 40,
  "ground": "#cdeb9a",
@@ -17,14 +17,48 @@
  ],
  "props": [
   {
-   "kind": "tree",
-   "x": -22,
-   "z": -14
+   "kind": "platform",
+   "x": -15,
+   "z": -8
+  },
+  {
+   "kind": "ramp",
+   "x": -9,
+   "z": -8,
+   "dir": "-x"
+  },
+  {
+   "kind": "platform",
+   "x": 15,
+   "z": 8
+  },
+  {
+   "kind": "ramp",
+   "x": 9,
+   "z": 8,
+   "dir": "+x"
+  },
+  {
+   "kind": "terrace",
+   "x": 0,
+   "z": 0
+  },
+  {
+   "kind": "stairs",
+   "x": 6.75,
+   "z": 0,
+   "dir": "-x"
+  },
+  {
+   "kind": "stairs",
+   "x": -6.75,
+   "z": 0,
+   "dir": "+x"
   },
   {
    "kind": "tree",
-   "x": -18,
-   "z": -9
+   "x": -22,
+   "z": -15
   },
   {
    "kind": "tree",
@@ -34,11 +68,11 @@
   {
    "kind": "tree",
    "x": -19,
-   "z": 13
+   "z": 14
   },
   {
    "kind": "tree",
-   "x": -12,
+   "x": -11,
    "z": 16
   },
   {
@@ -48,53 +82,48 @@
   },
   {
    "kind": "tree",
-   "x": 6,
+   "x": 7,
    "z": 15
   },
   {
    "kind": "tree",
    "x": 14,
-   "z": -15
+   "z": -16
   },
   {
    "kind": "tree",
-   "x": 20,
-   "z": -8
+   "x": 22,
+   "z": -9
   },
   {
    "kind": "tree",
    "x": 24,
-   "z": 3
+   "z": 4
   },
   {
    "kind": "tree",
    "x": 19,
-   "z": 13
+   "z": 15
   },
   {
    "kind": "tree",
-   "x": 10,
-   "z": 7
+   "x": -6,
+   "z": 8
   },
   {
    "kind": "tree",
-   "x": -9,
-   "z": -5
-  },
-  {
-   "kind": "tree",
-   "x": 4,
-   "z": -7
+   "x": 6,
+   "z": -9
   },
   {
    "kind": "rock",
    "x": -14,
-   "z": 0
+   "z": 2
   },
   {
    "kind": "rock",
    "x": 13,
-   "z": 0
+   "z": -1
   },
   {
    "kind": "rock",
@@ -109,16 +138,16 @@
   {
    "kind": "wall",
    "x": -6,
-   "z": 4
+   "z": 5
   },
   {
    "kind": "wall",
    "x": 7,
-   "z": -4
+   "z": -5
   },
   {
    "kind": "wall",
-   "x": -21,
+   "x": -22,
    "z": -2,
    "rotated": true
   },
@@ -130,93 +159,93 @@
   },
   {
    "kind": "pillar",
-   "x": -2,
-   "z": 3
+   "x": -20,
+   "z": -4
   },
   {
    "kind": "pillar",
-   "x": 3,
-   "z": -2
+   "x": 20,
+   "z": 3
   },
   {
    "kind": "crate",
    "x": -10,
-   "z": 8
+   "z": 9
   },
   {
    "kind": "crate",
    "x": -9,
-   "z": 9.3
+   "z": 10.3
   },
   {
    "kind": "crate",
    "x": 9,
-   "z": -9
+   "z": -10
   },
   {
    "kind": "crate",
    "x": 10.3,
-   "z": -9.3
+   "z": -10.3
   },
   {
    "kind": "crate",
    "x": 16,
-   "z": 6
+   "z": -4
   },
   {
    "kind": "crate",
    "x": -16,
-   "z": -6
-  },
-  {
-   "kind": "crate",
-   "x": 1,
-   "z": 14
-  },
-  {
-   "kind": "crate",
-   "x": -1,
-   "z": -14
-  },
-  {
-   "kind": "crate",
-   "x": 5,
    "z": 4
   },
   {
    "kind": "crate",
-   "x": -5,
-   "z": -3
+   "x": 2,
+   "z": 13
+  },
+  {
+   "kind": "crate",
+   "x": -2,
+   "z": -13
+  },
+  {
+   "kind": "crate",
+   "x": 4,
+   "z": 5
+  },
+  {
+   "kind": "crate",
+   "x": -3,
+   "z": -5
   },
   {
    "kind": "barrel",
    "x": -12,
-   "z": -12
+   "z": -13
   },
   {
    "kind": "barrel",
    "x": 12,
-   "z": 12
+   "z": 13
   },
   {
    "kind": "barrel",
    "x": -17,
-   "z": 10
+   "z": 11
   },
   {
    "kind": "barrel",
    "x": 17,
-   "z": -11
+   "z": -12
   },
   {
    "kind": "barrel",
    "x": 8,
-   "z": 9
+   "z": 12
   },
   {
    "kind": "barrel",
-   "x": -7,
-   "z": -8
+   "x": -4,
+   "z": -7
   }
  ]
 }

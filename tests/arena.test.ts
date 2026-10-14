@@ -160,3 +160,77 @@ test("projeté contre un rocher, on prend des dégâts en plus", () => {
   assert.ok(wall.fighters[1]!.hp < 900 - 30, `PV : ${wall.fighters[1]!.hp}`);
   assert.ok(wall.events.some((e) => e.type === "slam"));
 });
+
+// Étape A4 : la hauteur.
+
+/** A 6×6 platform 3 m high centred on x = 0, with a ramp on its east side rising westwards. */
+const tower: ArenaDef["props"] = [
+  { kind: "platform", x: 0, z: 0 },
+  { kind: "ramp", x: 6, z: 0, dir: "-x" },
+];
+
+test("on monte une rampe en marchant jusqu'au sommet d'une plateforme", () => {
+  const w = world(tower, 10, -15);
+  run(w, 1.7, () => [{ unit: 0, move: { x: -1, z: 0 } }]);
+  const a = w.fighters[0]!;
+  assert.ok(a.pos.x < 2.5, `x = ${a.pos.x}`);
+  assert.ok(Math.abs(a.pos.y - 3) < 1e-6, `y = ${a.pos.y}`);
+});
+
+test("une plateforme haute bloque le passage au sol ; on tombe de son bord", () => {
+  const w = world([{ kind: "platform", x: 0, z: 0 }], -6, 15);
+  run(w, 2, () => [{ unit: 0, move: { x: 1, z: 0 } }]);
+  assert.ok(w.fighters[0]!.pos.x <= -3.5 + 1e-6);
+  const top = world(tower, 10, -15);
+  run(top, 1.7, () => [{ unit: 0, move: { x: -1, z: 0 } }]); // en haut
+  run(top, 1.5, () => [{ unit: 0, move: { x: 0, z: 1 } }]); // vers le bord nord
+  assert.equal(top.fighters[0]!.pos.y, 0);
+});
+
+test("d'en haut, on voit par-dessus un muret qui cache au sol", () => {
+  const props: ArenaDef["props"] = [...tower, { kind: "wall", x: -6, z: 8, rotated: true }];
+  const w = world(props, -9, 8);
+  const [a, b] = w.fighters;
+  a!.pos = { x: -9, y: 0, z: 8 };
+  b!.pos = { x: -3, y: 0, z: 8 };
+  assert.equal(canSee(w, a!, b!), false, "au sol, le muret cache");
+  b!.pos = { x: 0, y: 3, z: 0 };
+  b!.floor = 3;
+  a!.pos = { x: -12, y: 0, z: 8 };
+  assert.equal(canSee(w, a!, b!), true, "le perché au-dessus du muret est visible");
+});
+
+test("un projectile vise un adversaire perché ; une zone au sol ne l'atteint pas", () => {
+  const w = world(tower, -8, 10);
+  const b = w.fighters[1]!;
+  b.pos = { x: 0, y: 3, z: 0 };
+  b.floor = 3;
+  w.fighters[0]!.pos = { x: -14, y: 0, z: 0 }; // assez loin pour que le tir passe au-dessus du bord
+  step(w, [{ unit: 0, special: 0 }]);
+  run(w, 1.5);
+  assert.equal(b.hp, 900, "le tir atteint le haut de la plateforme");
+  // Une zone posée au sol, au pied de la plateforme, ne touche pas celui qui est perché.
+  const z = world(tower, -8, 10);
+  const perched = z.fighters[1]!;
+  perched.pos = { x: -2.6, y: 3, z: 0 };
+  perched.floor = 3;
+  z.zones.push({ owner: 0, team: 0, slot: 0, center: { x: -3.5, y: 0, z: 0 }, radius: 2, createdAt: 0, triggerAt: z.time + 0.05 });
+  run(z, 0.2);
+  assert.equal(perched.hp, 1000);
+});
+
+test("le bot rejoint par la rampe un adversaire perché sur une plateforme", async () => {
+  const { botCommand, createBot } = await import("../src/brawl/bot.ts");
+  const { rng } = await import("../src/sim/math.ts");
+  const w = world(tower, -12, 0);
+  const target = w.fighters[1]!;
+  target.pos = { x: -1, y: 3, z: 1 };
+  target.floor = 3;
+  const bot = createBot(rng(3));
+  let reached = false;
+  for (let i = 0; i < 30 * w.config.tickRate && !reached; i++) {
+    step(w, [botCommand(w, w.fighters[0]!, bot)]);
+    reached = w.fighters[0]!.pos.y >= 3 - 1e-6;
+  }
+  assert.ok(reached, `le bot reste en bas (x = ${w.fighters[0]!.pos.x.toFixed(1)}, z = ${w.fighters[0]!.pos.z.toFixed(1)})`);
+});

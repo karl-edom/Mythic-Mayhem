@@ -7,7 +7,13 @@ import { Reader } from "../sim/validate.ts";
 
 export type PropShape =
   | { type: "box"; width: number; depth: number; height: number }
-  | { type: "cylinder"; radius: number; height: number };
+  | { type: "cylinder"; radius: number; height: number }
+  /** Walkable slope (or stairs): rises from 0 to `height` over `length`; `width` across. */
+  | { type: "ramp"; width: number; length: number; height: number };
+
+/** Direction a ramp rises towards. */
+export type RampDir = "+x" | "-x" | "+z" | "-z";
+export const RAMP_DIRS: readonly RampDir[] = ["+x", "-x", "+z", "-z"];
 
 /** One entry of the prop catalogue. */
 export interface PropKind {
@@ -34,7 +40,7 @@ export interface ArenaDef {
   /** Floor colour, display only. */
   ground: string;
   spawns: { x: number; z: number }[];
-  props: { kind: string; x: number; z: number; rotated?: boolean }[];
+  props: { kind: string; x: number; z: number; rotated?: boolean; dir?: RampDir }[];
 }
 
 export interface Prop {
@@ -46,6 +52,8 @@ export interface Prop {
   halfW: number;
   halfD: number;
   height: number;
+  /** For ramps: the axis and sign it rises along; null for flat tops. */
+  rise: { axis: "x" | "z"; sign: 1 | -1 } | null;
   hp: number;
   /** Standing in the arena (blocks movement, sight and projectiles). */
   alive: boolean;
@@ -62,8 +70,8 @@ export interface Arena {
   props: Prop[];
 }
 
-/** Props at least this tall hide a standing fighter. */
-export const SIGHT_HEIGHT = 1.6;
+/** Eye height above the feet, for line of sight. */
+export const EYE_HEIGHT = 1.6;
 
 /** An open training floor, used when no arena is given (tests, tools). */
 export const OPEN_ARENA: ArenaDef = {
@@ -88,10 +96,40 @@ export function buildArena(def: ArenaDef, catalog: PropCatalog): Arena {
     props: def.props.map((p, id) => {
       const kind = catalog[p.kind]!;
       const s = kind.shape;
-      const [w, d] = s.type === "box" ? (p.rotated ? [s.depth, s.width] : [s.width, s.depth]) : [s.radius * 2, s.radius * 2];
-      return { id, kind, x: p.x, z: p.z, halfW: w / 2, halfD: d / 2, height: s.height, hp: kind.hp ?? Infinity, alive: true, held: null, flying: false };
+      let rise: Prop["rise"] = null;
+      let [w, d] = [0, 0];
+      if (s.type === "box") [w, d] = p.rotated ? [s.depth, s.width] : [s.width, s.depth];
+      else if (s.type === "cylinder") [w, d] = [s.radius * 2, s.radius * 2];
+      else {
+        const dir = p.dir ?? "+z";
+        rise = { axis: dir[1] as "x" | "z", sign: dir[0] === "+" ? 1 : -1 };
+        [w, d] = rise.axis === "x" ? [s.length, s.width] : [s.width, s.length];
+      }
+      return {
+        id, kind, x: p.x, z: p.z, halfW: w / 2, halfD: d / 2, height: s.height, rise,
+        hp: kind.hp ?? Infinity, alive: true, held: null, flying: false,
+      };
     }),
   };
+}
+
+/**
+ * Height of the prop's top above (x, z), the point being clamped into the footprint.
+ * Flat for boxes and cylinders, a slope for ramps.
+ */
+export function surfaceAt(p: Prop, x: number, z: number): number {
+  if (!p.rise) return p.height;
+  const half = p.rise.axis === "x" ? p.halfW : p.halfD;
+  const along = p.rise.sign * ((p.rise.axis === "x" ? x - p.x : z - p.z));
+  const t = (Math.max(-half, Math.min(half, along)) + half) / (2 * half);
+  return p.height * t;
+}
+
+/** Height of the walkable ground at (x, z): the highest prop top covering that point, or the floor. */
+export function groundHeight(arena: Arena, x: number, z: number): number {
+  let h = 0;
+  for (const p of arena.props) if (p.alive && distToProp(p, x, z) === 0) h = Math.max(h, surfaceAt(p, x, z));
+  return h;
 }
 
 /** Horizontal distance from (x, z) to the prop's footprint (0 inside). */
@@ -141,12 +179,27 @@ export function pushOut(p: Prop, pos: { x: number; z: number }, r: number): bool
 
 /** True if the floor segment a→b crosses the prop's footprint. */
 export function segmentHitsProp(p: Prop, a: { x: number; z: number }, b: { x: number; z: number }): boolean {
+  return segmentInterval(p, a, b) !== null;
+}
+
+/** The part [t0, t1] of segment a→b (t in 0..1) that lies over the prop's footprint, or null. */
+export function segmentInterval(p: Prop, a: { x: number; z: number }, b: { x: number; z: number }): [number, number] | null {
   const dx = b.x - a.x;
   const dz = b.z - a.z;
   if (p.kind.shape.type === "cylinder") {
-    const l2 = dx * dx + dz * dz;
-    const t = l2 === 0 ? 0 : Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.z - a.z) * dz) / l2));
-    return Math.hypot(a.x + dx * t - p.x, a.z + dz * t - p.z) < p.halfW;
+    // Solve |a + t·d − c|² = r².
+    const fx = a.x - p.x;
+    const fz = a.z - p.z;
+    const A = dx * dx + dz * dz;
+    const B = 2 * (fx * dx + fz * dz);
+    const C = fx * fx + fz * fz - p.halfW * p.halfW;
+    if (A < 1e-12) return C < 0 ? [0, 1] : null;
+    const disc = B * B - 4 * A * C;
+    if (disc <= 0) return null;
+    const q = Math.sqrt(disc);
+    const t0 = Math.max(0, (-B - q) / (2 * A));
+    const t1 = Math.min(1, (-B + q) / (2 * A));
+    return t0 < t1 ? [t0, t1] : null;
   }
   // Slab test.
   let t0 = 0;
@@ -156,7 +209,7 @@ export function segmentHitsProp(p: Prop, a: { x: number; z: number }, b: { x: nu
     [a.z, dz, p.z - p.halfD, p.z + p.halfD],
   ] as const) {
     if (Math.abs(d) < 1e-12) {
-      if (o < lo || o > hi) return false;
+      if (o < lo || o > hi) return null;
       continue;
     }
     let ta = (lo - o) / d;
@@ -164,14 +217,28 @@ export function segmentHitsProp(p: Prop, a: { x: number; z: number }, b: { x: nu
     if (ta > tb) [ta, tb] = [tb, ta];
     t0 = Math.max(t0, ta);
     t1 = Math.min(t1, tb);
-    if (t0 > t1) return false;
+    if (t0 > t1) return null;
   }
-  return true;
+  return [t0, t1];
 }
 
-/** True if a standing-height prop stands between the two points. */
-export function sightBlocked(arena: Arena, a: { x: number; z: number }, b: { x: number; z: number }): boolean {
-  return arena.props.some((p) => p.alive && p.height >= SIGHT_HEIGHT && segmentHitsProp(p, a, b));
+type P3 = { x: number; y: number; z: number };
+
+/**
+ * True if a prop stands between two eyes (3D points): the sight line passes over
+ * the prop's footprint lower than its top. From a roof, one sees over walls.
+ */
+export function sightBlocked(arena: Arena, a: P3, b: P3): boolean {
+  return arena.props.some((p) => {
+    if (!p.alive) return false;
+    const iv = segmentInterval(p, a, b);
+    if (!iv) return false;
+    return iv.some((t) => {
+      const x = a.x + (b.x - a.x) * t;
+      const z = a.z + (b.z - a.z) * t;
+      return a.y + (b.y - a.y) * t < surfaceAt(p, x, z);
+    });
+  });
 }
 
 /** Hard limits for arena files. */
@@ -211,7 +278,11 @@ export function validateArena(data: unknown, catalog: PropCatalog): ArenaValidat
       r.errors.push(`arena.props[${i}].kind: élément inconnu "${String(kind)}" (voir data/arenas/props.json)`);
       return undefined;
     }
-    return { kind, x: p.x, z: p.z, rotated: p.raw.rotated === true };
+    const isRamp = catalog[kind]!.shape.type === "ramp";
+    const dir = p.raw.dir;
+    if (isRamp && !RAMP_DIRS.includes(dir as RampDir))
+      r.errors.push(`arena.props[${i}].dir: une rampe indique vers où elle monte (${RAMP_DIRS.join(", ")})`);
+    return { kind, x: p.x, z: p.z, rotated: p.raw.rotated === true, ...(isRamp ? { dir: dir as RampDir } : {}) };
   });
   if (r.errors.length > 0) return { ok: false, errors: r.errors };
 

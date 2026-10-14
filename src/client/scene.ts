@@ -43,7 +43,43 @@ function buildProp(p: Prop): THREE.Group {
     g.add(m);
     return m;
   };
+  if (p.rise) {
+    // Ramps and stairs: built along local +x rising, then turned to face their direction.
+    const run = p.rise.axis === "x" ? w : d;
+    const across = p.rise.axis === "x" ? d : w;
+    const body = new THREE.Group();
+    if (p.kind.look === "stairs") {
+      const n = Math.max(2, Math.round(h / 0.3));
+      for (let i = 0; i < n; i++) {
+        const sh = (h * (i + 1)) / n;
+        const step = new THREE.Mesh(new THREE.BoxGeometry(run / n, sh, across), mat(p.kind.color));
+        step.position.set(-run / 2 + (run / n) * (i + 0.5), sh / 2, 0);
+        step.castShadow = step.receiveShadow = true;
+        body.add(step);
+      }
+    } else {
+      const tri = new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(run, 0), new THREE.Vector2(run, h)]);
+      const geo = new THREE.ExtrudeGeometry(tri, { depth: across, bevelEnabled: false });
+      geo.translate(-run / 2, 0, -across / 2);
+      const wedge = new THREE.Mesh(geo, mat(p.kind.color));
+      wedge.castShadow = wedge.receiveShadow = true;
+      body.add(wedge);
+    }
+    // Local +x → world rising direction.
+    body.rotation.y = p.rise.axis === "x" ? (p.rise.sign > 0 ? 0 : Math.PI) : p.rise.sign > 0 ? -Math.PI / 2 : Math.PI / 2;
+    g.add(body);
+    return g;
+  }
   switch (p.kind.look) {
+    case "platform":
+    case "terrace":
+    case "tower": {
+      add(new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(p.kind.color)), h / 2);
+      // A lighter rim on top reads as "you can stand here".
+      const rim = add(new THREE.Mesh(new THREE.BoxGeometry(w + 0.1, 0.15, d + 0.1), mat(0xf4ecd8)), h - 0.07);
+      rim.castShadow = false;
+      break;
+    }
     case "tree":
       add(new THREE.Mesh(new THREE.CylinderGeometry(p.halfW * 0.7, p.halfW, h * 0.45, 12), mat(0xa47148)), h * 0.225);
       add(new THREE.Mesh(new THREE.SphereGeometry(p.halfW * 2.2, 16, 12), mat(p.kind.color)), h * 0.72);
@@ -464,7 +500,7 @@ export class ArenaView {
         fill.name = "fill";
         g.add(ring, fill);
         g.rotation.x = -Math.PI / 2;
-        g.position.set(z.center.x, 0.03, z.center.z);
+        g.position.set(z.center.x, z.center.y + 0.03, z.center.z);
         this.scene.add(g);
         this.zones.set(z, g);
       }
