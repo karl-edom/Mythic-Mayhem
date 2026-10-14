@@ -1,11 +1,31 @@
 {
   "version": 1,
   "note": "Coefficients PROVISOIRES du budget brawler (contrat v2), non calibrés. À ajuster par simulation bot contre bot, jamais personnage par personnage.",
-  "budget": { "min": 90, "max": 100 },
-  "survival": { "pointsAtBaseHp": 30, "hpBase": 1000, "weightFactor": 0.5, "pointsPerRadiusAboveBase": 20, "radiusBase": 0.5 },
-  "mobility": { "pointsPerMoveSpeed": 2, "pointsPerJumpSpeed": 0.3 },
-  "light": { "pointsPerDps": 0.12, "reachFactorPerMetre": 0.15, "reachBase": 1.5, "pointsPerSecondOfFastStartup": 30, "startupBase": 0.2 },
-  "heavy": { "pointsPerDps": 0.04 },
+  "budget": {
+    "min": 90,
+    "max": 100
+  },
+  "survival": {
+    "pointsAtBaseHp": 30,
+    "hpBase": 1000,
+    "weightFactor": 0.5,
+    "pointsPerRadiusAboveBase": 20,
+    "radiusBase": 0.5
+  },
+  "mobility": {
+    "pointsPerMoveSpeed": 2,
+    "pointsPerJumpSpeed": 0.3
+  },
+  "light": {
+    "pointsPerDps": 0.12,
+    "reachFactorPerMetre": 0.15,
+    "reachBase": 1.5,
+    "pointsPerSecondOfFastStartup": 30,
+    "startupBase": 0.2
+  },
+  "heavy": {
+    "pointsPerDps": 0.04
+  },
   "special": {
     "pointsPerDamagePerEnergy": 3,
     "guardBreakFactor": 1.3,
@@ -16,6 +36,16 @@
     "areaCastRangeFactor": 0.02,
     "areaRadiusFactor": 0.1,
     "areaDelayDiscountPerSecond": 0.3,
-    "areaMaxDelayDiscount": 0.4
+    "areaMaxDelayDiscount": 0.4,
+    "deliveryFactor": {
+      "projectile": 1,
+      "rush": 1,
+      "area": 1
+    },
+    "extraSpecialWeights": [
+      1,
+      0.35,
+      0.2
+    ]
   }
 }

@@ -151,3 +151,26 @@ test("les combattants d'origine sont valides et un duel de bots se termine, de f
   assert.equal(r1.world.over, true);
   assert.deepEqual([r1.winner, r1.duration, r1.score], [r2.winner, r2.duration, r2.score]);
 });
+
+test("budget : une 2e et une 3e spéciale coûtent moins que la première (même jauge d'énergie)", async () => {
+  const { fighterBudget } = await import("../src/brawl/budget.ts");
+  const costs = loadBrawlCosts();
+  const shot: Special = {
+    id: "a", energyCost: 30, startup: 0.2, recovery: 0.3, delivery: { type: "projectile", speed: 15, range: 10, size: 0.5 },
+    damage: 90, hitstun: 0.4, knockback: 4, guardBreak: false,
+  };
+  const one = fighterBudget(fighter([shot]), costs).total;
+  const two = fighterBudget(fighter([shot, { ...shot, id: "b" }]), costs).total;
+  const line = fighterBudget(fighter([shot]), costs).lines.find((l) => l.label === "special:a")!.points;
+  assert.ok(two - one < line * 0.5, `la 2e spéciale coûte ${(two - one).toFixed(1)} pour ${line.toFixed(1)} la 1re`);
+});
+
+test("générateur : des kits aléatoires valides, ramenés au budget visé", async () => {
+  const { randomRoster } = await import("../src/brawl/generate.ts");
+  const { fighterBudget } = await import("../src/brawl/budget.ts");
+  const { rng } = await import("../src/sim/math.ts");
+  const costs = loadBrawlCosts();
+  const kits = randomRoster(rng(5), 10, costs, 95);
+  assert.equal(kits.length, 10);
+  for (const k of kits) assert.ok(Math.abs(fighterBudget(k, costs).total - 95) < 1.5);
+});

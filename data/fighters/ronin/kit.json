@@ -2,34 +2,117 @@
   "schemaVersion": 2,
   "id": "ronin",
   "archetype": "rushdown",
-  "stats": { "hp": 850, "moveSpeed": 7.5, "jumpSpeed": 10, "weight": 0.9, "radius": 0.45 },
+  "stats": {
+    "hp": 850,
+    "moveSpeed": 7.5,
+    "jumpSpeed": 10,
+    "weight": 0.9,
+    "radius": 0.45
+  },
   "light": {
     "hits": [
-      { "damage": 28, "startup": 0.1, "active": 0.08, "recovery": 0.18, "reach": 1.1, "size": 0.7, "hitstun": 0.35, "knockback": 2 },
-      { "damage": 28, "startup": 0.1, "active": 0.08, "recovery": 0.18, "reach": 1.1, "size": 0.7, "hitstun": 0.35, "knockback": 2 },
-      { "damage": 32, "startup": 0.12, "active": 0.08, "recovery": 0.2, "reach": 1.2, "size": 0.7, "hitstun": 0.4, "knockback": 3 },
-      { "damage": 50, "startup": 0.15, "active": 0.1, "recovery": 0.4, "reach": 1.3, "size": 0.8, "hitstun": 0.6, "knockback": 14 }
+      {
+        "damage": 39,
+        "startup": 0.1,
+        "active": 0.08,
+        "recovery": 0.18,
+        "reach": 1.1,
+        "size": 0.7,
+        "hitstun": 0.35,
+        "knockback": 2
+      },
+      {
+        "damage": 39,
+        "startup": 0.1,
+        "active": 0.08,
+        "recovery": 0.18,
+        "reach": 1.1,
+        "size": 0.7,
+        "hitstun": 0.35,
+        "knockback": 2
+      },
+      {
+        "damage": 45,
+        "startup": 0.12,
+        "active": 0.08,
+        "recovery": 0.2,
+        "reach": 1.2,
+        "size": 0.7,
+        "hitstun": 0.4,
+        "knockback": 3
+      },
+      {
+        "damage": 70,
+        "startup": 0.15,
+        "active": 0.1,
+        "recovery": 0.4,
+        "reach": 1.3,
+        "size": 0.8,
+        "hitstun": 0.6,
+        "knockback": 14
+      }
     ]
   },
   "heavy": {
-    "damage": 110, "startup": 0.45, "active": 0.1, "recovery": 0.5, "reach": 1.4, "size": 0.9,
-    "hitstun": 0.6, "knockback": 14, "maxCharge": 1, "chargeBonus": 1.6
+    "damage": 154,
+    "startup": 0.45,
+    "active": 0.1,
+    "recovery": 0.5,
+    "reach": 1.4,
+    "size": 0.9,
+    "hitstun": 0.6,
+    "knockback": 14,
+    "maxCharge": 1,
+    "chargeBonus": 1.6
   },
   "specials": [
     {
-      "id": "iai", "energyCost": 30, "startup": 0.2, "recovery": 0.4,
-      "delivery": { "type": "rush", "distance": 7, "speed": 25, "size": 0.8 },
-      "damage": 120, "hitstun": 0.6, "knockback": 13, "guardBreak": false
+      "id": "iai",
+      "energyCost": 30,
+      "startup": 0.2,
+      "recovery": 0.4,
+      "delivery": {
+        "type": "rush",
+        "distance": 7,
+        "speed": 25,
+        "size": 0.8
+      },
+      "damage": 167,
+      "hitstun": 0.6,
+      "knockback": 13,
+      "guardBreak": false
     },
     {
-      "id": "croissant", "energyCost": 25, "startup": 0.25, "recovery": 0.35,
-      "delivery": { "type": "projectile", "speed": 18, "range": 12, "size": 0.6 },
-      "damage": 80, "hitstun": 0.5, "knockback": 6, "guardBreak": false
+      "id": "croissant",
+      "energyCost": 25,
+      "startup": 0.25,
+      "recovery": 0.35,
+      "delivery": {
+        "type": "projectile",
+        "speed": 18,
+        "range": 12,
+        "size": 0.6
+      },
+      "damage": 112,
+      "hitstun": 0.5,
+      "knockback": 6,
+      "guardBreak": false
     },
     {
-      "id": "tourbillon", "energyCost": 50, "startup": 0.1, "recovery": 0.5,
-      "delivery": { "type": "area", "castRange": 0, "radius": 2.5, "delay": 0.5 },
-      "damage": 160, "hitstun": 0.7, "knockback": 14, "guardBreak": true
+      "id": "tourbillon",
+      "energyCost": 50,
+      "startup": 0.1,
+      "recovery": 0.5,
+      "delivery": {
+        "type": "area",
+        "castRange": 0,
+        "radius": 2.5,
+        "delay": 0.5
+      },
+      "damage": 223,
+      "hitstun": 0.7,
+      "knockback": 14,
+      "guardBreak": true
     }
   ]
 }

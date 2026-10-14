@@ -2,9 +2,15 @@
 //   node tools/brawl.ts                 → validation + budget of every pack
 //   node tools/brawl.ts --duels 200     → round-robin duels between valid fighters
 //   node tools/brawl.ts --duels 40 --arena clairiere   → same, on a given arena
+//   node tools/brawl.ts --fit [--target 95]            → bring every pack back to the budget
+//                                                        by scaling its damage only (rewrites kit.json)
 
 import { runDuel } from "../src/brawl/match.ts";
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { buildArena } from "../src/brawl/arena.ts";
+import { fitFighter } from "../src/brawl/generate.ts";
+import { ROOT_DIR, loadBrawlCosts } from "../src/brawl/load.ts";
 import { loadAllPacks, loadArenas, loadPropCatalog } from "../src/brawl/load.ts";
 import type { FighterKit } from "../src/brawl/kit.ts";
 
@@ -17,6 +23,22 @@ const arenas = loadArenas(catalog);
 console.log(`Arènes : ${arenas.map((a) => `${a.name} (${a.id}, ${a.width}×${a.depth} m, ${a.props.length} éléments)`).join(" · ")}\n`);
 const arenaDef = arenaId ? arenas.find((a) => a.id === arenaId) : undefined;
 if (arenaId && !arenaDef) throw new Error(`arène inconnue : ${arenaId}`);
+
+if (args.includes("--fit")) {
+  const costs = loadBrawlCosts();
+  const target = Number(args[args.indexOf("--target") + 1] ?? NaN) || (costs.budget.min + costs.budget.max) / 2;
+  for (const p of loadAllPacks(costs)) {
+    const file = join(ROOT_DIR, p.dir, "kit.json");
+    const kit = JSON.parse(readFileSync(file, "utf8"));
+    const fitted = fitFighter(kit, costs, target);
+    if (!fitted) {
+      console.log(`✘ ${p.dir} : impossible d'atteindre ${target} points en changeant seulement les dégâts`);
+      continue;
+    }
+    writeFileSync(file, JSON.stringify(fitted, null, 2) + "\n");
+    console.log(`✔ ${p.dir} : dégâts ajustés pour ${target} points`);
+  }
+}
 
 const packs = loadAllPacks();
 for (const p of packs) {

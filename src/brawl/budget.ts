@@ -22,6 +22,14 @@ export interface BrawlCostTable {
     areaRadiusFactor: number;
     areaDelayDiscountPerSecond: number;
     areaMaxDelayDiscount: number;
+    /**
+     * All specials draw on the same energy gauge, so a second or third special adds
+     * choice, not more damage per match: the most expensive one is paid in full,
+     * the next ones at these weights.
+     */
+    extraSpecialWeights: number[];
+    /** Per-delivery price correction, set by calibration (1 = no correction). */
+    deliveryFactor: Record<Special["delivery"]["type"], number>;
   };
 }
 
@@ -57,7 +65,16 @@ export function specialMultiplier(sp: Special, c: BrawlCostTable): number {
 
 export function specialCost(sp: Special, c: BrawlCostTable): number {
   const gb = sp.guardBreak ? c.special.guardBreakFactor : 1;
-  return (sp.damage / sp.energyCost) * c.special.pointsPerDamagePerEnergy * specialMultiplier(sp, c) * gb;
+  const df = c.special.deliveryFactor?.[sp.delivery.type] ?? 1;
+  return (sp.damage / sp.energyCost) * c.special.pointsPerDamagePerEnergy * specialMultiplier(sp, c) * gb * df;
+}
+
+/** One line per special, weighted by rank (most expensive first, see extraSpecialWeights). */
+function specialLines(kit: FighterKit, c: BrawlCostTable): BudgetLine[] {
+  const ranked = kit.specials.map((sp) => ({ sp, cost: specialCost(sp, c) })).sort((a, b) => b.cost - a.cost);
+  const weights = c.special.extraSpecialWeights ?? [1, 1, 1];
+  const weightOf = new Map(ranked.map((r, i) => [r.sp, weights[i] ?? weights.at(-1) ?? 1]));
+  return kit.specials.map((sp) => ({ label: `special:${sp.id}`, points: specialCost(sp, c) * weightOf.get(sp)! }));
 }
 
 export function fighterBudget(kit: FighterKit, c: BrawlCostTable): BrawlBudget {
@@ -83,7 +100,7 @@ export function fighterBudget(kit: FighterKit, c: BrawlCostTable): BrawlBudget {
         (c.light.startupBase - firstStartup) * c.light.pointsPerSecondOfFastStartup,
     },
     { label: "lourde", points: ((h.damage * h.chargeBonus) / (length(h) + h.maxCharge)) * c.heavy.pointsPerDps },
-    ...kit.specials.map((sp) => ({ label: `special:${sp.id}`, points: specialCost(sp, c) })),
+    ...specialLines(kit, c),
   ];
   return { total: lines.reduce((s, l) => s + l.points, 0), lines };
 }

@@ -11,12 +11,14 @@ export interface BrawlBotParams {
   heavyRate: number;
   /** Seconds between decisions when nothing urgent happens (human-like hesitation). */
   thinkTime: number;
+  /** Chance per decision to fire an affordable special that can reach. */
+  specialRate: number;
 }
 
 export const BOT_LEVELS: Record<"facile" | "normal" | "difficile", BrawlBotParams> = {
-  facile: { reactivity: 0.15, heavyRate: 0.15, thinkTime: 0.35 },
-  normal: { reactivity: 0.4, heavyRate: 0.2, thinkTime: 0.2 },
-  difficile: { reactivity: 0.75, heavyRate: 0.25, thinkTime: 0.1 },
+  facile: { reactivity: 0.15, heavyRate: 0.15, thinkTime: 0.35, specialRate: 0.4 },
+  normal: { reactivity: 0.4, heavyRate: 0.2, thinkTime: 0.2, specialRate: 0.7 },
+  difficile: { reactivity: 0.75, heavyRate: 0.25, thinkTime: 0.1, specialRate: 0.85 },
 };
 
 export interface BrawlBot {
@@ -111,7 +113,7 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
     return cmd;
   }
   if (me.action?.kind === "charge") {
-    cmd.charge = me.energy < 90 && d > 9;
+    cmd.charge = me.energy < 90 && (d > 9 || !seen);
     return cmd;
   }
 
@@ -127,7 +129,11 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
     return cmd;
   }
 
-  // Opponent out of sight: follow the trail, then search the arena.
+  // Opponent out of sight: recharge if low, else follow the trail, then search the arena.
+  if (!seen && !me.action && me.energy < 60 && bot.random() < 0.3) {
+    cmd.charge = true;
+    return cmd;
+  }
   if (!seen && !me.action) {
     if (bot.lastSeen && w.time - bot.lastSeenAt < TRAIL_MEMORY && hdist(me.pos, { ...bot.lastSeen, y: 0 }) > 1) {
       walkTo(w, me, bot, bot.lastSeen, cmd);
@@ -180,7 +186,23 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
   }
   bot.nextThinkAt = w.time + p.thinkTime * (0.5 + bot.random());
 
+  // Affordable specials that can reach the opponent from here.
+  const usable = me.kit.specials
+    .map((sp, slot) => ({ sp, slot }))
+    .filter(({ sp }) => sp.energyCost <= me.energy)
+    .filter(({ sp }) => {
+      const del = sp.delivery;
+      if (del.type === "projectile") return d <= del.range;
+      if (del.type === "rush") return d <= del.distance + reach;
+      return d <= del.castRange + del.radius;
+    });
+
   if (d <= reach) {
+    // Up close, specials are a strong alternative to the combo.
+    if (usable.length > 0 && bot.random() < p.specialRate * 0.4) {
+      cmd.special = usable[Math.floor(bot.random() * usable.length)]!.slot;
+      return cmd;
+    }
     if (foe.action?.kind === "guard" || bot.random() < p.heavyRate) {
       bot.chargeHeavyUntil = w.time + bot.random() * me.kit.heavy.maxCharge * 0.5;
       cmd.heavy = true;
@@ -199,17 +221,8 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
     }
   }
 
-  // At range: pick an affordable special that can reach, or close the gap.
-  const usable = me.kit.specials
-    .map((sp, slot) => ({ sp, slot }))
-    .filter(({ sp }) => sp.energyCost <= me.energy)
-    .filter(({ sp }) => {
-      const del = sp.delivery;
-      if (del.type === "projectile") return d <= del.range;
-      if (del.type === "rush") return d <= del.distance + reach;
-      return d <= del.castRange + del.radius;
-    });
-  if (usable.length > 0 && bot.random() < 0.5) {
+  // At range: fire an affordable special that can reach, or close the gap.
+  if (usable.length > 0 && bot.random() < p.specialRate) {
     cmd.special = usable[Math.floor(bot.random() * usable.length)]!.slot;
     return cmd;
   }
