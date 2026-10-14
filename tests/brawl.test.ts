@@ -191,4 +191,6 @@ test("apparence : un look valide est lu, un look invalide est ignoré", async ()
   const ok = parseCharacter({ name: "X", look: { model: "mage", show: ["2H_Staff", "<script>"], tint: "#ff0000" } }, "x");
   assert.deepEqual(ok.look, { model: "mage", show: ["2H_Staff"], tint: "#ff0000" });
   assert.equal(parseCharacter({ look: { model: "dragon" } }, "x").look, undefined);
+  const anime = parseCharacter({ look: { model: "shino", show: ["Kunai"], tint: "#ffffff", hair: "#ff0000", outfit: "rouge" } }, "x");
+  assert.deepEqual(anime.look, { model: "shino", show: ["Kunai"], tint: "#ffffff", hair: "#ff0000" });
 });

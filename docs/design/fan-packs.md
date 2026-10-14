@@ -26,7 +26,7 @@ Ces packs se partagent directement entre amis (archive, clé USB, dossier partag
 
 ## Apparence
 
-`character.json` peut choisir un modèle 3D et ses accessoires (`look`, voir `docs/design/visuels.md`). Exemple pour un sabreur : `"look": { "model": "rogue_hooded", "show": ["Knife", "Rogue_Cape"], "tint": "#ffd0d0" }`.
+`character.json` peut choisir un modèle 3D et ses accessoires (`look`, voir `docs/design/visuels.md`). Exemple pour un sabreur : `"look": { "model": "kaito", "show": ["1H_Katana"], "tint": "#ffffff", "outfit": "#c04050" }` (avatars anime et armes : décision 0009).
 
 ## Univers demandés par le porteur de projet
 

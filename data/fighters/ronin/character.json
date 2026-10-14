@@ -7,11 +7,11 @@
     "secondary": "#ffd166"
   },
   "look": {
-    "model": "knight",
+    "model": "kaito",
     "show": [
-      "1H_Sword",
-      "Knight_Cape"
+      "1H_Katana"
     ],
-    "tint": "#ffe0e0"
+    "tint": "#ffffff",
+    "outfit": "#6b78c8"
   }
 }

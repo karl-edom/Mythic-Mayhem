@@ -18,7 +18,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "brawl:field": "node tools/brawl-field.ts",
-    "build:models": "node tools/build-models.ts"
+    "build:models": "node tools/build-models.ts",
+    "build:anime": "node tools/build-anime.ts"
   },
   "devDependencies": {
     "@gltf-transform/core": "4.5.1",
@@ -27,6 +28,7 @@
     "@types/node": "22.20.5",
     "@types/three": "0.186.0",
     "meshoptimizer": "1.3.0",
+    "sharp": "0.34.4",
     "typescript": "5.9.3",
     "vite": "8.3.1"
   },

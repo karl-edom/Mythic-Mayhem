@@ -1,6 +1,6 @@
 # 0008 — Direction artistique : anime cel-shading, modèles CC0
 
-Date : 2026-10-14. Statut : **acceptée** (« style anime, rendu professionnel ; OK pour des modèles CC0 »).
+Date : 2026-10-14. Statut : **acceptée** (« style anime, rendu professionnel ; OK pour des modèles CC0 »). Les personnages sont désormais les avatars anime de la décision 0009 ; les chibis KayKit restent disponibles et fournissent les animations.
 
 ## Ce qui a été fait
 

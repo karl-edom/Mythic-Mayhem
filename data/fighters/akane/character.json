@@ -1,0 +1,16 @@
+{
+  "name": "Akane",
+  "universe": "Mythic Mayhem (original)",
+  "description": "Gardienne à l'ōdachi. Lente, mais chaque coup de sa lame immense brise les gardes.",
+  "colors": {
+    "primary": "#c9184a",
+    "secondary": "#ff8fab"
+  },
+  "look": {
+    "model": "akane",
+    "show": [
+      "2H_Odachi"
+    ],
+    "tint": "#ffffff"
+  }
+}

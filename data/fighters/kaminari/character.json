@@ -7,12 +7,10 @@
     "secondary": "#74e0ff"
   },
   "look": {
-    "model": "mage",
+    "model": "vita",
     "show": [
-      "2H_Staff",
-      "Mage_Hat",
-      "Mage_Cape"
+      "2H_Staff"
     ],
-    "tint": "#e6f0ff"
+    "tint": "#ffffff"
   }
 }

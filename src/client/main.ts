@@ -75,6 +75,7 @@ function buildShowcase(): void {
   for (const f of world.fighters) f.facing = { x: d.x, y: 0, z: d.z };
   showcase = new ArenaView(renderer, world, [choice.p1.character, choice.p2.character], 0, library);
   showcase.showcaseAt({ x: s.x, z: s.z }, d);
+  if (import.meta.env.DEV) (window as unknown as { __showcase: ArenaView }).__showcase = showcase;
 }
 
 function fighterCard(r: RosterEntry, parent: HTMLElement): void {
@@ -252,7 +253,7 @@ async function boot(): Promise<void> {
   const fill = h("div", "loading-fill", bar);
   const label = h("div", "loading-label", loading, "Chargement des combattants…");
   try {
-    library = await loadModels(new URL("models/kaykit/", document.baseURI).href, (done, total) => {
+    library = await loadModels(new URL("models/", document.baseURI).href, (done, total) => {
       fill.style.width = `${(100 * done) / total}%`;
     });
   } catch (e) {

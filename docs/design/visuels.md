@@ -1,6 +1,19 @@
 # Visuels : modèles, accessoires et code de rendu
 
-Voir la décision 0008 pour les choix. Fichiers : `src/client/toon.ts` (cel-shading, textures peintes), `models.ts`, `animator.ts`, `vfx.ts`, `environment.ts`, `scene.ts`.
+Voir les décisions 0008 (rendu, chibis KayKit) et 0009 (avatars anime). Fichiers : `src/client/toon.ts` (cel-shading, textures peintes), `models.ts`, `retarget.ts` (animations reciblées), `weapons.ts` (armes par code), `animator.ts`, `vfx.ts`, `environment.ts`, `scene.ts`.
+
+## Avatars anime (`look.model`)
+
+| Modèle | Avatar VRoid d'origine | Silhouette |
+| --- | --- | --- |
+| `kaito` | HairSample_Male | garçon aux cheveux noirs, sweat blanc |
+| `fumiriya` | Sakurada Fumiriya | garçon aux cheveux clairs, gilet et cravate |
+| `shino` | Sendagaya Shino | fille aux longs cheveux noirs, uniforme |
+| `akane` | Darkness Shibu | fille aux cheveux rouges, robe sombre |
+| `vita` | Vita | fille aux cheveux blancs, tenue futuriste |
+| `rubin` | Victoria Rubin | fille blonde, robe rose |
+
+Armes (`look.show`) : `1H_Katana`, `2H_Odachi`, `Kunai`, `Kunai_Offhand`, `2H_Staff`. Teintes facultatives : `hair`, `outfit`.
 
 ## Accessoires par modèle (`look.show`)
 
@@ -18,9 +31,11 @@ Style d'attaque déduit : une arme `2H_*` → deux mains ; une arme `*_Offhand` 
 
 ```bash
 npm run build:models        # télécharge le pack (cache .cache/kaykit/), écrit public/models/kaykit/
+npm run build:anime         # télécharge les avatars VRoid CC0 (cache .cache/vrm/), écrit public/models/anime/
 ```
 
 ## Crédits
 
-- Personnages et animations : **KayKit — Adventurers Character Pack** par Kay Lousberg (kaylousberg.com), CC0 1.0.
+- Personnages anime : **avatars d'exemple de VRoid Studio** (version bêta) par pixiv Inc., CC0 1.0. Liste dans `public/models/anime/CREDITS.txt`.
+- Personnages chibis et animations : **KayKit — Adventurers Character Pack** par Kay Lousberg (kaylousberg.com), CC0 1.0.
 - Polices : Bangers (Vernon Adams) et Rajdhani (Indian Type Foundry), SIL Open Font License.

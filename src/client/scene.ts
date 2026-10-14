@@ -97,7 +97,7 @@ export class ArenaView {
     if (this.library) {
       const look = ch.look ?? defaultLook(f.kit.archetype);
       model = instantiate(this.library, look);
-      animator = new Animator(model.mixer, this.library.clips, weaponStyle(look));
+      animator = new Animator(model.mixer, model.clips, weaponStyle(look));
       root.add(model.root);
       materials = model.materials;
     } else {
@@ -534,6 +534,14 @@ export class ArenaView {
   /** Menu backdrop framing: fighters at `anchor`, facing `dir`, camera in front of them. */
   showcaseAt(anchor: { x: number; z: number }, dir: { x: number; z: number }): void {
     this.showcaseFrame = { anchor: new THREE.Vector3(anchor.x, 0, anchor.z), dir: new THREE.Vector3(dir.x, 0, dir.z).normalize() };
+    // Scenery between the camera and the fighters (or around the camera) is hidden.
+    const d = this.showcaseFrame.dir;
+    const cam = { x: anchor.x + d.x * 6.4, z: anchor.z + d.z * 6.4 };
+    const side = { x: -d.z, z: d.x };
+    this.world.arena.props.forEach((p, i) => {
+      const lanes = [-1.2, 0, 1.2].map((o) => segmentInterval(p, { x: anchor.x + side.x * o, z: anchor.z + side.z * o }, cam));
+      if (lanes.some(Boolean) || distToProp(p, cam.x, cam.z) < 1) this.props[i]!.visible = false;
+    });
   }
 
   /** Menu backdrop: the chosen fighters idle while the camera sways gently. */
@@ -545,9 +553,9 @@ export class ArenaView {
     const side = new THREE.Vector3(-f.dir.z, 0, f.dir.x);
     this.camera.position
       .copy(f.anchor)
-      .addScaledVector(f.dir, 5.4)
+      .addScaledVector(f.dir, 4.4)
       .addScaledVector(side, Math.sin(t * 0.35) * 0.8)
-      .add(new THREE.Vector3(0, 1.7 + Math.sin(t * 0.5) * 0.1, 0));
+      .add(new THREE.Vector3(0, 1.55 + Math.sin(t * 0.5) * 0.08, 0));
     this.camera.lookAt(f.anchor.clone().add(new THREE.Vector3(0, 1.15, 0)));
     w.fighters.forEach((fi, i) => this.syncFighter(fi, this.fighters[i]!, dt, false));
     this.vfx.update(dt);

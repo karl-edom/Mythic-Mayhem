@@ -1,0 +1,16 @@
+{
+  "name": "Rubis",
+  "universe": "Mythic Mayhem (original)",
+  "description": "Enchanteresse des cristaux. Pose des pièges, harcèle de loin, repousse qui s'approche.",
+  "colors": {
+    "primary": "#e05780",
+    "secondary": "#ffd6e0"
+  },
+  "look": {
+    "model": "rubin",
+    "show": [
+      "2H_Staff"
+    ],
+    "tint": "#ffffff"
+  }
+}
