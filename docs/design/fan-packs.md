@@ -21,7 +21,7 @@ Ces packs se partagent directement entre amis (archive, clé USB, dossier partag
 ## Règles
 
 1. Un pack ne contient que des **données** (JSON, images, sons). Aucun script.
-2. Le kit passe par le même validateur et le même budget que les personnages originaux. Un personnage « culte » n'a pas de passe-droit : sa puissance s'exprime dans le budget commun.
+2. Le kit passe par le même validateur et le même budget que les personnages originaux, puis par la même **épreuve** (`npm run brawl -- --tune`, décision 0007) qui ajuste ses dégâts pour qu'il gagne environ la moitié de ses duels contre le panel de référence. Un personnage « culte » n'a pas de passe-droit, et en ajouter un ne demande jamais de retoucher les autres.
 3. Le dépôt peut contenir des personnages **originaux inspirés** d'un archétype (le sabreur rapide, le ninja à clones, l'élémentaire…), jamais un nom ni un visuel sous licence.
 
 ## Univers demandés par le porteur de projet

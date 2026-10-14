@@ -31,7 +31,7 @@ if (arenaId && !arenaDef) throw new Error(`arène inconnue : ${arenaId}`);
 
 if (args.includes("--fit")) {
   const costs = loadBrawlCosts();
-  const target = Number(args[args.indexOf("--target") + 1] ?? NaN) || (costs.budget.min + costs.budget.max) / 2;
+  const target = Number(args[args.indexOf("--target") + 1] ?? NaN) || costs.budget.target;
   for (const p of loadAllPacks(costs)) {
     const file = join(ROOT_DIR, p.dir, "kit.json");
     const kit = JSON.parse(readFileSync(file, "utf8"));

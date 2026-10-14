@@ -17,7 +17,7 @@ export const GAUNTLET_SEED = 2026;
 export const BALANCED_BAND: [number, number] = [0.4, 0.6];
 
 export function referencePanel(costs: BrawlCostTable): FighterKit[] {
-  return randomRoster(rng(GAUNTLET_SEED), GAUNTLET_SIZE, costs, (costs.budget.min + costs.budget.max) / 2);
+  return randomRoster(rng(GAUNTLET_SEED), GAUNTLET_SIZE, costs, costs.budget.target);
 }
 
 /** Share of duels won against the panel (each opponent twice, sides swapped; a draw counts half). */

@@ -6,7 +6,8 @@ import type { FighterKit, Special, Strike } from "./kit.ts";
 
 export interface BrawlCostTable {
   version: number;
-  budget: { min: number; max: number };
+  /** target: what new and reference kits are built to; [min, max]: the validator's sanity range. */
+  budget: { target: number; min: number; max: number };
   survival: { pointsAtBaseHp: number; hpBase: number; weightFactor: number; pointsPerRadiusAboveBase: number; radiusBase: number };
   mobility: { pointsPerMoveSpeed: number; pointsPerJumpSpeed: number };
   light: { pointsPerDps: number; reachFactorPerMetre: number; reachBase: number; pointsPerSecondOfFastStartup: number; startupBase: number };

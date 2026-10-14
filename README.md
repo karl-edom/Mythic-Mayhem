@@ -8,9 +8,10 @@ Jeu d'arène en équipe (MOBA court), lumineux et lisible. On peut y faire s'aff
 > npm install
 > npm run dev                    # puis ouvrir http://localhost:5173
 > npm run brawl -- --duels 40 --arena clairiere   # validation, budget et duels de bots
+> npm run brawl -- --tune                          # équilibre chaque personnage contre le panel de référence
 > ```
 >
-> Cadrage : `docs/decisions/0005-adaptation-jstars.md` · contrat de combat : `docs/design/combat-contract-v2.md` · arènes : `docs/decisions/0006-arenes-chantier-dedie.md` · packs : `docs/design/fan-packs.md` · recherche : `docs/research/jstars-reverse-engineering.md`. Le reste du dépôt (`src/sim`, `src/bots`, `src/balance`) est la piste MOBA, conservée.
+> Cadrage : `docs/decisions/0005-adaptation-jstars.md` · contrat de combat : `docs/design/combat-contract-v2.md` · arènes : `docs/decisions/0006-arenes-chantier-dedie.md` · équilibrage : `docs/decisions/0007-equilibrage-par-epreuve.md` · packs : `docs/design/fan-packs.md` · recherche : `docs/research/jstars-reverse-engineering.md`. Le reste du dépôt (`src/sim`, `src/bots`, `src/balance`) est la piste MOBA, conservée.
 
 Statut (piste MOBA) : **reverse engineering des jeux de référence à lancer** (voir `docs/research/reverse-engineering-plan.md` et la décision 0003). Avant ça : **expérience E2 terminée** (simulation de combat sans rendu, budget de puissance, profils par rôle). Rien n'est encore jouable à l'écran. Résultats : `docs/experiments/e2-results.md`.
 

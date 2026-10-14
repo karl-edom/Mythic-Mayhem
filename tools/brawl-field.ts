@@ -9,6 +9,10 @@
 // itself: the spread of their win rates (lower is better).
 //
 // Usage: node tools/brawl-field.ts [--kits 60] [--seeds 2] [--rounds 1] [--seed 1] [--arena clairiere] [--write]
+//        node tools/brawl-field.ts --gauntlet-check 20
+//   Draws N new random kits, tunes each one alone against the reference panel,
+//   then plays them against each other: the test of "add 50 characters without
+//   rebalancing the others".
 
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -16,6 +20,7 @@ import { parseArgs } from "node:util";
 import { buildArena, type ArenaDef } from "../src/brawl/arena.ts";
 import { fighterBudget, type BrawlCostTable } from "../src/brawl/budget.ts";
 import { randomRoster } from "../src/brawl/generate.ts";
+import { referencePanel, tuneToGauntlet } from "../src/brawl/gauntlet.ts";
 import type { FighterKit } from "../src/brawl/kit.ts";
 import { loadArenas, loadBrawlCosts, loadPropCatalog } from "../src/brawl/load.ts";
 import { runDuel } from "../src/brawl/match.ts";
@@ -31,6 +36,7 @@ const { values } = parseArgs({
     seed: { type: "string", default: "1" },
     arena: { type: "string" },
     write: { type: "boolean", default: false },
+    "gauntlet-check": { type: "string" },
   },
 });
 const KITS = Number(values.kits);
@@ -87,7 +93,7 @@ const pct = (v: number) => `${(v * 100).toFixed(1)} %`;
 
 /** Balance at equal budget: spread of win rates of kits that all cost the same. */
 function balanceCheck(costs: BrawlCostTable, seed: number) {
-  const target = (costs.budget.min + costs.budget.max) / 2;
+  const target = costs.budget.target;
   const kits = randomRoster(rng(seed), KITS, costs, target);
   const rates = roundRobin(kits);
   return {
@@ -146,6 +152,21 @@ function recalibrate(costs: BrawlCostTable, value: Partial<Record<Feature, numbe
   c.heavy.pointsPerDps = r4(c.heavy.pointsPerDps);
   for (const d of ["projectile", "rush", "area"] as const) c.special.deliveryFactor[d] = r4(c.special.deliveryFactor[d]);
   return c;
+}
+
+if (values["gauntlet-check"]) {
+  const n = Number(values["gauntlet-check"]);
+  const costs0 = loadBrawlCosts();
+  const panel = referencePanel(costs0);
+  const fresh = randomRoster(rng(99), n, costs0, costs0.budget.target);
+  const t0 = Date.now();
+  const tuned = fresh.map((k) => tuneToGauntlet(k, panel).kit);
+  console.log(`${n} nouveaux kits réglés chacun contre le panel (${((Date.now() - t0) / 1000).toFixed(0)} s).`);
+  const show = (label: string, rates: number[]) =>
+    console.log(`${label} : écart-type ${pct(stdev(rates))}, min ${pct(Math.min(...rates))}, max ${pct(Math.max(...rates))}, entre 35 et 65 % : ${pct(rates.filter((r) => r >= 0.35 && r <= 0.65).length / rates.length)}`);
+  show("Entre eux, au budget seul", roundRobin(fresh));
+  show("Entre eux, après l'épreuve", roundRobin(tuned));
+  process.exit(0);
 }
 
 let costs = loadBrawlCosts();

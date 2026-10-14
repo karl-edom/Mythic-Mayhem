@@ -1,30 +1,31 @@
 {
   "version": 1,
-  "note": "Coefficients PROVISOIRES du budget brawler (contrat v2), non calibrés. À ajuster par simulation bot contre bot, jamais personnage par personnage.",
+  "note": "Barème du brawler (contrat v2), calibré par tools/brawl-field.ts. Le budget est un garde-fou large et un guide de création ; l'arbitre de l'équilibre est l'épreuve contre le panel de référence (src/brawl/gauntlet.ts, npm run brawl -- --tune).",
   "budget": {
-    "min": 90,
-    "max": 100
+    "target": 95,
+    "min": 60,
+    "max": 120
   },
   "survival": {
-    "pointsAtBaseHp": 30,
+    "pointsAtBaseHp": 31.97,
     "hpBase": 1000,
     "weightFactor": 0.5,
-    "pointsPerRadiusAboveBase": 40,
+    "pointsPerRadiusAboveBase": 42.64,
     "radiusBase": 0.5
   },
   "mobility": {
-    "pointsPerMoveSpeed": 2,
-    "pointsPerJumpSpeed": 0.3
+    "pointsPerMoveSpeed": 0.5567,
+    "pointsPerJumpSpeed": 0.08347
   },
   "light": {
-    "pointsPerDps": 0.12,
+    "pointsPerDps": 0.1326,
     "reachFactorPerMetre": 0.4,
     "reachBase": 1.5,
-    "pointsPerSecondOfFastStartup": 30,
+    "pointsPerSecondOfFastStartup": 33.14,
     "startupBase": 0.2
   },
   "heavy": {
-    "pointsPerDps": 0.04
+    "pointsPerDps": 0.03745
   },
   "special": {
     "pointsPerDamagePerEnergy": 3,
@@ -38,9 +39,9 @@
     "areaDelayDiscountPerSecond": 0.3,
     "areaMaxDelayDiscount": 0.4,
     "deliveryFactor": {
-      "projectile": 1,
-      "rush": 1,
-      "area": 1
+      "projectile": 1.148,
+      "rush": 0.83,
+      "area": 0.9492
     },
     "extraSpecialWeights": [
       1,

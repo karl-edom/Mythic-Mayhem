@@ -105,7 +105,7 @@ export function fitFighter(kit: FighterKit, costs: BrawlCostTable, target: numbe
 export function randomRoster(r: () => number, n: number, costs: BrawlCostTable, target: number | [number, number]): FighterKit[] {
   const out: FighterKit[] = [];
   // Budget limits are lifted for measurement kits; the real validator still checks everything else.
-  const open: BrawlCostTable = { ...costs, budget: { min: 0, max: Infinity } };
+  const open: BrawlCostTable = { ...costs, budget: { ...costs.budget, min: 0, max: Infinity } };
   for (let tries = 0; out.length < n && tries < n * 50; tries++) {
     const t = typeof target === "number" ? target : target[0] + r() * (target[1] - target[0]);
     const fitted = fitFighter(randomFighter(r, `k${out.length}`), costs, t);

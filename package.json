@@ -16,7 +16,8 @@
     "brawl": "node tools/brawl.ts",
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "brawl:field": "node tools/brawl-field.ts"
   },
   "devDependencies": {
     "@types/node": "22.20.5",

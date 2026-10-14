@@ -174,3 +174,14 @@ test("générateur : des kits aléatoires valides, ramenés au budget visé", as
   assert.equal(kits.length, 10);
   for (const k of kits) assert.ok(Math.abs(fighterBudget(k, costs).total - 95) < 1.5);
 });
+
+test("épreuve : les combattants d'origine gagnent entre 40 % et 60 % contre le panel de référence", async () => {
+  const { BALANCED_BAND, gauntletRate, referencePanel } = await import("../src/brawl/gauntlet.ts");
+  const costs = loadBrawlCosts();
+  const panel = referencePanel(costs);
+  for (const p of loadAllPacks(costs).filter((x) => x.dir.startsWith("data/"))) {
+    assert.ok(p.result.ok);
+    const rate = gauntletRate(p.result.kit, panel);
+    assert.ok(rate >= BALANCED_BAND[0] && rate <= BALANCED_BAND[1], `${p.dir} : ${(rate * 100).toFixed(0)} %`);
+  }
+});

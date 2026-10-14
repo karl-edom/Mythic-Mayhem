@@ -39,13 +39,13 @@ Règle du projet : toute capacité précise son contre-jeu et son indicateur vis
 - premier coup léger : démarrage ≥ 0,08 s ; attaque lourde : démarrage ≥ 0,35 s ;
 - spéciale brise-garde : télégraphe (démarrage + délai) ≥ 0,4 s ;
 - **pas de boucle infinie** : le dernier coup du combo met au sol, ou laisse la cible récupérer avant le premier coup suivant ;
-- budget entre 90 et 100 points (`data/balance/brawl-costs.json`).
+- budget entre 60 et 120 points (`data/balance/brawl-costs.json`), puis épreuve entre 40 % et 60 % de victoires (décision 0007).
 
-## 4. Budget provisoire
+## 4. Budget et épreuve
 
-Six postes : survie (PV × poids, pénalité de taille), mobilité, combo (dégâts par seconde × allonge, bonus de démarrage rapide), attaque lourde, une ligne par spéciale (dégâts par point d'énergie × facilité de la livraison × brise-garde). `npm run brawl` affiche le détail.
+Le budget (`data/balance/brawl-costs.json`, calibré par `tools/brawl-field.ts`) estime la puissance d'un kit en points : survie, mobilité, combo, attaque lourde, et les spéciales (la plus chère payée en entier, les suivantes à prix réduit, car elles partagent la même jauge). Cible 95 points, plage acceptée 60–120. `npm run brawl` affiche le détail.
 
-**Le budget n'est pas encore calibré.** Premier constat (`npm run brawl -- --duels 40`) : Rōnin bat Kaminari dans ~97 % des duels de bots, à budget presque égal. Le combo rapide et la ruée sont sous-évalués, ou les zones surévaluées. La calibration se fera par la méthode E2 (kits aléatoires, régression), pas en retouchant les personnages.
+L'arbitre de l'équilibre est l'**épreuve** : 40 adversaires de référence fixes ; un personnage est équilibré s'il en bat 40 à 60 %. `npm run brawl -- --tune` ajuste ses dégâts pour y arriver. Voir la décision 0007.
 
 ## 5. Pas encore fait
 
