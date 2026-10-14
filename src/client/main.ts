@@ -222,11 +222,11 @@ window.addEventListener("resize", () => {
 });
 
 /**
- * Game tempo: the fixed-step simulation runs at 80 % of real time. Everything slows
- * together (moves, animations, projectiles), so balance is unchanged; fights are just
- * easier to read and to react to.
+ * Game tempo: share of real time the fixed-step simulation runs at. Everything scales
+ * together, so balance is unchanged. Back to 1 with rhythm v3 (decision 0011), whose
+ * slower numbers already calm the fight; kept as a single knob to try other tempos.
  */
-const GAME_SPEED = 0.8;
+const GAME_SPEED = 1;
 
 let last = performance.now();
 let acc = 0;

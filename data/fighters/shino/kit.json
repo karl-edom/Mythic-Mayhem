@@ -1,10 +1,10 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "id": "shino",
   "archetype": "rushdown",
   "stats": {
     "hp": 800,
-    "moveSpeed": 8.3,
+    "moveSpeed": 6.23,
     "jumpSpeed": 11,
     "weight": 0.8,
     "radius": 0.42
@@ -12,50 +12,30 @@
   "light": {
     "hits": [
       {
-        "damage": 26,
+        "damage": 44,
         "startup": 0.08,
         "active": 0.06,
-        "recovery": 0.15,
+        "recovery": 0.2,
         "reach": 0.9,
         "size": 0.6,
         "hitstun": 0.3,
-        "knockback": 1
+        "knockback": 4
       },
       {
-        "damage": 26,
+        "damage": 44,
         "startup": 0.08,
         "active": 0.06,
-        "recovery": 0.15,
+        "recovery": 0.2,
         "reach": 0.9,
         "size": 0.6,
         "hitstun": 0.3,
-        "knockback": 1
+        "knockback": 4
       },
       {
-        "damage": 28,
-        "startup": 0.09,
-        "active": 0.06,
-        "recovery": 0.16,
-        "reach": 0.9,
-        "size": 0.6,
-        "hitstun": 0.32,
-        "knockback": 1
-      },
-      {
-        "damage": 31,
-        "startup": 0.1,
-        "active": 0.07,
-        "recovery": 0.18,
-        "reach": 1,
-        "size": 0.65,
-        "hitstun": 0.35,
-        "knockback": 2
-      },
-      {
-        "damage": 52,
+        "damage": 87,
         "startup": 0.13,
         "active": 0.08,
-        "recovery": 0.38,
+        "recovery": 0.4,
         "reach": 1.1,
         "size": 0.7,
         "hitstun": 0.55,
@@ -64,10 +44,10 @@
     ]
   },
   "heavy": {
-    "damage": 116,
+    "damage": 195,
     "startup": 0.4,
     "active": 0.1,
-    "recovery": 0.45,
+    "recovery": 0.6,
     "reach": 1.2,
     "size": 0.8,
     "hitstun": 0.55,
@@ -80,14 +60,14 @@
       "id": "kunai",
       "energyCost": 15,
       "startup": 0.12,
-      "recovery": 0.25,
+      "recovery": 0.35,
       "delivery": {
         "type": "projectile",
         "speed": 30,
         "range": 14,
         "size": 0.35
       },
-      "damage": 71,
+      "damage": 119,
       "hitstun": 0.35,
       "knockback": 3,
       "guardBreak": false
@@ -103,7 +83,7 @@
         "speed": 32,
         "size": 0.7
       },
-      "damage": 122,
+      "damage": 205,
       "hitstun": 0.5,
       "knockback": 10,
       "guardBreak": false
@@ -119,7 +99,7 @@
         "radius": 2.6,
         "delay": 0.4
       },
-      "damage": 180,
+      "damage": 303,
       "hitstun": 0.6,
       "knockback": 12,
       "guardBreak": false

@@ -10,7 +10,7 @@ const strike = { damage: 50, startup: 0.1, active: 0.1, recovery: 0.2, reach: 1,
 
 function fighter(specials: Special[] = []): FighterKit {
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     id: "test",
     archetype: "balanced",
     stats: { hp: 1000, moveSpeed: 6, jumpSpeed: 10, weight: 1, radius: 0.5 },
@@ -42,17 +42,45 @@ test("l'attaque légère touche après son démarrage, pas avant", () => {
   assert.equal(w.fighters[1]!.action?.kind, "hitstun");
 });
 
-test("la garde bloque l'attaque légère (dégâts réduits), l'attaque lourde la brise", () => {
+test("bouclier : bloque l'attaque légère (dégâts réduits), l'attaque lourde l'use deux fois plus", () => {
+  const c = BRAWL_CONFIG;
   const w = duel(fighter(), fighter());
   step(w, [{ unit: 0, light: true }, { unit: 1, guard: true }]);
   run(w, 0.2, () => [{ unit: 1, guard: true }]);
-  assert.equal(w.fighters[1]!.hp, 1000 - 50 * BRAWL_CONFIG.guardChip);
+  const b = w.fighters[1]!;
+  assert.equal(b.hp, 1000 - 50 * c.guardChip);
+  // The hit's wear, plus a little drain while held (not during the block stun).
+  const afterHit = c.shieldMax - 50 * c.shieldDamageFactor;
+  assert.ok(b.shield <= afterHit && b.shield >= afterHit - c.shieldDrain * 0.2, `bouclier ${b.shield}`);
 
   const w2 = duel(fighter(), fighter());
   step(w2, [{ unit: 0, heavy: true }, { unit: 1, guard: true }]);
   run(w2, 0.6, () => [{ unit: 1, guard: true }]); // heavy relâché aussitôt : pas de charge
-  assert.equal(w2.fighters[1]!.action?.kind, "guardbroken");
-  assert.equal(w2.fighters[1]!.hp, 1000 - 100 * BRAWL_CONFIG.guardBreakDamage);
+  const b2 = w2.fighters[1]!;
+  assert.equal(b2.hp, 1000 - 100 * c.guardChip);
+  const afterHeavy = c.shieldMax - 100 * c.shieldDamageFactor * 2;
+  assert.ok(b2.shield <= afterHeavy && b2.shield >= afterHeavy - c.shieldDrain * 0.6, `bouclier ${b2.shield}`);
+});
+
+test("bouclier : se vide quand on le tient, casse à zéro (étourdi), se recharge une fois relâché", () => {
+  const c = BRAWL_CONFIG;
+  const w = duel(fighter(), fighter(), 6);
+  const f = w.fighters[0]!;
+  run(w, c.shieldMax / c.shieldDrain - 0.2, () => [{ unit: 0, guard: true }]);
+  assert.equal(f.action?.kind, "guard");
+  run(w, 0.4, () => [{ unit: 0, guard: true }]);
+  assert.equal(f.action?.kind, "guardbroken", "bouclier cassé");
+  assert.ok(w.events.some((e) => e.type === "guardBreak" && e.target === 0));
+  run(w, c.guardBreakStun + 0.1);
+  assert.equal(f.action, null);
+  const low = f.shield;
+  run(w, c.shieldRegenDelay + 1);
+  assert.ok(f.shield > low + c.shieldRegen * 0.9, "il se recharge");
+  // Impossible de lever un bouclier vide.
+  f.shield = 0;
+  f.shieldUsedAt = w.time; // pas encore rechargé
+  step(w, [{ unit: 0, guard: true }]);
+  assert.notEqual((f.action as { kind: string } | null)?.kind, "guard");
 });
 
 test("charger l'attaque lourde augmente ses dégâts", () => {
@@ -234,4 +262,83 @@ test("dégagement : invulnérable pendant l'onde, impossible sans énergie ou de
   step(w, [{ unit: 0, light: true }]);
   run(w, 0.15);
   assert.equal(b.hp, 1000);
+});
+
+// ---------- Rythme v3 (décision 0011) ----------
+
+test("v3 : double saut en l'air, une seule fois, rendu à l'atterrissage", () => {
+  const w = duel(fighter(), fighter(), 8);
+  const f = w.fighters[0]!;
+  step(w, [{ unit: 0, jump: true }]);
+  run(w, 0.3);
+  const vBefore = f.vel.y;
+  step(w, [{ unit: 0, jump: true }]);
+  assert.ok(f.vel.y > vBefore + 3, "le second saut relance vers le haut");
+  assert.equal(f.airJumpsLeft, 0);
+  run(w, 0.2);
+  const v2 = f.vel.y;
+  step(w, [{ unit: 0, jump: true }]);
+  assert.ok(f.vel.y < v2, "pas de troisième saut");
+  run(w, 3);
+  assert.equal(f.pos.y, 0);
+  assert.equal(f.airJumpsLeft, BRAWL_CONFIG.airJumps);
+});
+
+test("v3 : J en l'air donne un coup aérien ; atterrir pendant le coup coûte un court temps", () => {
+  const w = duel(fighter(), fighter(), 8);
+  const f = w.fighters[0]!;
+  // A slow aerial (long recovery) so that the fall ends while it is still going.
+  f.kit = { ...f.kit, light: { hits: [{ ...strike, recovery: 1.5 }] } };
+  step(w, [{ unit: 0, jump: true }]);
+  run(w, 0.4);
+  step(w, [{ unit: 0, light: true }]);
+  assert.equal(f.action?.kind, "aerial");
+  let ticks = 0;
+  while (f.pos.y > 0 && ticks++ < 200) step(w, []);
+  assert.equal((f.action as { kind: string } | null)?.kind, "landing", "temps d'atterrissage");
+  run(w, BRAWL_CONFIG.landingLag + 0.02);
+  assert.equal(f.action, null);
+});
+
+test("v3 : le recul grandit quand la vie baisse", () => {
+  const speedAt = (hp: number) => {
+    const w = duel(fighter(), fighter());
+    w.fighters[1]!.hp = hp;
+    step(w, [{ unit: 0, light: true }]);
+    run(w, 0.12);
+    return Math.hypot(w.fighters[1]!.vel.x, w.fighters[1]!.vel.z);
+  };
+  const full = speedAt(1000);
+  const low = speedAt(300);
+  assert.ok(full > 0);
+  assert.ok(low > full * 1.3, `${full} → ${low}`);
+});
+
+test("v3 : une esquive ne peut pas suivre immédiatement la précédente", () => {
+  const w = duel(fighter(), fighter(), 6);
+  const f = w.fighters[0]!;
+  step(w, [{ unit: 0, dodge: true, move: { x: 0, z: 1 } }]);
+  run(w, BRAWL_CONFIG.dodgeDuration + 0.02);
+  assert.equal(f.action, null);
+  step(w, [{ unit: 0, dodge: true, move: { x: 0, z: 1 } }]);
+  assert.equal(f.action, null, "en attente");
+  run(w, BRAWL_CONFIG.dodgeCooldown);
+  step(w, [{ unit: 0, dodge: true, move: { x: 0, z: 1 } }]);
+  assert.equal((f.action as { kind: string } | null)?.kind, "dodge");
+});
+
+test("v3 : le validateur impose combo court, éjection finale et coups ratés punissables", () => {
+  const costs = loadBrawlCosts();
+  const base = loadAllPacks(costs).find((p) => p.result.ok)!;
+  const kit = (base.result as { kit: FighterKit }).kit;
+  const errs = (k: FighterKit) => {
+    const r = validateFighter(k, { ...costs, budget: { ...costs.budget, min: 0, max: Infinity } });
+    return r.ok ? [] : r.errors.join(" | ");
+  };
+  assert.deepEqual(errs(kit), []);
+  const hits = kit.light.hits;
+  assert.match(String(errs({ ...kit, light: { hits: [...hits, hits[0]!] } })), /entre 1 et 3/);
+  assert.match(String(errs({ ...kit, light: { hits: hits.map((h, i) => (i === hits.length - 1 ? { ...h, knockback: 8 } : h)) } })), /éjecte/);
+  assert.match(String(errs({ ...kit, light: { hits: hits.map((h) => ({ ...h, recovery: 0.1 })) } })), /recovery/);
+  assert.match(String(errs({ ...kit, heavy: { ...kit.heavy, recovery: 0.3 } })), /heavy.recovery/);
 });

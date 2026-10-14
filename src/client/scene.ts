@@ -29,6 +29,8 @@ interface FighterView {
   stars: THREE.Group;
   hitbox: THREE.Sprite;
   chargeOrb: THREE.Sprite;
+  /** Red glow while health is low (hits send the fighter further, rhythm v3). */
+  lowHp: THREE.Sprite;
   flashUntil: number;
   /** Last strike whose slash arc was spawned (so each blow draws one arc). */
   slashKey: string;
@@ -153,6 +155,14 @@ export class ArenaView {
     );
     this.scene.add(hitbox);
 
+    const lowHp = new THREE.Sprite(
+      noOutline(new THREE.SpriteMaterial({ map: this.glow, color: 0xff2a3d, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false })),
+    );
+    lowHp.scale.set(2.2, 3.2, 1);
+    lowHp.position.y = FIGHTER_HEIGHT * 0.55;
+    lowHp.visible = false;
+    root.add(lowHp);
+
     const chargeOrb = new THREE.Sprite(
       noOutline(new THREE.SpriteMaterial({ map: this.glow, color: 0xff9f1c, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })),
     );
@@ -160,7 +170,7 @@ export class ArenaView {
 
     this.scene.add(root);
     return {
-      root, model, animator, materials, shadow, guard, aura, stars, hitbox, chargeOrb,
+      root, model, animator, materials, shadow, guard, aura, stars, hitbox, chargeOrb, lowHp,
       flashUntil: 0, slashKey: "", wasAirborne: false,
     };
   }
@@ -246,6 +256,12 @@ export class ArenaView {
           this.freezeUntil = now + 90;
           break;
         }
+        case "airJump": {
+          // Double jump: a little ring of air under the feet.
+          const f = w.fighters[e.unit]!;
+          this.vfx.ring(new THREE.Vector3(f.pos.x, f.pos.y + 0.1, f.pos.z), 0xffffff, 1.4);
+          break;
+        }
         case "respawn":
           this.vfx.groundWave(new THREE.Vector3(w.fighters[e.unit]!.pos.x, 0, w.fighters[e.unit]!.pos.z), 0x9fe6ff, 2.5);
           break;
@@ -293,7 +309,18 @@ export class ArenaView {
     if (v.model) v.model.root.visible = !(invulnerable && Math.floor(t * 14) % 2 === 0);
 
     v.guard.visible = a?.kind === "guard" || a?.kind === "blockstun";
-    if (v.guard.visible) (v.guard.material as THREE.MeshBasicMaterial).opacity = 0.22 + 0.06 * Math.sin(t * 12);
+    if (v.guard.visible) {
+      // The shield shrinks and turns red as it wears out.
+      const k = Math.max(0, f.shield / w.config.shieldMax);
+      const m = v.guard.material as THREE.MeshBasicMaterial;
+      m.opacity = 0.22 + 0.06 * Math.sin(t * 12) + (1 - k) * 0.12;
+      m.color.setRGB(0.5 + 0.5 * (1 - k), 0.86 * k + 0.2 * (1 - k), 1 * k + 0.25 * (1 - k));
+      v.guard.scale.setScalar(0.45 + 0.55 * k);
+    }
+    // Low health: a red halo, because hits now send this fighter flying further.
+    const low = f.alive && f.hp / f.kit.stats.hp < 0.35;
+    v.lowHp.visible = low;
+    if (low) v.lowHp.material.opacity = 0.3 + 0.15 * Math.sin(t * 8);
     v.aura.visible = a?.kind === "charge";
     if (v.aura.visible) {
       (v.aura.material as THREE.MeshBasicMaterial).opacity = 0.22 + 0.12 * Math.sin(t * 22);
@@ -319,6 +346,11 @@ export class ArenaView {
       at = a.t;
       key = `l${a.index}:${w.tick - Math.round(a.t * w.config.tickRate)}`;
       tilt = SLASH_TILT[a.index % SLASH_TILT.length]!;
+    } else if (a?.kind === "aerial") {
+      strike = f.kit.light.hits[0];
+      at = a.t;
+      key = `a${w.tick - Math.round(a.t * w.config.tickRate)}`;
+      tilt = -0.9;
     } else if (a?.kind === "heavy") {
       strike = f.kit.heavy;
       at = a.charging ? 0 : a.t;

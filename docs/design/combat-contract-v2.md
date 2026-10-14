@@ -1,6 +1,6 @@
-# Contrat de combat v2 — brawler d'arène (adaptation J-Stars)
+# Contrat de combat v3 — brawler d'arène, rythme « façon Smash »
 
-Statut : **v0 implémentée** (`src/brawl/`), testée (`tests/brawl.test.ts`), jouable en 1v1 contre un bot (`npm run dev`). Chiffres **provisoires**, non calibrés. Décision de référence : 0005.
+Statut : **v3 implémentée** (`src/brawl/`), testée (`tests/brawl.test.ts`), jouable en 1v1 contre un bot (`npm run dev`). Décisions de référence : 0005 (adaptation J-Stars), 0010 (dégagement), **0011 (rythme v3)**. Le nom du fichier est conservé pour les liens existants ; les kits sont au format `schemaVersion: 3`.
 
 ## 1. Règles communes (`BRAWL_CONFIG`, `src/brawl/world.ts`)
 
@@ -9,7 +9,9 @@ Statut : **v0 implémentée** (`src/brawl/`), testée (`tests/brawl.test.ts`), j
 | Simulation | 60 ticks/s, déterministe, sans rendu, pilotée par des commandes | jeu en réseau plus tard, bots, tests |
 | Arène | rectangle fermé par un mur, avec des éléments de décor (décision 0006) ; données dans `data/arenas/` | J-Stars : arènes fermées et destructibles |
 | Victoire | 3 K.-O. remplissent la jauge de victoire | J-Stars |
-| Fin au temps | 180 s ; plus de K.-O., puis plus de vie restante | J-Stars |
+| Fin au temps | 240 s ; plus de K.-O., puis plus de vie restante | rythme v3 : les échanges sont plus posés |
+| Gravité | 18 m/s² (environ 1,1 s en l'air pour un saut) | rythme v3 : jeu aérien |
+| Recul | × (1 + 0,6 × part de vie perdue) | rythme v3 : clin d'œil au pourcentage de Smash |
 | Réapparition | après 3 s, invulnérable 2 s | J-Stars |
 | Énergie | max 100, départ 50, +4/s ; +35/s en rechargeant (immobile) | spéciales sur jauge |
 
@@ -19,14 +21,16 @@ Règle du projet : toute capacité précise son contre-jeu et son indicateur vis
 
 | Action | Effet | Contre-jeu | Indicateur visuel |
 | --- | --- | --- | --- |
-| Attaque légère (J) | chaîne de 1 à 5 coups ; appuyer pendant la récupération enchaîne le coup suivant (mémoire de 0,2 s) | garde ; démarrage ≥ 0,08 s | contour de la zone de frappe pendant l'élan, sphère pleine quand elle touche |
-| Attaque lourde (K, maintenir) | se charge (dégâts × bonus), **brise la garde** (assomme 1 s, 50 % des dégâts) | esquive ou recul ; démarrage ≥ 0,35 s | orbe orange qui grossit pendant la charge, zone de frappe orange |
-| Garde (L, maintenir) | ne prend que 10 % des dégâts, court blocage de 0,2 s | attaque lourde, spéciale brise-garde | bulle bleue |
-| Garde brisée | assommé 1 s | — (punition) | étoiles jaunes qui tournent + bannière |
-| Esquive (Maj) | 3,5 m en 0,3 s, invulnérable les 0,2 premières s, coûte 15 d'énergie | attendre la fin de l'esquive | personnage penché, clignotement |
+| Attaque légère (J) | chaîne de **1 à 3 coups** ; chaque coup recule d'au moins 4 m/s, le dernier **éjecte** (≥ 12 m/s) | bouclier ; démarrage ≥ 0,08 s ; un coup raté laisse ≥ 0,2 s (≥ 0,4 s pour le dernier) | contour de la zone de frappe pendant l'élan, sphère pleine quand elle touche |
+| Coup aérien (J en l'air) | un seul coup, avec les chiffres du premier coup léger ; atterrir pendant le coup immobilise 0,1 s | bouclier ; frapper l'atterrissage | traînée de l'arme |
+| Attaque lourde (K, maintenir) | se charge (dégâts × bonus) ; contre un bouclier, l'**use deux fois plus** | esquive ou recul ; démarrage ≥ 0,35 s ; fin ≥ 0,6 s | orbe orange qui grossit pendant la charge, zone de frappe orange |
+| Bouclier (L, maintenir) | ne prend que 10 % des dégâts, court blocage de 0,2 s ; **100 points**, −20/s tenu, +15/s relâché (après 0,5 s) ; un coup bloqué retire dégâts × 0,3 (× 2 lourde, × 3 spéciale brise-garde) | le vider : lourde, spéciale brise-garde, pression | bulle bleue qui **rétrécit et rougit** en se vidant |
+| Bouclier brisé | à 0 : **étourdi 2 s** (même s'il s'est vidé tout seul) | — (punition) | étoiles jaunes qui tournent + bannière « BOUCLIER BRISÉ » |
+| Esquive (Maj) | 3,5 m en 0,3 s, invulnérable les 0,2 premières s, coûte 15 d'énergie ; **0,3 s d'attente** avant la suivante | attendre la fin de l'esquive | personnage penché, clignotement |
 | Dégagement (Maj pendant qu'on encaisse des coups, un coup bloqué ou en garde) | coûte **50 d'énergie** ; repousse tout ennemi à moins de 3 m (vitesse 12 ÷ poids) et l'interrompt 0,35 s, **sans aucun dégât** (ni choc contre un mur) ; invulnérable pendant 0,4 s. Impossible au sol ou garde brisée (décision 0010) | relâcher la pression pour le pousser à dépenser sa jauge, puis punir ; le garder à court d'énergie (il ne peut plus lancer de spéciale) | onde de choc blanche à la taille de sa portée, bannière « DÉGAGEMENT », pastille « dégagement » allumée dans la barre quand elle est disponible |
-| Saut (Espace) | évite les zones au sol | frapper en l'air (les zones ne touchent pas au-dessus de 1,5 m) | ombre au sol qui rétrécit |
+| Saut (Espace) | évite les zones au sol ; **double saut** en l'air (85 % de la force), contrôle en l'air à 70 % | frapper en l'air, attendre la retombée (les zones ne touchent pas au-dessus de 1,5 m) | ombre au sol qui rétrécit ; anneau d'air sous les pieds au double saut |
 | Recharge (E, maintenir) | +35 énergie/s, immobile et sans garde | frapper | colonne d'aura colorée |
+| Vie basse (< 35 %) | les coups reçus repoussent plus loin | se tenir loin des murs, jouer prudemment | halo rouge pulsant autour du personnage |
 | Spéciale projectile | part vers la cible, touche le premier ennemi | esquive latérale, garde | sphère colorée |
 | Spéciale ruée | le personnage fonce, s'arrête au premier ennemi touché | esquive, garde | le déplacement lui-même |
 | Spéciale zone | cercle posé vers la cible, frappe après un délai | sortir du cercle, sauter | anneau au sol qui se remplit jusqu'à l'impact |
@@ -36,10 +40,11 @@ Règle du projet : toute capacité précise son contre-jeu et son indicateur vis
 ## 3. Garde-fous du validateur (`src/brawl/validate.ts`)
 
 - bornes sur chaque nombre (PV 700–1600, vitesse 4–9 m/s, etc.) ;
-- au plus 5 coups légers, 1 à 3 spéciales ;
+- au plus **3 coups légers**, 1 à 3 spéciales ;
 - premier coup léger : démarrage ≥ 0,08 s ; attaque lourde : démarrage ≥ 0,35 s ;
+- chaque coup léger recule ≥ 4, le dernier **éjecte** (recul ≥ 12) : l'échange finit toujours à distance, donc pas de boucle infinie ;
+- **coups ratés punissables** : fin de coup léger ≥ 0,2 s (dernier ≥ 0,4 s), lourde ≥ 0,6 s, spéciale ≥ 0,35 s ;
 - spéciale brise-garde : télégraphe (démarrage + délai) ≥ 0,4 s ;
-- **pas de boucle infinie** : le dernier coup du combo met au sol, ou laisse la cible récupérer avant le premier coup suivant ;
 - budget entre 60 et 120 points (`data/balance/brawl-costs.json`), puis épreuve entre 40 % et 60 % de victoires (décision 0007).
 
 ## 4. Budget et épreuve
@@ -50,6 +55,6 @@ L'arbitre de l'équilibre est l'**épreuve** : 40 adversaires de référence fix
 
 ## 5. Pas encore fait
 
-Ultime / mode « burst », personnage de soutien, 2v2, combat aérien spécifique, manette testée sur matériel réel.
+Ultime / mode « burst », personnage de soutien, 2v2, manette testée sur matériel réel, barème recalibré finement pour la v3 (voir décision 0011).
 
 Les règles de décor (se cacher, casser, monter dessus, ramasser et lancer, chocs contre les murs) sont décrites dans la décision 0006.

@@ -147,7 +147,7 @@ export class Hud {
         }
       }
       if (e.type === "ko") this.flash("K.-O. !", 1.4, names[e.target] ? `${names[e.target]} est à terre` : "");
-      if (e.type === "guardBreak") this.flash("GARDE BRISÉE", 0.7);
+      if (e.type === "guardBreak") this.flash("BOUCLIER BRISÉ", 0.8);
       if (e.type === "slam") this.flash("CONTRE LE MUR", 0.7);
       if (e.type === "breaker") this.flash("DÉGAGEMENT", 0.6);
     }

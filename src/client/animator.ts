@@ -21,6 +21,12 @@ const HEAVY: Record<WeaponStyle, string> = {
   dual: "Dualwield_Melee_Attack_Stab",
   unarmed: "Unarmed_Melee_Attack_Kick",
 };
+const AERIAL: Record<WeaponStyle, string> = {
+  "1h": "1H_Melee_Attack_Slice_Horizontal",
+  "2h": "2H_Melee_Attack_Slice",
+  dual: "Dualwield_Melee_Attack_Stab",
+  unarmed: "Unarmed_Melee_Attack_Kick",
+};
 const IDLE: Record<WeaponStyle, string> = { "1h": "Idle", "2h": "2H_Melee_Idle", dual: "Idle", unarmed: "Unarmed_Idle" };
 
 interface Want {
@@ -97,6 +103,12 @@ export class Animator {
         const list = LIGHT[this.style];
         return this.strike(list[a.index % list.length]!, `light${a.index}:${w.tick - Math.round(a.t * c.tickRate)}`, s.startup, s.startup + s.active + s.recovery);
       }
+      case "aerial": {
+        const s = f.kit.light.hits[0]!;
+        return this.strike(AERIAL[this.style], `aerial:${w.tick - Math.round(a.t * c.tickRate)}`, s.startup, s.startup + s.active + s.recovery);
+      }
+      case "landing":
+        return { clip: "Jump_Land", key: `land${a.until}`, duration: c.landingLag + 0.15, fade: 0.04 };
       case "heavy": {
         const h = f.kit.heavy;
         const clip = HEAVY[this.style];
@@ -152,7 +164,11 @@ export class Animator {
         break;
     }
     // Free: in the air, moving or idle. Movement direction comes from how the body actually moved.
-    if (f.pos.y > f.floor + 0.05) return { clip: "Jump_Idle", key: "air", loop: true, fade: 0.1 };
+    if (f.pos.y > f.floor + 0.05) {
+      // Second jump: a fresh take-off pose while rising.
+      if (f.airJumpsLeft < c.airJumps && f.vel.y > 0) return { clip: "Jump_Start", key: `airjump${f.airJumpsLeft}`, duration: 0.35, fade: 0.05 };
+      return { clip: "Jump_Idle", key: "air", loop: true, fade: 0.1 };
+    }
     const v = this.velocity;
     const speed = Math.hypot(v.x, v.z);
     if (speed > 0.8) {

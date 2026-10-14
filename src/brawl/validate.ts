@@ -4,16 +4,15 @@
 
 import { Reader } from "../sim/validate.ts";
 import { fighterBudget, type BrawlBudget, type BrawlCostTable } from "./budget.ts";
-import { BRAWL_CONFIG } from "./world.ts";
 import { ARCHETYPES, FIGHTER_SCHEMA_VERSION, type Archetype, type FighterKit, type Special, type SpecialDelivery, type Strike } from "./kit.ts";
 
-export const MAX_LIGHT_HITS = 5;
+export const MAX_LIGHT_HITS = 3;
 export const MAX_SPECIALS = 3;
 
 /** Hard limits on every number a fighter kit may contain. */
 const LIMITS = {
   hp: [700, 1600],
-  moveSpeed: [4, 9],
+  moveSpeed: [3.5, 8],
   jumpSpeed: [6, 14],
   weight: [0.7, 1.4],
   radius: [0.35, 0.8],
@@ -45,8 +44,12 @@ export const MIN_LIGHT_STARTUP = 0.08;
 export const MIN_HEAVY_STARTUP = 0.35;
 /** A guard-breaking special must be telegraphed at least this long. */
 export const MIN_GUARD_BREAK_TELEGRAPH = 0.4;
-/** Knockback that floors even the heaviest fighter. */
-export const FLOORS_EVERYONE = BRAWL_CONFIG.knockdownSpeed * LIMITS.weight[1];
+/** Rhythm v3 (decision 0011): every light hit pushes back at least this much, so combos cannot be stretched… */
+export const MIN_LIGHT_KNOCKBACK = 4;
+/** …and the last one ejects (≈ 4–5 m), so every exchange ends at a distance. */
+export const MIN_EJECT_KNOCKBACK = 12;
+/** A missed blow leaves an opening at least this long (seconds): whiffs can be punished. */
+export const MIN_RECOVERY = { light: 0.2, lastLight: 0.4, heavy: 0.6, special: 0.35 } as const;
 
 export type FighterValidation =
   | { ok: true; kit: FighterKit; budget: BrawlBudget }
@@ -123,17 +126,22 @@ function designErrors(kit: FighterKit): string[] {
   const first = kit.light.hits[0];
   if (first && first.startup < MIN_LIGHT_STARTUP)
     errors.push(`light.hits[0].startup: au moins ${MIN_LIGHT_STARTUP} s, pour pouvoir garder en réaction`);
-  const last = kit.light.hits.at(-1);
-  // The combo must end in a way that frees the target: either it floors every fighter
-  // (get-up invulnerability follows), or the target recovers before a new opener lands.
-  if (first && last && last.knockback < FLOORS_EVERYONE && last.hitstun > last.recovery + first.startup)
-    errors.push(
-      `light: le dernier coup doit mettre au sol (recul ≥ ${FLOORS_EVERYONE}) ou avoir un hitstun ≤ récupération + démarrage du premier coup (sinon boucle infinie)`,
-    );
+  const hits = kit.light.hits;
+  hits.forEach((h, i) => {
+    const last = i === hits.length - 1;
+    if (last && h.knockback < MIN_EJECT_KNOCKBACK)
+      errors.push(`light.hits[${i}].knockback: le dernier coup du combo éjecte, recul ≥ ${MIN_EJECT_KNOCKBACK} (l'échange finit à distance)`);
+    if (!last && h.knockback < MIN_LIGHT_KNOCKBACK)
+      errors.push(`light.hits[${i}].knockback: au moins ${MIN_LIGHT_KNOCKBACK}, chaque coup repousse un peu`);
+    const min = last ? MIN_RECOVERY.lastLight : MIN_RECOVERY.light;
+    if (h.recovery < min) errors.push(`light.hits[${i}].recovery: au moins ${min} s, un coup raté doit pouvoir se punir`);
+  });
   if (kit.heavy.startup < MIN_HEAVY_STARTUP)
-    errors.push(`heavy.startup: au moins ${MIN_HEAVY_STARTUP} s, l'attaque lourde brise la garde et doit se voir venir`);
+    errors.push(`heavy.startup: au moins ${MIN_HEAVY_STARTUP} s, l'attaque lourde use le bouclier deux fois plus vite et doit se voir venir`);
+  if (kit.heavy.recovery < MIN_RECOVERY.heavy) errors.push(`heavy.recovery: au moins ${MIN_RECOVERY.heavy} s, un coup raté doit pouvoir se punir`);
   kit.specials.forEach((sp, i) => {
     const telegraph = sp.startup + (sp.delivery.type === "area" ? sp.delivery.delay : 0);
+    if (sp.recovery < MIN_RECOVERY.special) errors.push(`specials[${i}].recovery: au moins ${MIN_RECOVERY.special} s, une spéciale ratée doit pouvoir se punir`);
     if (sp.guardBreak && telegraph < MIN_GUARD_BREAK_TELEGRAPH)
       errors.push(`specials[${i}]: une spéciale brise-garde doit être télégraphiée au moins ${MIN_GUARD_BREAK_TELEGRAPH} s (démarrage + délai)`);
   });
@@ -147,7 +155,7 @@ export function validateFighter(data: unknown, costs: BrawlCostTable): FighterVa
   const o = r.obj(data, "kit");
   if (!o) return { ok: false, errors: r.errors };
   if (o.schemaVersion !== FIGHTER_SCHEMA_VERSION)
-    return { ok: false, errors: [`kit.schemaVersion: ${FIGHTER_SCHEMA_VERSION} attendu (contrat de combat brawler)`] };
+    return { ok: false, errors: [`kit.schemaVersion: ${FIGHTER_SCHEMA_VERSION} attendu (contrat de combat brawler v3, voir docs/design/combat-contract-v2.md)`] };
   const id = r.str(o, "id", "kit");
   if (!ARCHETYPES.includes(o.archetype as Archetype)) r.errors.push(`kit.archetype: un parmi ${ARCHETYPES.join(", ")}`);
 
@@ -183,7 +191,7 @@ export function validateFighter(data: unknown, costs: BrawlCostTable): FighterVa
     return { ok: false, errors: r.errors };
 
   const kit: FighterKit = {
-    schemaVersion: 2,
+    schemaVersion: 3,
     id,
     archetype: o.archetype as Archetype,
     stats,

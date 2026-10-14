@@ -9,7 +9,7 @@ import { canSee, createBrawl, step, type BrawlWorld, type Command } from "../src
 const catalog = loadPropCatalog();
 const strike = { damage: 50, startup: 0.1, active: 0.1, recovery: 0.2, reach: 1, size: 0.6, hitstun: 0.3, knockback: 2 };
 const kit: FighterKit = {
-  schemaVersion: 2,
+  schemaVersion: 3,
   id: "test",
   archetype: "balanced",
   stats: { hp: 1000, moveSpeed: 6, jumpSpeed: 10, weight: 1, radius: 0.5 },

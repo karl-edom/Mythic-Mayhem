@@ -7,25 +7,25 @@
     "max": 120
   },
   "survival": {
-    "pointsAtBaseHp": 31.97,
+    "pointsAtBaseHp": 33.79,
     "hpBase": 1000,
     "weightFactor": 0.5,
-    "pointsPerRadiusAboveBase": 42.64,
+    "pointsPerRadiusAboveBase": 45.07,
     "radiusBase": 0.5
   },
   "mobility": {
-    "pointsPerMoveSpeed": 0.5567,
-    "pointsPerJumpSpeed": 0.08347
+    "pointsPerMoveSpeed": 1.851,
+    "pointsPerJumpSpeed": 0.2773
   },
   "light": {
-    "pointsPerDps": 0.1326,
+    "pointsPerDps": 0.2092,
     "reachFactorPerMetre": 0.4,
     "reachBase": 1.5,
-    "pointsPerSecondOfFastStartup": 33.14,
+    "pointsPerSecondOfFastStartup": 52.22,
     "startupBase": 0.2
   },
   "heavy": {
-    "pointsPerDps": 0.03745
+    "pointsPerDps": 0.0132
   },
   "special": {
     "pointsPerDamagePerEnergy": 3,
@@ -39,9 +39,9 @@
     "areaDelayDiscountPerSecond": 0.3,
     "areaMaxDelayDiscount": 0.4,
     "deliveryFactor": {
-      "projectile": 1.148,
-      "rush": 0.83,
-      "area": 0.9492
+      "projectile": 1.313,
+      "rush": 0.2878,
+      "area": 0.6889
     },
     "extraSpecialWeights": [
       1,

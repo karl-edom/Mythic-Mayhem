@@ -13,11 +13,11 @@ function strike(r: () => number, last: boolean): Strike {
     damage: range(r, 20, 60, 0),
     startup: range(r, 0.08, 0.2),
     active: range(r, 0.06, 0.12),
-    recovery: last ? range(r, 0.3, 0.5) : range(r, 0.15, 0.3),
+    recovery: last ? range(r, 0.4, 0.6) : range(r, 0.2, 0.32),
     reach: range(r, 0.9, 1.5),
     size: range(r, 0.5, 0.9),
     hitstun: range(r, 0.3, 0.45),
-    knockback: last ? range(r, 13, 15) : range(r, 1, 3),
+    knockback: last ? range(r, 12, 15) : range(r, 4, 6),
   };
 }
 
@@ -35,7 +35,7 @@ function special(r: () => number, i: number): Special {
     id: `s${i}`,
     energyCost: range(r, 15, 60, 0),
     startup,
-    recovery: range(r, 0.25, 0.5),
+    recovery: range(r, 0.35, 0.6),
     delivery,
     damage: range(r, 50, 180, 0),
     hitstun: range(r, 0.4, 0.7),
@@ -45,15 +45,15 @@ function special(r: () => number, i: number): Special {
 }
 
 export function randomFighter(r: () => number, id: string): FighterKit {
-  const n = 2 + Math.floor(r() * 4);
+  const n = 1 + Math.floor(r() * 3);
   const hits = Array.from({ length: n }, (_, i) => strike(r, i === n - 1));
   return {
-    schemaVersion: 2,
+    schemaVersion: 3,
     id,
     archetype: pick(r, ARCHETYPES),
     stats: {
       hp: range(r, 750, 1500, 0),
-      moveSpeed: range(r, 5, 8.5),
+      moveSpeed: range(r, 4, 6.5),
       jumpSpeed: range(r, 8, 12),
       weight: range(r, 0.8, 1.3),
       radius: range(r, 0.4, 0.7),
@@ -63,7 +63,7 @@ export function randomFighter(r: () => number, id: string): FighterKit {
       damage: range(r, 80, 160, 0),
       startup: range(r, 0.35, 0.6),
       active: range(r, 0.08, 0.15),
-      recovery: range(r, 0.4, 0.7),
+      recovery: range(r, 0.6, 0.85),
       reach: range(r, 1.2, 1.7),
       size: range(r, 0.8, 1.1),
       hitstun: range(r, 0.5, 0.7),

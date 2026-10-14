@@ -28,15 +28,35 @@ export interface BrawlConfig {
   guardChip: number;
   /** Seconds a fighter is stuck after blocking a hit. */
   blockstun: number;
-  /** Seconds a fighter is stunned when a guard-breaking hit lands on their guard. */
+  /** Seconds a fighter is stunned when their shield breaks. */
   guardBreakStun: number;
-  /** Share of damage a guard-breaking hit deals through guard. */
-  guardBreakDamage: number;
+  /**
+   * Shield (rhythm v3, decision 0011): the guard wears out. It holds `shieldMax` points,
+   * drains while held, regenerates once released, and breaks at zero (stun `guardBreakStun`).
+   * A blocked hit removes damage × `shieldDamageFactor`, doubled for a heavy attack and
+   * tripled for a guard-breaking special.
+   */
+  shieldMax: number;
+  shieldDrain: number;
+  shieldRegen: number;
+  /** Seconds after releasing the shield before it regenerates. */
+  shieldRegenDelay: number;
+  shieldDamageFactor: number;
+  /** Air game: extra jumps in the air, their strength, and movement speed share in the air. */
+  airJumps: number;
+  airJumpFactor: number;
+  airControl: number;
+  /** Seconds stuck when landing during an aerial attack. */
+  landingLag: number;
+  /** Knockback grows as health drops: × (1 + bonus × share of health lost). */
+  knockbackLowHpBonus: number;
   dodgeDistance: number;
   dodgeDuration: number;
   /** Invulnerability at the start of a dodge, seconds. */
   dodgeInvulnerable: number;
   dodgeEnergyCost: number;
+  /** Seconds after a dodge ends before the next one. */
+  dodgeCooldown: number;
   energyMax: number;
   energyStart: number;
   /** Passive energy regeneration, per second. */
@@ -78,19 +98,29 @@ export interface BrawlConfig {
 
 export const BRAWL_CONFIG: BrawlConfig = {
   tickRate: 60,
-  gravity: 28,
+  gravity: 18,
   koToWin: 3,
-  timeLimit: 180,
+  timeLimit: 240,
   respawnDelay: 3,
   respawnInvulnerable: 2,
   guardChip: 0.1,
   blockstun: 0.2,
-  guardBreakStun: 1,
-  guardBreakDamage: 0.5,
+  guardBreakStun: 2,
+  shieldMax: 100,
+  shieldDrain: 20,
+  shieldRegen: 15,
+  shieldRegenDelay: 0.5,
+  shieldDamageFactor: 0.3,
+  airJumps: 1,
+  airJumpFactor: 0.85,
+  airControl: 0.7,
+  landingLag: 0.1,
+  knockbackLowHpBonus: 0.6,
   dodgeDistance: 3.5,
   dodgeDuration: 0.3,
   dodgeInvulnerable: 0.2,
   dodgeEnergyCost: 15,
+  dodgeCooldown: 0.3,
   energyMax: 100,
   energyStart: 50,
   energyRegen: 4,
@@ -123,6 +153,8 @@ export const STEP_UP = 0.45;
 
 export type Action =
   | { kind: "light"; index: number; t: number; hit: boolean }
+  | { kind: "aerial"; t: number; hit: boolean }
+  | { kind: "landing"; until: number }
   | { kind: "heavy"; charge: number; charging: boolean; t: number; hit: boolean }
   | { kind: "special"; slot: number; t: number; fired: boolean }
   | { kind: "rush"; slot: number; remaining: number }
@@ -166,6 +198,13 @@ export interface Fighter {
   lastHitBy: number | null;
   /** Set when the fighter moved by its own will this tick (for rendering). */
   moving: boolean;
+  /** Shield points left (see BrawlConfig.shieldMax). */
+  shield: number;
+  /** Last time the shield was up (regeneration waits shieldRegenDelay after it). */
+  shieldUsedAt: number;
+  /** Jumps left before touching the ground again. */
+  airJumpsLeft: number;
+  dodgeReadyAt: number;
 }
 
 export interface Projectile {
@@ -193,7 +232,7 @@ export interface Zone {
   triggerAt: number;
 }
 
-export type HitKind = "light" | "heavy" | "special" | "throw" | "slam";
+export type HitKind = "light" | "aerial" | "heavy" | "special" | "throw" | "slam";
 
 export type BrawlEvent =
   | { t: number; type: "hit"; source: number; target: number; amount: number; by: HitKind; knockdown: boolean }
@@ -201,6 +240,7 @@ export type BrawlEvent =
   | { t: number; type: "guardBreak"; source: number; target: number; amount: number; by: HitKind }
   | { t: number; type: "special"; unit: number; slot: number }
   | { t: number; type: "dodge"; unit: number }
+  | { t: number; type: "airJump"; unit: number }
   | { t: number; type: "breaker"; unit: number }
   | { t: number; type: "ko"; target: number; killer: number }
   | { t: number; type: "respawn"; unit: number }
@@ -280,6 +320,10 @@ export function createBrawl(
       carrying: null,
       lastHitBy: null,
       moving: false,
+      shield: config.shieldMax,
+      shieldUsedAt: -Infinity,
+      airJumpsLeft: config.airJumps,
+      dodgeReadyAt: 0,
     })),
     projectiles: [],
     zones: [],
@@ -482,24 +526,28 @@ function applyHit(w: BrawlWorld, src: Fighter, target: Fighter, hit: HitSpec, fr
   const t = w.time;
   const dir = hnorm({ x: target.pos.x - from.x, y: 0, z: target.pos.z - from.z }, src.facing);
   const guarding = target.action?.kind === "guard";
-  if (guarding && !hit.guardBreak) {
+  if (guarding) {
+    // The shield takes the blow: heavy attacks wear it twice as fast, guard-breaking specials three times.
+    const wear = hit.by === "heavy" ? 2 : hit.guardBreak ? 3 : 1;
+    target.shield -= hit.damage * c.shieldDamageFactor * wear;
+    target.shieldUsedAt = t;
     const amount = hit.damage * c.guardChip;
     damage(w, src, target, amount);
+    if (target.shield <= 0) {
+      breakShield(w, target);
+      w.events.push({ t, type: "guardBreak", source: src.id, target: target.id, amount, by: hit.by });
+      return true;
+    }
     if (target.alive) target.action = { kind: "blockstun", until: t + c.blockstun };
     target.vel.x = dir.x * 2;
     target.vel.z = dir.z * 2;
     w.events.push({ t, type: "block", source: src.id, target: target.id, amount, by: hit.by });
     return true;
   }
-  if (guarding) {
-    const amount = hit.damage * c.guardBreakDamage;
-    damage(w, src, target, amount);
-    if (target.alive) target.action = { kind: "guardbroken", until: t + c.guardBreakStun };
-    w.events.push({ t, type: "guardBreak", source: src.id, target: target.id, amount, by: hit.by });
-    return true;
-  }
   damage(w, src, target, hit.damage);
-  const speed = hit.knockback / target.kit.stats.weight;
+  // Knockback grows as health drops (the nod to Smash's percentage): late hits send fighters flying.
+  const lost = 1 - Math.max(0, target.hp) / target.kit.stats.hp;
+  const speed = (hit.knockback / target.kit.stats.weight) * (1 + c.knockbackLowHpBonus * lost);
   const knockdown = speed >= c.knockdownSpeed;
   target.vel.x = dir.x * speed;
   target.vel.z = dir.z * speed;
@@ -510,6 +558,12 @@ function applyHit(w: BrawlWorld, src: Fighter, target: Fighter, hit: HitSpec, fr
       : { kind: "hitstun", until: t + hit.hitstun };
   w.events.push({ t, type: "hit", source: src.id, target: target.id, amount: hit.damage, by: hit.by, knockdown });
   return true;
+}
+
+/** Empty shield: the fighter is stunned, open to anything. */
+function breakShield(w: BrawlWorld, f: Fighter): void {
+  f.shield = 0;
+  if (f.alive) f.action = { kind: "guardbroken", until: w.time + w.config.guardBreakStun };
 }
 
 function damage(w: BrawlWorld, src: Fighter, target: Fighter, amount: number): void {
@@ -625,7 +679,7 @@ function startAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, heavyP
       return;
     }
   }
-  if (cmd?.dodge && f.energy >= c.dodgeEnergyCost) {
+  if (cmd?.dodge && f.energy >= c.dodgeEnergyCost && w.time >= f.dodgeReadyAt) {
     const t = lockTarget(w, f);
     const back = t ? hnorm({ x: f.pos.x - t.pos.x, y: 0, z: f.pos.z - t.pos.z }, f.facing) : f.facing;
     f.energy -= c.dodgeEnergyCost;
@@ -636,6 +690,22 @@ function startAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, heavyP
   if (cmd?.special !== undefined) {
     startSpecial(w, f, cmd.special);
     if (f.action) return;
+  }
+  // In the air: the light button gives one aerial strike, the jump button a second jump.
+  if (!grounded(f)) {
+    if (lightWanted && f.kit.light.hits.length > 0) {
+      faceTarget(w, f);
+      f.action = { kind: "aerial", t: 0, hit: false };
+      f.bufferedLightUntil = -Infinity;
+      return;
+    }
+    if (cmd?.jump && f.airJumpsLeft > 0) {
+      f.airJumpsLeft--;
+      f.vel.y = f.kit.stats.jumpSpeed * c.airJumpFactor;
+      w.events.push({ t: w.time, type: "airJump", unit: f.id });
+    }
+    moveBy(w, f, cmd, c.airControl);
+    return;
   }
   if (heavyPressed) {
     faceTarget(w, f);
@@ -648,7 +718,7 @@ function startAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, heavyP
     f.bufferedLightUntil = -Infinity;
     return;
   }
-  if (cmd?.guard && grounded(f)) {
+  if (cmd?.guard && grounded(f) && f.shield > 0) {
     f.action = { kind: "guard" };
     return;
   }
@@ -692,6 +762,18 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
       } else if (a.t >= strikeLength(s)) f.action = null;
       return;
     }
+    case "aerial": {
+      // One strike with the first light hit's numbers; the fall goes on meanwhile.
+      const s = f.kit.light.hits[0]!;
+      a.t += dt;
+      if (!a.hit && a.t >= s.startup && a.t < s.startup + s.active)
+        a.hit = resolveStrike(w, f, s, "aerial", s.damage, false, a.t - dt < s.startup);
+      if (a.t >= strikeLength(s)) f.action = null;
+      return;
+    }
+    case "landing":
+      if (w.time >= a.until) f.action = null;
+      return;
     case "heavy": {
       const h = f.kit.heavy;
       if (a.charging) {
@@ -745,7 +827,10 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
       const stepLen = (c.dodgeDistance / c.dodgeDuration) * dt;
       f.pos.x += a.dir.x * stepLen;
       f.pos.z += a.dir.z * stepLen;
-      if (a.t >= c.dodgeDuration) f.action = null;
+      if (a.t >= c.dodgeDuration) {
+        f.action = null;
+        f.dodgeReadyAt = w.time + c.dodgeCooldown;
+      }
       return;
     }
     case "breaker":
@@ -764,8 +849,17 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
       }
       return;
     case "guard":
-      if (!cmd?.guard) f.action = null;
-      else faceTarget(w, f);
+      f.shieldUsedAt = w.time;
+      if (!cmd?.guard) {
+        f.action = null;
+        return;
+      }
+      faceTarget(w, f);
+      f.shield -= c.shieldDrain * dt;
+      if (f.shield <= 0) {
+        breakShield(w, f);
+        w.events.push({ t: w.time, type: "guardBreak", source: f.id, target: f.id, amount: 0, by: "heavy" });
+      }
       return;
     case "charge":
       if (!cmd?.charge) f.action = null;
@@ -832,8 +926,15 @@ function physics(w: BrawlWorld, f: Fighter): void {
     if (f.pos.y <= f.floor) {
       f.pos.y = f.floor;
       f.vel.y = 0;
+      land(w, f);
     }
   }
+}
+
+/** Touching the ground: jumps come back; an aerial strike still going costs a short landing lag. */
+function land(w: BrawlWorld, f: Fighter): void {
+  f.airJumpsLeft = w.config.airJumps;
+  if (f.action?.kind === "aerial") f.action = { kind: "landing", until: w.time + w.config.landingLag };
 }
 
 /** Fighters do not overlap: push both apart along the line between them. */
@@ -933,6 +1034,8 @@ export function step(w: BrawlWorld, commands: Command[]): void {
         f.carrying = null;
         f.lastHitBy = null;
         f.action = null;
+        f.shield = c.shieldMax;
+        f.airJumpsLeft = c.airJumps;
         f.respawnAt = Infinity;
         f.invulnerableUntil = w.time + c.respawnInvulnerable;
         w.events.push({ t: w.time, type: "respawn", unit: f.id });
@@ -946,6 +1049,8 @@ export function step(w: BrawlWorld, commands: Command[]): void {
     const heavyPressed = !!cmd?.heavy && !f.heavyHeld;
     f.heavyHeld = !!cmd?.heavy;
     if (f.action?.kind !== "charge") f.energy = Math.min(c.energyMax, f.energy + c.energyRegen * dt);
+    if (f.action?.kind !== "guard" && w.time - f.shieldUsedAt >= c.shieldRegenDelay)
+      f.shield = Math.min(c.shieldMax, f.shield + c.shieldRegen * dt);
     if (cmd?.dodge && canBreak(w, f)) breaker(w, f);
     else if (f.action) advanceAction(w, f, cmd, lightWanted);
     else startAction(w, f, cmd, heavyPressed, lightWanted);

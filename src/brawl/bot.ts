@@ -2,7 +2,7 @@
 // player produces. One personality for every kit; parameters tune its level.
 
 import { distToProp, segmentInterval, surfaceAt, type Arena } from "./arena.ts";
-import { canBreak, canSee, grabbable, hdist, lockTarget, type BrawlWorld, type Command, type Fighter } from "./world.ts";
+import { canBreak, canSee, grabbable, grounded, hdist, lockTarget, type BrawlWorld, type Command, type Fighter } from "./world.ts";
 
 export interface BrawlBotParams {
   /** Chance per decision to react to an incoming heavy or special (dodge or guard). */
@@ -42,12 +42,17 @@ export interface BrawlBot {
   fetch: { prop: number; until: number } | null;
   /** Way up to an opponent standing too high to reach by jumping: foot of a ramp, its top, then off it. */
   route: { points: { x: number; z: number }[]; until: number } | null;
+  /** Rhythm v3: after an exchange the bot steps back and plays the distance until then. */
+  backoffUntil: number;
+  /** Own action kind last tick, to notice when an attack ends. */
+  lastAction: string | null;
 }
 
 export function createBot(random: () => number, params: BrawlBotParams = BOT_LEVELS.normal): BrawlBot {
   return {
     params, random, nextThinkAt: 0, guardUntil: 0, chargeHeavyUntil: 0, strafe: random() < 0.5 ? 1 : -1,
     lastSeen: null, lastSeenAt: -Infinity, wander: null, prevPos: { x: 0, z: 0 }, stuckTicks: 0, detourUntil: 0, fetch: null, route: null,
+    backoffUntil: 0, lastAction: null,
   };
 }
 
@@ -178,6 +183,21 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
     cmd.heavy = w.time < bot.chargeHeavyUntil;
     return cmd;
   }
+  // An exchange just ended (our attack is over): step back and play the distance for a moment.
+  const ended = bot.lastAction !== null && ["light", "heavy", "special", "aerial"].includes(bot.lastAction) && !me.action;
+  bot.lastAction = me.action?.kind ?? null;
+  if (ended) bot.backoffUntil = w.time + 0.5 + bot.random() * 0.8;
+
+  // A missed blow is an opening: punish it when in reach.
+  const fa = foe.action;
+  const whiffed =
+    (fa?.kind === "light" && !fa.hit && fa.t > foe.kit.light.hits[fa.index]!.startup + foe.kit.light.hits[fa.index]!.active) ||
+    (fa?.kind === "heavy" && !fa.charging && !fa.hit && fa.t > foe.kit.heavy.startup + foe.kit.heavy.active);
+  if (whiffed && !me.action && d <= reach + 0.3 && bot.random() < p.reactivity) {
+    cmd.light = true;
+    return cmd;
+  }
+
   // Under pressure (taking hits or blocking): break out now and then, more often the sharper the bot.
   if (canBreak(w, me) && bot.random() < p.reactivity * 0.04) {
     cmd.dodge = true;
@@ -197,6 +217,14 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
     if (threat === "heavy" || (threat === "special" && me.energy >= w.config.dodgeEnergyCost)) {
       cmd.dodge = true;
       cmd.move = { x: -toFoe.z * bot.strafe, z: toFoe.x * bot.strafe };
+      return cmd;
+    }
+    // A worn shield is not worth raising: better to get out of the way.
+    if (me.shield < w.config.shieldMax * 0.3) {
+      if (me.energy >= w.config.dodgeEnergyCost) {
+        cmd.dodge = true;
+        cmd.move = { x: -toFoe.z * bot.strafe, z: toFoe.x * bot.strafe };
+      }
       return cmd;
     }
     bot.guardUntil = w.time + 0.4;
@@ -247,6 +275,22 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
       bot.prevPos = { x: me.pos.x, z: me.pos.z };
       return cmd;
     }
+  }
+
+  // In the air near the opponent: aerial strike.
+  if (!me.action && !grounded(me) && !perched && d <= reach + 0.5) {
+    cmd.light = true;
+    return cmd;
+  }
+
+  // Backing off: keep 4–6 m, circle, harass with projectiles; never walk back in.
+  if (w.time < bot.backoffUntil && !me.action && seen && !perched) {
+    const away = d < 4 ? -1 : d > 6 ? 0.4 : 0;
+    cmd.move = { x: toFoe.x * away - toFoe.z * bot.strafe * 0.7, z: toFoe.z * away + toFoe.x * bot.strafe * 0.7 };
+    const shot = me.kit.specials.findIndex((sp) => sp.delivery.type === "projectile" && sp.energyCost <= me.energy && d <= sp.delivery.range);
+    if (shot >= 0 && bot.random() < p.specialRate * 0.03) cmd.special = shot;
+    bot.prevPos = { x: me.pos.x, z: me.pos.z };
+    return cmd;
   }
 
   // In a combo: keep pressing light so the chain continues.
@@ -312,7 +356,8 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
     const lateral = d < 6 ? 0.5 : 0.2;
     cmd.move = { x: toFoe.x - toFoe.z * bot.strafe * lateral, z: toFoe.z + toFoe.x * bot.strafe * lateral };
   }
-  if (bot.random() < 0.03) cmd.jump = true;
+  // Approaching: sometimes by the air (jump, then the aerial strike above).
+  if (!perched && bot.random() < (d < 5 ? 0.08 : 0.03)) cmd.jump = true;
   bot.prevPos = { x: me.pos.x, z: me.pos.z };
   return cmd;
 }

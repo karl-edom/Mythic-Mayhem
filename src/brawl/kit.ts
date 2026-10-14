@@ -2,7 +2,7 @@
 // A kit is everything the engine knows about a fighter; identity (name,
 // universe, colours) lives in character.json and is display-only.
 
-export const FIGHTER_SCHEMA_VERSION = 2;
+export const FIGHTER_SCHEMA_VERSION = 3;
 
 export type Archetype = "rushdown" | "balanced" | "heavy" | "zoner";
 export const ARCHETYPES: readonly Archetype[] = ["rushdown", "balanced", "heavy", "zoner"];
@@ -76,7 +76,7 @@ export interface FighterStats {
 }
 
 export interface FighterKit {
-  schemaVersion: 2;
+  schemaVersion: 3;
   id: string;
   archetype: Archetype;
   stats: FighterStats;

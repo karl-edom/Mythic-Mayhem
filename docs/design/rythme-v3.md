@@ -1,6 +1,6 @@
 # Rythme v3 — vers un combat « façon Smash » (proposition)
 
-Statut : **proposition, en attente de validation du porteur de projet.** Rien n'est implémenté.
+Statut : **acceptée et implémentée** (« 1 oui, 2 oui, 3 oui, fais tout en une étape »). Voir la décision 0011 pour ce qui a été fait et les écarts avec cette fiche.
 
 Demande : « le rythme du combat devrait s'approcher plus d'un Super Smash Bros. Là c'est trop nerveux, on ne peut pas réfléchir. » La barre de vie est conservée (pas d'éjection hors de l'arène, décision de l'étape arènes).
 

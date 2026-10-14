@@ -1,10 +1,10 @@
 {
-  "schemaVersion": 2,
+  "schemaVersion": 3,
   "id": "ronin",
   "archetype": "rushdown",
   "stats": {
     "hp": 850,
-    "moveSpeed": 7.5,
+    "moveSpeed": 5.62,
     "jumpSpeed": 10,
     "weight": 0.9,
     "radius": 0.45
@@ -12,37 +12,27 @@
   "light": {
     "hits": [
       {
-        "damage": 23,
+        "damage": 33,
         "startup": 0.1,
-        "active": 0.08,
-        "recovery": 0.18,
-        "reach": 1.1,
-        "size": 0.7,
-        "hitstun": 0.35,
-        "knockback": 2
-      },
-      {
-        "damage": 23,
-        "startup": 0.1,
-        "active": 0.08,
-        "recovery": 0.18,
-        "reach": 1.1,
-        "size": 0.7,
-        "hitstun": 0.35,
-        "knockback": 2
-      },
-      {
-        "damage": 25,
-        "startup": 0.12,
         "active": 0.08,
         "recovery": 0.2,
-        "reach": 1.2,
+        "reach": 1.1,
         "size": 0.7,
-        "hitstun": 0.4,
-        "knockback": 3
+        "hitstun": 0.35,
+        "knockback": 4
       },
       {
-        "damage": 41,
+        "damage": 33,
+        "startup": 0.1,
+        "active": 0.08,
+        "recovery": 0.2,
+        "reach": 1.1,
+        "size": 0.7,
+        "hitstun": 0.35,
+        "knockback": 4
+      },
+      {
+        "damage": 58,
         "startup": 0.15,
         "active": 0.1,
         "recovery": 0.4,
@@ -54,10 +44,10 @@
     ]
   },
   "heavy": {
-    "damage": 90,
+    "damage": 127,
     "startup": 0.45,
     "active": 0.1,
-    "recovery": 0.5,
+    "recovery": 0.6,
     "reach": 1.4,
     "size": 0.9,
     "hitstun": 0.6,
@@ -77,7 +67,7 @@
         "speed": 25,
         "size": 0.8
       },
-      "damage": 96,
+      "damage": 136,
       "hitstun": 0.6,
       "knockback": 13,
       "guardBreak": false
@@ -93,7 +83,7 @@
         "range": 12,
         "size": 0.6
       },
-      "damage": 65,
+      "damage": 92,
       "hitstun": 0.5,
       "knockback": 6,
       "guardBreak": false
@@ -109,7 +99,7 @@
         "radius": 2.5,
         "delay": 0.5
       },
-      "damage": 129,
+      "damage": 182,
       "hitstun": 0.7,
       "knockback": 14,
       "guardBreak": true
