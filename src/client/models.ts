@@ -62,12 +62,15 @@ export function weaponStyle(look: Look): WeaponStyle {
   return "unarmed";
 }
 
+/** Model file extension: ".glb", or ".json" (self-contained glTF) where .glb files cannot be served. */
+const EXT = (import.meta.env?.VITE_MODEL_EXT as string | undefined) ?? "glb";
+
 export async function loadModels(base: string, onProgress?: (done: number, total: number) => void): Promise<ModelLibrary> {
   const loader = new GLTFLoader();
   const files = [
-    ...MODELS.map((m) => `kaykit/${m}.glb`),
-    "kaykit/animations.glb",
-    ...ANIME_MODELS.map((m) => `anime/${m}.glb`),
+    ...MODELS.map((m) => `kaykit/${m}.${EXT}`),
+    `kaykit/animations.${EXT}`,
+    ...ANIME_MODELS.map((m) => `anime/${m}.${EXT}`),
   ];
   let done = 0;
   const load = async (f: string) => {
