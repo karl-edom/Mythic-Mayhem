@@ -62,8 +62,32 @@ export function weaponStyle(look: Look): WeaponStyle {
   return "unarmed";
 }
 
-/** Model file extension: ".glb", or ".json" (self-contained glTF) where .glb files cannot be served. */
+/**
+ * Model file extension. "json" is for hosts that serve neither .glb files nor fetches of
+ * data:/blob: URLs (the published artifact): each file then holds {"glb": "<base64>"},
+ * fetched as a plain same-origin file and parsed in memory.
+ */
 const EXT = (import.meta.env?.VITE_MODEL_EXT as string | undefined) ?? "glb";
+
+type Gltf = Awaited<ReturnType<GLTFLoader["loadAsync"]>>;
+
+async function fetchModel(loader: GLTFLoader, url: string): Promise<Gltf> {
+  if (EXT === "glb") return loader.loadAsync(url);
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url} : HTTP ${res.status}`);
+  const { glb } = (await res.json()) as { glb: string };
+  const bytes = Uint8Array.from(atob(glb), (c) => c.charCodeAt(0));
+  // Textures through <img> elements rather than fetch(blob:), which such hosts refuse.
+  // The loader picks its image loader when the parse starts (synchronously).
+  const g = globalThis as { createImageBitmap?: unknown };
+  const saved = g.createImageBitmap;
+  g.createImageBitmap = undefined;
+  try {
+    return loader.parseAsync(bytes.buffer, "");
+  } finally {
+    g.createImageBitmap = saved;
+  }
+}
 
 export async function loadModels(base: string, onProgress?: (done: number, total: number) => void): Promise<ModelLibrary> {
   const loader = new GLTFLoader();
@@ -74,7 +98,7 @@ export async function loadModels(base: string, onProgress?: (done: number, total
   ];
   let done = 0;
   const load = async (f: string) => {
-    const g = await loader.loadAsync(new URL(f, base).href);
+    const g = await fetchModel(loader, new URL(f, base).href);
     onProgress?.(++done, files.length);
     return g;
   };

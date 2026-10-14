@@ -258,9 +258,9 @@ async function boot(): Promise<void> {
     });
   } catch (e) {
     // The game stays playable with simple shapes if the models cannot load.
-    label.textContent = "Modèles 3D indisponibles : affichage simplifié.";
+    label.textContent = `Modèles 3D indisponibles : affichage simplifié. (${e instanceof Error ? e.message : String(e)})`;
     console.error(e);
-    await new Promise((r) => setTimeout(r, 1200));
+    await new Promise((r) => setTimeout(r, 4000));
   }
   buildShowcase();
   showMenu();
