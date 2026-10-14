@@ -7,6 +7,7 @@
 import * as THREE from "three";
 import type { Character } from "../brawl/character.ts";
 import type { Strike } from "../brawl/kit.ts";
+import { distToProp, type Prop } from "../brawl/arena.ts";
 import { FIGHTER_HEIGHT, lockTarget, strikeCenter, type BrawlWorld, type Fighter } from "../brawl/world.ts";
 
 interface FighterView {
@@ -26,6 +27,64 @@ interface FighterView {
 
 const SKY = 0xbfe8ff;
 
+const mat = (color: string | number) => new THREE.MeshStandardMaterial({ color, roughness: 0.8 });
+
+/** Simple, readable shapes per prop look. The collision shape is the prop's footprint and height. */
+function buildProp(p: Prop): THREE.Group {
+  const g = new THREE.Group();
+  const s = p.kind.shape;
+  const w = p.halfW * 2;
+  const d = p.halfD * 2;
+  const h = p.height;
+  const add = (m: THREE.Mesh, y: number) => {
+    m.position.y = y;
+    m.castShadow = true;
+    m.receiveShadow = true;
+    g.add(m);
+    return m;
+  };
+  switch (p.kind.look) {
+    case "tree":
+      add(new THREE.Mesh(new THREE.CylinderGeometry(p.halfW * 0.7, p.halfW, h * 0.45, 12), mat(0xa47148)), h * 0.225);
+      add(new THREE.Mesh(new THREE.SphereGeometry(p.halfW * 2.2, 16, 12), mat(p.kind.color)), h * 0.72);
+      break;
+    case "house": {
+      add(new THREE.Mesh(new THREE.BoxGeometry(w, h * 0.6, d), mat(p.kind.color)), h * 0.3);
+      const roof = add(new THREE.Mesh(new THREE.ConeGeometry(Math.hypot(w, d) / 2 + 0.3, h * 0.4, 4), mat(0xe76f51)), h * 0.8);
+      roof.rotation.y = Math.PI / 4;
+      roof.scale.set(w / Math.hypot(w, d) * 1.414, 1, d / Math.hypot(w, d) * 1.414);
+      break;
+    }
+    case "crate": {
+      add(new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(p.kind.color)), h / 2);
+      const band = add(new THREE.Mesh(new THREE.BoxGeometry(w * 1.02, h * 0.15, d * 1.02), mat(0x8d5a2b)), h / 2);
+      band.castShadow = false;
+      break;
+    }
+    case "fence":
+      for (let i = 0; i < 5; i++) {
+        const post = add(new THREE.Mesh(new THREE.BoxGeometry(0.15, h, 0.15), mat(p.kind.color)), h / 2);
+        const along = -0.5 + i / 4;
+        post.position.x = w > d ? along * (w - 0.2) : 0;
+        post.position.z = w > d ? 0 : along * (d - 0.2);
+      }
+      add(new THREE.Mesh(new THREE.BoxGeometry(w, 0.15, d), mat(p.kind.color)), h * 0.75);
+      add(new THREE.Mesh(new THREE.BoxGeometry(w, 0.15, d), mat(p.kind.color)), h * 0.35);
+      break;
+    case "rock": {
+      const r = add(new THREE.Mesh(new THREE.DodecahedronGeometry(1, 0), mat(p.kind.color)), h / 2);
+      r.scale.set(w / 2, h / 2, d / 2);
+      break;
+    }
+    default:
+      add(
+        s.type === "cylinder" ? new THREE.Mesh(new THREE.CylinderGeometry(p.halfW, p.halfW, h, 20), mat(p.kind.color)) : new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat(p.kind.color)),
+        h / 2,
+      );
+  }
+  return g;
+}
+
 export function createRenderer(canvas: HTMLCanvasElement): THREE.WebGLRenderer {
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -42,6 +101,9 @@ export class ArenaView {
   private camPos = new THREE.Vector3(0, 6, 14);
   private camLook = new THREE.Vector3();
   private lastEvent = 0;
+  private props: THREE.Object3D[] = [];
+  private raycaster = new THREE.Raycaster();
+  private debris: { mesh: THREE.Mesh; vel: THREE.Vector3; until: number }[] = [];
 
   private renderer: THREE.WebGLRenderer;
   private world: BrawlWorld;
@@ -55,64 +117,138 @@ export class ArenaView {
     this.characters = characters;
     this.focus = focus;
     this.scene.background = new THREE.Color(SKY);
-    this.scene.fog = new THREE.Fog(SKY, 40, 90);
     this.buildArena();
     this.fighters = world.fighters.map((f) => this.buildFighter(f, characters[f.id]!));
     this.resize();
   }
 
   private buildArena(): void {
-    const R = this.world.config.arenaRadius;
+    const { halfW, halfD, def } = this.world.arena;
+    const span = Math.max(halfW, halfD);
+    this.scene.fog = new THREE.Fog(SKY, span * 2, span * 5);
     this.scene.add(new THREE.HemisphereLight(0xffffff, 0xd8c8a0, 1.6));
     const sun = new THREE.DirectionalLight(0xfff4dd, 2.2);
-    sun.position.set(12, 25, 8);
+    sun.position.set(span * 0.6, span * 1.4, span * 0.4);
     sun.castShadow = true;
-    sun.shadow.mapSize.set(2048, 2048);
-    Object.assign(sun.shadow.camera, { left: -R - 2, right: R + 2, top: R + 2, bottom: -R - 2 });
+    sun.shadow.mapSize.set(4096, 4096);
+    Object.assign(sun.shadow.camera, { left: -span - 4, right: span + 4, top: span + 4, bottom: -span - 4, far: span * 4 });
     this.scene.add(sun);
 
-    // Grass outside, a warm sand disc inside, concentric rings to read distances.
-    const grass = new THREE.Mesh(new THREE.CircleGeometry(80, 64), new THREE.MeshStandardMaterial({ color: 0x9be37a }));
+    // Grass all around, the arena floor, a faint grid to read distances.
+    const grass = new THREE.Mesh(new THREE.PlaneGeometry(span * 8, span * 8), new THREE.MeshStandardMaterial({ color: 0x9be37a }));
     grass.rotation.x = -Math.PI / 2;
     grass.position.y = -0.02;
     this.scene.add(grass);
-    const floor = new THREE.Mesh(new THREE.CircleGeometry(R, 96), new THREE.MeshStandardMaterial({ color: 0xffe2a8 }));
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(halfW * 2, halfD * 2), new THREE.MeshStandardMaterial({ color: def.ground }));
     floor.rotation.x = -Math.PI / 2;
     floor.receiveShadow = true;
     this.scene.add(floor);
-    for (const r of [R * 0.33, R * 0.66]) {
-      const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.06, r + 0.06, 96), new THREE.MeshBasicMaterial({ color: 0xf2c879 }));
-      ring.rotation.x = -Math.PI / 2;
-      ring.position.y = 0.01;
-      this.scene.add(ring);
-    }
-    // Low wall made of colourful blocks.
+    const grid = new THREE.GridHelper(Math.max(halfW, halfD) * 2, Math.round(Math.max(halfW, halfD) / 2), 0xffffff, 0xffffff);
+    (grid.material as THREE.Material).opacity = 0.18;
+    (grid.material as THREE.Material).transparent = true;
+    grid.scale.set(halfW / Math.max(halfW, halfD), 1, halfD / Math.max(halfW, halfD));
+    grid.position.y = 0.01;
+    this.scene.add(grid);
+
+    // Low wall of colourful blocks along the four edges.
     const colors = [0xff6b6b, 0xffd166, 0x06d6a0, 0x4cc9f0, 0xb388ff];
-    const n = 48;
-    for (let i = 0; i < n; i++) {
-      const a = (i / n) * Math.PI * 2;
-      const block = new THREE.Mesh(
-        new THREE.BoxGeometry(((2 * Math.PI * R) / n) * 0.92, 1, 0.8),
-        new THREE.MeshStandardMaterial({ color: colors[i % colors.length] }),
-      );
-      block.position.set(Math.cos(a) * (R + 0.4), 0.5, Math.sin(a) * (R + 0.4));
-      block.rotation.y = -a + Math.PI / 2;
-      block.castShadow = true;
-      this.scene.add(block);
+    let k = 0;
+    const edge = (x0: number, z0: number, x1: number, z1: number) => {
+      const len = Math.hypot(x1 - x0, z1 - z0);
+      const n = Math.max(1, Math.round(len / 3));
+      for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) / n;
+        const block = new THREE.Mesh(
+          new THREE.BoxGeometry((len / n) * 0.94, 1, 0.8),
+          new THREE.MeshStandardMaterial({ color: colors[k++ % colors.length] }),
+        );
+        block.position.set(x0 + (x1 - x0) * t, 0.5, z0 + (z1 - z0) * t);
+        block.rotation.y = -Math.atan2(z1 - z0, x1 - x0);
+        block.castShadow = true;
+        this.scene.add(block);
+      }
+    };
+    const o = 0.4;
+    edge(-halfW - o, -halfD - o, halfW + o, -halfD - o);
+    edge(halfW + o, -halfD - o, halfW + o, halfD + o);
+    edge(halfW + o, halfD + o, -halfW - o, halfD + o);
+    edge(-halfW - o, halfD + o, -halfW - o, -halfD - o);
+
+    for (const p of this.world.arena.props) {
+      const mesh = buildProp(p);
+      mesh.position.set(p.x, 0, p.z);
+      mesh.userData.prop = p.id;
+      this.scene.add(mesh);
+      this.props.push(mesh);
     }
-    // A few trees around for scale and cheer.
-    for (let i = 0; i < 14; i++) {
-      const a = (i / 14) * Math.PI * 2 + 0.2;
-      const d = R + 6 + (i % 3) * 3;
-      const tree = new THREE.Group();
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.4, 2), new THREE.MeshStandardMaterial({ color: 0xa47148 }));
-      trunk.position.y = 1;
-      const top = new THREE.Mesh(new THREE.SphereGeometry(1.6, 16, 12), new THREE.MeshStandardMaterial({ color: 0x4caf50 }));
-      top.position.y = 3;
-      tree.add(trunk, top);
-      tree.position.set(Math.cos(a) * d, 0, Math.sin(a) * d);
-      this.scene.add(tree);
+  }
+
+  /** Bits flying out of a broken prop. */
+  private burst(p: Prop): void {
+    for (let i = 0; i < 10; i++) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(0.25, 0.25, 0.25), new THREE.MeshStandardMaterial({ color: p.kind.color }));
+      m.position.set(p.x, p.height * 0.6, p.z);
+      const a = Math.random() * Math.PI * 2;
+      const v = new THREE.Vector3(Math.cos(a) * (2 + Math.random() * 3), 4 + Math.random() * 4, Math.sin(a) * (2 + Math.random() * 3));
+      this.scene.add(m);
+      this.debris.push({ mesh: m, vel: v, until: performance.now() + 1200 });
     }
+  }
+
+  private syncDebris(dt: number): void {
+    const now = performance.now();
+    this.debris = this.debris.filter((d) => {
+      d.vel.y -= 25 * dt;
+      d.mesh.position.addScaledVector(d.vel, dt);
+      if (d.mesh.position.y < 0.12) {
+        d.mesh.position.y = 0.12;
+        d.vel.set(d.vel.x * 0.5, 0, d.vel.z * 0.5);
+      }
+      d.mesh.rotation.x += dt * 8;
+      if (now < d.until) return true;
+      this.scene.remove(d.mesh);
+      return false;
+    });
+  }
+
+  /** Props between the camera and the player turn see-through, so the player is never lost behind a wall. */
+  private syncProps(): void {
+    const me = this.world.fighters[this.focus]!;
+    const cam = this.camera.position;
+    // Cast rays from the camera to the player's feet, chest and head: whatever they cross is in the way.
+    const blocking = new Set<number>();
+    for (const h of [0.2, FIGHTER_HEIGHT * 0.6, FIGHTER_HEIGHT]) {
+      const target = new THREE.Vector3(me.pos.x, me.pos.y + h, me.pos.z);
+      const dir = target.clone().sub(cam);
+      this.raycaster.set(cam, dir.clone().normalize());
+      this.raycaster.far = dir.length();
+      for (const hit of this.raycaster.intersectObjects(this.props, true)) {
+        let o: THREE.Object3D | null = hit.object;
+        while (o && o.userData.prop === undefined) o = o.parent;
+        if (o) blocking.add(o.userData.prop as number);
+      }
+    }
+    this.world.arena.props.forEach((p, i) => {
+      const mesh = this.props[i]!;
+      mesh.visible = p.alive;
+      if (!p.alive) return;
+      const hides = blocking.has(i) || distToProp(p, cam.x, cam.z) < 1;
+      mesh.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          const m = o.material as THREE.MeshStandardMaterial;
+          m.transparent = hides;
+          m.opacity = hides ? 0.3 : 1;
+          m.depthWrite = !hides;
+        }
+      });
+      // Breakable props darken as they take damage.
+      if (p.kind.hp !== null) {
+        const k = 0.45 + 0.55 * Math.max(0, p.hp / p.kind.hp);
+        mesh.traverse((o) => {
+          if (o instanceof THREE.Mesh) (o.material as THREE.MeshStandardMaterial).color.set(p.kind.color).multiplyScalar(k);
+        });
+      }
+    });
   }
 
   private buildFighter(f: Fighter, ch: Character): FighterView {
@@ -198,14 +334,18 @@ export class ArenaView {
   render(dt: number): void {
     const w = this.world;
     const t = w.time;
-    for (const e of w.events.slice(this.lastEvent))
+    for (const e of w.events.slice(this.lastEvent)) {
       if (e.type === "hit" || e.type === "guardBreak") this.fighters[e.target]!.flashUntil = t + 0.12;
+      if (e.type === "propBroken") this.burst(w.arena.props[e.prop]!);
+    }
     this.lastEvent = w.events.length;
 
     w.fighters.forEach((f, i) => this.syncFighter(f, this.fighters[i]!, t));
     this.syncProjectiles();
     this.syncZones();
     this.syncCamera(dt);
+    this.syncProps();
+    this.syncDebris(dt);
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -216,8 +356,8 @@ export class ArenaView {
     if (!f.alive) return;
     v.root.position.set(f.pos.x, f.pos.y, f.pos.z);
     v.root.rotation.y = Math.atan2(f.facing.x, f.facing.z);
-    v.shadow.position.set(f.pos.x, 0.02, f.pos.z);
-    v.shadow.scale.setScalar(Math.max(0.4, 1 - f.pos.y * 0.15));
+    v.shadow.position.set(f.pos.x, f.floor + 0.02, f.pos.z);
+    v.shadow.scale.setScalar(Math.max(0.4, 1 - (f.pos.y - f.floor) * 0.15));
 
     const a = f.action;
     const flashing = v.flashUntil > t;
@@ -336,11 +476,21 @@ export class ArenaView {
       // Over the right shoulder, high enough to see the opponent past the player.
       const right = new THREE.Vector3(-dir.z, 0, dir.x);
       wantPos = p.clone().addScaledVector(dir, -7.5).addScaledVector(right, 1.8).add(new THREE.Vector3(0, 4.2, 0));
-      wantLook = p.clone().lerp(o, 0.6).add(new THREE.Vector3(0, 1, 0));
+      // Aim between the two, but never so far ahead that the player leaves the frame on a big map.
+      const ahead = Math.min(p.distanceTo(o) * 0.6, 4);
+      wantLook = p.clone().addScaledVector(dir, ahead).add(new THREE.Vector3(0, 1, 0));
     } else {
       wantPos = new THREE.Vector3(0, 14, 22);
       wantLook = new THREE.Vector3(0, 0, 0);
     }
+    // Stay inside the walls: near an edge the camera comes closer instead of looking through the wall.
+    const { halfW, halfD } = this.world.arena;
+    const cx = Math.max(-halfW + 0.5, Math.min(halfW - 0.5, wantPos.x));
+    const cz = Math.max(-halfD + 0.5, Math.min(halfD - 0.5, wantPos.z));
+    // ...and rises by what it lost, to keep the player and the opponent in frame.
+    wantPos.y += Math.hypot(cx - wantPos.x, cz - wantPos.z) * 0.3;
+    wantPos.x = cx;
+    wantPos.z = cz;
     const k = 1 - Math.exp(-dt * 6);
     this.camPos.lerp(wantPos, k);
     this.camLook.lerp(wantLook, k);

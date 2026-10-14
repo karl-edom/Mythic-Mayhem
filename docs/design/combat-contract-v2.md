@@ -7,7 +7,7 @@ Statut : **v0 implémentée** (`src/brawl/`), testée (`tests/brawl.test.ts`), j
 | Règle | Valeur | Pourquoi |
 | --- | --- | --- |
 | Simulation | 60 ticks/s, déterministe, sans rendu, pilotée par des commandes | jeu en réseau plus tard, bots, tests |
-| Arène | disque de 16 m de rayon fermé par un mur | J-Stars : arène fermée |
+| Arène | rectangle fermé par un mur, avec des éléments de décor (décision 0006) ; données dans `data/arenas/` | J-Stars : arènes fermées et destructibles |
 | Victoire | 3 K.-O. remplissent la jauge de victoire | J-Stars |
 | Fin au temps | 180 s ; plus de K.-O., puis plus de vie restante | J-Stars |
 | Réapparition | après 3 s, invulnérable 2 s | J-Stars |
@@ -49,4 +49,6 @@ Six postes : survie (PV × poids, pénalité de taille), mobilité, combo (dég�
 
 ## 5. Pas encore fait
 
-Ultime / mode « burst », personnage de soutien, 2v2, combat aérien spécifique, éléments de décor destructibles, manette testée sur matériel réel.
+Ultime / mode « burst », personnage de soutien, 2v2, combat aérien spécifique, éléments de décor à lancer (étape A2 de la décision 0006), manette testée sur matériel réel.
+
+Les règles de décor (se cacher, casser, monter dessus) sont décrites dans la décision 0006.

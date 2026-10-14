@@ -4,6 +4,7 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { DATA_DIR } from "../data/load.ts";
+import { validateArena, type ArenaDef, type PropCatalog } from "./arena.ts";
 import type { BrawlCostTable } from "./budget.ts";
 import { parseCharacter, type Character } from "./character.ts";
 import { validateFighter, type FighterValidation } from "./validate.ts";
@@ -51,4 +52,22 @@ export function findPacks(root: string, costs: BrawlCostTable): LoadedPack[] {
 /** Original fighters (committed) then local fan packs (git-ignored). */
 export function loadAllPacks(costs = loadBrawlCosts()): LoadedPack[] {
   return [...findPacks(join(DATA_DIR, "fighters"), costs), ...findPacks(join(ROOT_DIR, "packs/local"), costs)];
+}
+
+export function loadPropCatalog(): PropCatalog {
+  return JSON.parse(readFileSync(join(DATA_DIR, "arenas/props.json"), "utf8")) as PropCatalog;
+}
+
+/** Every arena in data/arenas (props.json excepted); throws with all errors if one is invalid. */
+export function loadArenas(catalog = loadPropCatalog()): ArenaDef[] {
+  const dir = join(DATA_DIR, "arenas");
+  const errors: string[] = [];
+  const defs: ArenaDef[] = [];
+  for (const f of readdirSync(dir).filter((f) => f.endsWith(".json") && f !== "props.json").sort()) {
+    const r = validateArena(JSON.parse(readFileSync(join(dir, f), "utf8")), catalog);
+    if (r.ok) defs.push(r.def);
+    else errors.push(`${f}:\n  ${r.errors.join("\n  ")}`);
+  }
+  if (errors.length > 0) throw new Error(errors.join("\n"));
+  return defs;
 }

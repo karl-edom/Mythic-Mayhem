@@ -2,6 +2,7 @@
 // (packs/local, git-ignored), bundled at build time and validated in the
 // browser with the exact same rules as the Node tools.
 
+import { validateArena, type ArenaDef, type PropCatalog } from "../brawl/arena.ts";
 import type { BrawlCostTable } from "../brawl/budget.ts";
 import { parseCharacter, type Character } from "../brawl/character.ts";
 import type { FighterKit } from "../brawl/kit.ts";
@@ -40,4 +41,23 @@ export function loadRoster(): RosterEntry[] {
       };
     })
     .sort((a, b) => Number(a.local) - Number(b.local) || a.character.name.localeCompare(b.character.name));
+}
+
+const arenaFiles = import.meta.glob(["/data/arenas/*.json", "!/data/arenas/props.json", "/packs/local/arenas/*.json"], {
+  eager: true,
+  import: "default",
+});
+const propFiles = import.meta.glob("/data/arenas/props.json", { eager: true, import: "default" });
+
+export const propCatalog = Object.values(propFiles)[0] as PropCatalog;
+
+/** Valid arenas, original ones first; invalid ones are reported in the console. */
+export function loadArenaDefs(): ArenaDef[] {
+  const defs: ArenaDef[] = [];
+  for (const [path, data] of Object.entries(arenaFiles)) {
+    const r = validateArena(data, propCatalog);
+    if (r.ok) defs.push(r.def);
+    else console.warn(`Arène refusée : ${path}\n${r.errors.join("\n")}`);
+  }
+  return defs;
 }

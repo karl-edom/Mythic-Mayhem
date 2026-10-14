@@ -3,10 +3,11 @@
 
 import { rng } from "../sim/math.ts";
 import { BOT_LEVELS, botCommand, createBot, type BrawlBot } from "../brawl/bot.ts";
+import { buildArena, type ArenaDef } from "../brawl/arena.ts";
 import { createDuel, step, type BrawlWorld } from "../brawl/world.ts";
 import { Hud } from "./hud.ts";
 import { Input } from "./input.ts";
-import { loadRoster, type RosterEntry } from "./roster.ts";
+import { loadArenaDefs, loadRoster, propCatalog, type RosterEntry } from "./roster.ts";
 import { ArenaView, createRenderer } from "./scene.ts";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#view")!;
@@ -16,9 +17,15 @@ const renderer = createRenderer(canvas);
 const input = new Input(window);
 const roster = loadRoster();
 const playable = roster.filter((r) => r.kit);
+const arenas = loadArenaDefs();
 
 type Level = keyof typeof BOT_LEVELS;
-const choice = { p1: playable[0], p2: playable[1] ?? playable[0], level: "normal" as Level };
+const choice = {
+  p1: playable[0],
+  p2: playable[1] ?? playable[0],
+  level: "normal" as Level,
+  arena: arenas[0] as ArenaDef | undefined,
+};
 
 interface Game {
   world: BrawlWorld;
@@ -72,6 +79,15 @@ function showMenu(): void {
         showMenu();
       });
   }
+  const arenaRow = h("div", "levels", box);
+  h("span", "", arenaRow, "Arène :");
+  for (const a of arenas) {
+    const b = h("button", `pill${choice.arena === a ? " selected" : ""}`, arenaRow, `${a.name} · ${a.width}×${a.depth} m`);
+    b.addEventListener("click", () => {
+      choice.arena = a;
+      showMenu();
+    });
+  }
   const levels = h("div", "levels", box);
   h("span", "", levels, "Niveau du bot :");
   for (const l of Object.keys(BOT_LEVELS) as Level[]) {
@@ -101,7 +117,7 @@ function startGame(): void {
   if (!choice.p1?.kit || !choice.p2?.kit) return;
   menuRoot.classList.add("hidden");
   game?.view.dispose();
-  const world = createDuel(choice.p1.kit, choice.p2.kit);
+  const world = createDuel(choice.p1.kit, choice.p2.kit, undefined, choice.arena && buildArena(choice.arena, propCatalog));
   const characters = [choice.p1.character, choice.p2.character];
   const view = new ArenaView(renderer, world, characters, 0);
   const hud = new Hud(hudRoot, world, characters, 0);

@@ -1,0 +1,222 @@
+{
+ "schemaVersion": 1,
+ "id": "clairiere",
+ "name": "Clairi\u00e8re des ruines",
+ "width": 56,
+ "depth": 40,
+ "ground": "#cdeb9a",
+ "spawns": [
+  {
+   "x": 0,
+   "z": 17
+  },
+  {
+   "x": 0,
+   "z": -17.5
+  }
+ ],
+ "props": [
+  {
+   "kind": "tree",
+   "x": -22,
+   "z": -14
+  },
+  {
+   "kind": "tree",
+   "x": -18,
+   "z": -9
+  },
+  {
+   "kind": "tree",
+   "x": -24,
+   "z": 4
+  },
+  {
+   "kind": "tree",
+   "x": -19,
+   "z": 13
+  },
+  {
+   "kind": "tree",
+   "x": -12,
+   "z": 16
+  },
+  {
+   "kind": "tree",
+   "x": -3,
+   "z": -16
+  },
+  {
+   "kind": "tree",
+   "x": 6,
+   "z": 15
+  },
+  {
+   "kind": "tree",
+   "x": 14,
+   "z": -15
+  },
+  {
+   "kind": "tree",
+   "x": 20,
+   "z": -8
+  },
+  {
+   "kind": "tree",
+   "x": 24,
+   "z": 3
+  },
+  {
+   "kind": "tree",
+   "x": 19,
+   "z": 13
+  },
+  {
+   "kind": "tree",
+   "x": 10,
+   "z": 7
+  },
+  {
+   "kind": "tree",
+   "x": -9,
+   "z": -5
+  },
+  {
+   "kind": "tree",
+   "x": 4,
+   "z": -7
+  },
+  {
+   "kind": "rock",
+   "x": -14,
+   "z": 0
+  },
+  {
+   "kind": "rock",
+   "x": 13,
+   "z": 0
+  },
+  {
+   "kind": "rock",
+   "x": 0,
+   "z": 10.5
+  },
+  {
+   "kind": "rock",
+   "x": -4,
+   "z": -10
+  },
+  {
+   "kind": "wall",
+   "x": -6,
+   "z": 4
+  },
+  {
+   "kind": "wall",
+   "x": 7,
+   "z": -4
+  },
+  {
+   "kind": "wall",
+   "x": -21,
+   "z": -2,
+   "rotated": true
+  },
+  {
+   "kind": "wall",
+   "x": 22,
+   "z": -1,
+   "rotated": true
+  },
+  {
+   "kind": "pillar",
+   "x": -2,
+   "z": 3
+  },
+  {
+   "kind": "pillar",
+   "x": 3,
+   "z": -2
+  },
+  {
+   "kind": "crate",
+   "x": -10,
+   "z": 8
+  },
+  {
+   "kind": "crate",
+   "x": -9,
+   "z": 9.3
+  },
+  {
+   "kind": "crate",
+   "x": 9,
+   "z": -9
+  },
+  {
+   "kind": "crate",
+   "x": 10.3,
+   "z": -9.3
+  },
+  {
+   "kind": "crate",
+   "x": 16,
+   "z": 6
+  },
+  {
+   "kind": "crate",
+   "x": -16,
+   "z": -6
+  },
+  {
+   "kind": "crate",
+   "x": 1,
+   "z": 14
+  },
+  {
+   "kind": "crate",
+   "x": -1,
+   "z": -14
+  },
+  {
+   "kind": "crate",
+   "x": 5,
+   "z": 4
+  },
+  {
+   "kind": "crate",
+   "x": -5,
+   "z": -3
+  },
+  {
+   "kind": "barrel",
+   "x": -12,
+   "z": -12
+  },
+  {
+   "kind": "barrel",
+   "x": 12,
+   "z": 12
+  },
+  {
+   "kind": "barrel",
+   "x": -17,
+   "z": 10
+  },
+  {
+   "kind": "barrel",
+   "x": 17,
+   "z": -11
+  },
+  {
+   "kind": "barrel",
+   "x": 8,
+   "z": 9
+  },
+  {
+   "kind": "barrel",
+   "x": -7,
+   "z": -8
+  }
+ ]
+}

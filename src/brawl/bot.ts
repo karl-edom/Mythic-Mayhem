@@ -1,7 +1,7 @@
 // Generic brawler bot: reads only the world state, outputs the same Command a
 // player produces. One personality for every kit; parameters tune its level.
 
-import { hdist, lockTarget, type BrawlWorld, type Command, type Fighter } from "./world.ts";
+import { canSee, hdist, lockTarget, type BrawlWorld, type Command, type Fighter } from "./world.ts";
 
 export interface BrawlBotParams {
   /** Chance per decision to react to an incoming heavy or special (dodge or guard). */
@@ -26,10 +26,49 @@ export interface BrawlBot {
   chargeHeavyUntil: number;
   /** Lateral direction used while circling: +1 or -1. */
   strafe: number;
+  /** Where the opponent was last seen, and when. */
+  lastSeen: { x: number; z: number } | null;
+  lastSeenAt: number;
+  /** Random point explored once the trail is cold. */
+  wander: { x: number; z: number } | null;
+  /** Obstacle avoidance: position last tick and how long we have been stuck. */
+  prevPos: { x: number; z: number };
+  stuckTicks: number;
+  detourUntil: number;
 }
 
 export function createBot(random: () => number, params: BrawlBotParams = BOT_LEVELS.normal): BrawlBot {
-  return { params, random, nextThinkAt: 0, guardUntil: 0, chargeHeavyUntil: 0, strafe: random() < 0.5 ? 1 : -1 };
+  return {
+    params, random, nextThinkAt: 0, guardUntil: 0, chargeHeavyUntil: 0, strafe: random() < 0.5 ? 1 : -1,
+    lastSeen: null, lastSeenAt: -Infinity, wander: null, prevPos: { x: 0, z: 0 }, stuckTicks: 0, detourUntil: 0,
+  };
+}
+
+/** Seconds the bot keeps heading for the last place it saw its opponent. */
+const TRAIL_MEMORY = 4;
+
+/**
+ * Walks towards a point, going around obstacles: when the bot stops making
+ * progress it sidesteps for a moment, and jumps (low props can be cleared).
+ */
+function walkTo(w: BrawlWorld, me: Fighter, bot: BrawlBot, to: { x: number; z: number }, cmd: Command): void {
+  const dx = to.x - me.pos.x;
+  const dz = to.z - me.pos.z;
+  const d = Math.hypot(dx, dz) || 1;
+  const dir = { x: dx / d, z: dz / d };
+  if (w.time < bot.detourUntil) {
+    cmd.move = { x: dir.x * 0.3 - dir.z * bot.strafe, z: dir.z * 0.3 + dir.x * bot.strafe };
+    return;
+  }
+  cmd.move = dir;
+  const moved = Math.hypot(me.pos.x - bot.prevPos.x, me.pos.z - bot.prevPos.z);
+  bot.stuckTicks = moved < (me.kit.stats.moveSpeed / w.config.tickRate) * 0.3 ? bot.stuckTicks + 1 : 0;
+  if (bot.stuckTicks > 8) {
+    bot.stuckTicks = 0;
+    bot.detourUntil = w.time + 0.5 + bot.random() * 0.6;
+    if (bot.random() < 0.5) bot.strafe = -bot.strafe;
+    cmd.jump = true;
+  }
 }
 
 /** True when the opponent is winding up something we should not stand in front of. */
@@ -48,6 +87,12 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
   const cmd: Command = { unit: me.id };
   const foe = lockTarget(w, me);
   if (!me.alive || !foe) return cmd;
+  const seen = canSee(w, me, foe);
+  if (seen) {
+    bot.lastSeen = { x: foe.pos.x, z: foe.pos.z };
+    bot.lastSeenAt = w.time;
+    bot.wander = null;
+  }
   const p = bot.params;
   const d = hdist(me.pos, foe.pos);
   const toFoe = { x: (foe.pos.x - me.pos.x) / (d || 1), z: (foe.pos.z - me.pos.z) / (d || 1) };
@@ -79,6 +124,23 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
     return cmd;
   }
 
+  // Opponent out of sight: follow the trail, then search the arena.
+  if (!seen && !me.action) {
+    if (bot.lastSeen && w.time - bot.lastSeenAt < TRAIL_MEMORY && hdist(me.pos, { ...bot.lastSeen, y: 0 }) > 1) {
+      walkTo(w, me, bot, bot.lastSeen, cmd);
+    } else {
+      bot.lastSeen = null;
+      if (!bot.wander || hdist(me.pos, { ...bot.wander, y: 0 }) < 1.5)
+        bot.wander = {
+          x: (bot.random() * 2 - 1) * (w.arena.halfW - 3),
+          z: (bot.random() * 2 - 1) * (w.arena.halfD - 3),
+        };
+      walkTo(w, me, bot, bot.wander, cmd);
+    }
+    bot.prevPos = { x: me.pos.x, z: me.pos.z };
+    return cmd;
+  }
+
   // In a combo: keep pressing light so the chain continues.
   if (me.action?.kind === "light") {
     cmd.light = d <= reach + 0.5;
@@ -86,7 +148,8 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
   }
   if (me.action) return cmd;
   if (w.time < bot.nextThinkAt) {
-    cmd.move = d > reach ? toFoe : undefined;
+    if (d > reach) walkTo(w, me, bot, foe.pos, cmd);
+    bot.prevPos = { x: me.pos.x, z: me.pos.z };
     return cmd;
   }
   bot.nextThinkAt = w.time + p.thinkTime * (0.5 + bot.random());
@@ -118,8 +181,12 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
     return cmd;
   }
   if (bot.random() < 0.08 && me.energy >= 40) bot.strafe = -bot.strafe;
-  const lateral = d < 6 ? 0.5 : 0.2;
-  cmd.move = { x: toFoe.x - toFoe.z * bot.strafe * lateral, z: toFoe.z + toFoe.x * bot.strafe * lateral };
+  walkTo(w, me, bot, foe.pos, cmd);
+  if (w.time >= bot.detourUntil && cmd.move) {
+    const lateral = d < 6 ? 0.5 : 0.2;
+    cmd.move = { x: toFoe.x - toFoe.z * bot.strafe * lateral, z: toFoe.z + toFoe.x * bot.strafe * lateral };
+  }
   if (bot.random() < 0.03) cmd.jump = true;
+  bot.prevPos = { x: me.pos.x, z: me.pos.z };
   return cmd;
 }

@@ -79,3 +79,5 @@ html, body { margin: 0; height: 100%; overflow: hidden; background: #bfe8ff; }
   .hud-help { display: none; }
   .hud-timer { font-size: 18px; min-width: 44px; }
 }
+.hidden-tag { background: #2a9d8f; display: none; }
+.hidden-tag.on { display: inline-block; }

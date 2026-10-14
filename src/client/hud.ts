@@ -2,7 +2,7 @@
 // Built with textContent only: names from fan packs are never parsed as HTML.
 
 import type { Character } from "../brawl/character.ts";
-import type { BrawlWorld } from "../brawl/world.ts";
+import { canSee, type BrawlWorld } from "../brawl/world.ts";
 import { KEY_HELP } from "./input.ts";
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?: HTMLElement, text?: string): HTMLElementTagNameMap[K] {
@@ -30,11 +30,14 @@ export class Hud {
   private help: HTMLDivElement;
   private lastEvent = 0;
   private bannerUntil = 0;
+  private hidden: HTMLSpanElement | null = null;
+  private player: number;
 
   private world: BrawlWorld;
 
   constructor(root: HTMLElement, world: BrawlWorld, characters: Character[], player: number) {
     this.world = world;
+    this.player = player;
     root.replaceChildren();
     const top = el("div", "hud-top", root);
     world.fighters.forEach((f, i) => {
@@ -44,6 +47,7 @@ export class Hud {
       panel.style.setProperty("--secondary", ch.colors.secondary);
       const title = el("div", "hud-name", panel, ch.name);
       el("span", "hud-tag", title, i === player ? "Toi" : "Bot");
+      if (i === player) this.hidden = el("span", "hud-tag hidden-tag", title, "Hors de vue");
       el("div", "hud-universe", panel, ch.universe);
       const hpBar = el("div", "bar hp", panel);
       const hpLag = el("div", "fill lag", hpBar);
@@ -106,6 +110,10 @@ export class Hud {
       f.kit.specials.forEach((sp, k) => s.specials[k]!.classList.toggle("ready", f.alive && f.energy >= sp.energyCost));
       s.pips.forEach((p, k) => p.classList.toggle("on", k < (w.score[i] ?? 0)));
     });
+    // Readability cue for hiding: the player knows when the opponent cannot see them.
+    const me = w.fighters[this.player]!;
+    const foe = w.fighters.find((f) => f.team !== me.team);
+    this.hidden?.classList.toggle("on", !!foe && me.alive && foe.alive && !canSee(w, me, foe));
     const left = Math.max(0, w.config.timeLimit - w.time);
     this.timer.textContent = `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`;
 

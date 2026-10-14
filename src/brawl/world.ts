@@ -3,6 +3,7 @@
 // step(world, commands). Local input, bots and (later) the network all feed
 // the same Command type. Positions are metres, y is up, the floor is y = 0.
 
+import { OPEN_ARENA, buildArena, distToProp, pushOut, sightBlocked, type Arena, type Prop } from "./arena.ts";
 import type { FighterKit, Special, Strike } from "./kit.ts";
 
 export interface V3 {
@@ -14,8 +15,6 @@ export interface V3 {
 /** Rules shared by every fighter. Changing one is a change of the combat contract. */
 export interface BrawlConfig {
   tickRate: number;
-  /** The arena is a disc of this radius centred on the origin, closed by a wall. */
-  arenaRadius: number;
   gravity: number;
   /** K.-O. needed to fill a team's victory gauge. */
   koToWin: number;
@@ -55,7 +54,6 @@ export interface BrawlConfig {
 
 export const BRAWL_CONFIG: BrawlConfig = {
   tickRate: 60,
-  arenaRadius: 16,
   gravity: 28,
   koToWin: 3,
   timeLimit: 180,
@@ -117,6 +115,8 @@ export interface Fighter {
   bufferedLightUntil: number;
   /** Previous tick's heavy button, to detect press and release. */
   heavyHeld: boolean;
+  /** Height of what the fighter stands on (0 = floor, or the top of a prop). */
+  floor: number;
   /** Set when the fighter moved by its own will this tick (for rendering). */
   moving: boolean;
 }
@@ -153,6 +153,7 @@ export type BrawlEvent =
   | { t: number; type: "dodge"; unit: number }
   | { t: number; type: "ko"; target: number; killer: number }
   | { t: number; type: "respawn"; unit: number }
+  | { t: number; type: "propBroken"; prop: number; source: number }
   | { t: number; type: "end"; winner: number | null };
 
 export interface Command {
@@ -172,6 +173,7 @@ export interface Command {
 
 export interface BrawlWorld {
   config: BrawlConfig;
+  arena: Arena;
   tick: number;
   time: number;
   fighters: Fighter[];
@@ -192,9 +194,14 @@ function hnorm(v: V3, fallback: V3): V3 {
   return l > 1e-9 ? { x: v.x / l, y: 0, z: v.z / l } : fallback;
 }
 
-export function createBrawl(spawns: { kit: FighterKit; team: number; pos: V3 }[], config: BrawlConfig = BRAWL_CONFIG): BrawlWorld {
+export function createBrawl(
+  spawns: { kit: FighterKit; team: number; pos: V3 }[],
+  config: BrawlConfig = BRAWL_CONFIG,
+  arena: Arena = buildArena(OPEN_ARENA, {}),
+): BrawlWorld {
   const w: BrawlWorld = {
     config,
+    arena,
     tick: 0,
     time: 0,
     fighters: spawns.map((s, id) => ({
@@ -213,6 +220,7 @@ export function createBrawl(spawns: { kit: FighterKit; team: number; pos: V3 }[]
       action: null,
       bufferedLightUntil: -Infinity,
       heavyHeld: false,
+      floor: 0,
       moving: false,
     })),
     projectiles: [],
@@ -225,19 +233,28 @@ export function createBrawl(spawns: { kit: FighterKit; team: number; pos: V3 }[]
   return w;
 }
 
-/** Standard 1v1 (or NvN) start: teams face each other across the arena. */
-export function createDuel(a: FighterKit, b: FighterKit, config: BrawlConfig = BRAWL_CONFIG): BrawlWorld {
-  const d = config.arenaRadius * 0.4;
+/** Standard 1v1 start on the arena's first two spawn points. */
+export function createDuel(a: FighterKit, b: FighterKit, config: BrawlConfig = BRAWL_CONFIG, arena?: Arena): BrawlWorld {
+  const ar = arena ?? buildArena(OPEN_ARENA, {});
+  const [s0, s1] = ar.def.spawns;
   return createBrawl(
     [
-      { kit: a, team: 0, pos: { x: 0, y: 0, z: d } },
-      { kit: b, team: 1, pos: { x: 0, y: 0, z: -d } },
+      { kit: a, team: 0, pos: { x: s0!.x, y: 0, z: s0!.z } },
+      { kit: b, team: 1, pos: { x: s1!.x, y: 0, z: s1!.z } },
     ],
     config,
+    ar,
   );
 }
 
-export const grounded = (f: Fighter) => f.pos.y <= 1e-6;
+export const grounded = (f: Fighter) => f.pos.y <= f.floor + 1e-6;
+
+/** Up close, fighters always sense each other, even around a corner. */
+export const SENSE_RANGE = 2.5;
+
+/** True if nothing tall stands between the two fighters (they can see each other). */
+export const canSee = (w: BrawlWorld, a: Fighter, b: Fighter) =>
+  hdist(a.pos, b.pos) <= SENSE_RANGE || !sightBlocked(w.arena, a.pos, b.pos);
 export const isInvulnerable = (w: BrawlWorld, f: Fighter) => 
   f.invulnerableUntil > w.time || (f.action?.kind === "dodge" && f.action.t < w.config.dodgeInvulnerable);
 
@@ -254,13 +271,35 @@ function faceTarget(w: BrawlWorld, f: Fighter): void {
   if (t) f.facing = hnorm({ x: t.pos.x - f.pos.x, y: 0, z: t.pos.z - f.pos.z }, f.facing);
 }
 
+/** Keeps a fighter inside the walls and out of props it is not standing above. */
 function clampToArena(w: BrawlWorld, f: Fighter): void {
-  const max = w.config.arenaRadius - f.kit.stats.radius;
-  const d = hlen(f.pos);
-  if (d > max) {
-    f.pos.x *= max / d;
-    f.pos.z *= max / d;
-  }
+  const r = f.kit.stats.radius;
+  const { halfW, halfD, props } = w.arena;
+  for (const p of props)
+    if (p.alive && f.pos.y < p.height - 0.05 && pushOut(p, f.pos, r)) {
+      // Knockback into a prop stops dead.
+      f.vel.x = 0;
+      f.vel.z = 0;
+    }
+  f.pos.x = Math.max(-halfW + r, Math.min(halfW - r, f.pos.x));
+  f.pos.z = Math.max(-halfD + r, Math.min(halfD - r, f.pos.z));
+}
+
+/** Height of the highest prop top under the fighter that its feet were above at height `y`. */
+function supportHeight(w: BrawlWorld, f: Fighter, y = f.pos.y): number {
+  let top = 0;
+  for (const p of w.arena.props)
+    if (p.alive && p.height > top && p.height <= y + 0.05 && distToProp(p, f.pos.x, f.pos.z) < f.kit.stats.radius * 0.5) top = p.height;
+  return top;
+}
+
+/** Damages a breakable prop; indestructible ones ignore it. */
+function damageProp(w: BrawlWorld, src: Fighter, p: Prop, amount: number): void {
+  if (!p.alive || p.kind.hp === null) return;
+  p.hp -= amount;
+  if (p.hp > 0) return;
+  p.alive = false;
+  w.events.push({ t: w.time, type: "propBroken", prop: p.id, source: src.id });
 }
 
 /** Centre of a fighter's hurtbox. */
@@ -343,9 +382,12 @@ function end(w: BrawlWorld, winner: number | null): void {
   w.events.push({ t: w.time, type: "end", winner });
 }
 
-/** Strikes the first time the hitbox touches each enemy (one hit per strike). */
-function resolveStrike(w: BrawlWorld, f: Fighter, s: Strike, by: HitKind, dmg: number, guardBreak: boolean): boolean {
+/** Strikes the first time the hitbox touches each enemy (one hit per strike). Props are hit on the first live tick. */
+function resolveStrike(w: BrawlWorld, f: Fighter, s: Strike, by: HitKind, dmg: number, guardBreak: boolean, firstTick: boolean): boolean {
   const c = strikeCenter(f, s);
+  if (firstTick)
+    for (const p of w.arena.props)
+      if (p.alive && c.y - s.size < p.height && distToProp(p, c.x, c.z) <= s.size) damageProp(w, f, p, dmg);
   let hitAny = false;
   for (const o of w.fighters) {
     if (o.team === f.team || !o.alive || !sphereTouches(c, s.size, o)) continue;
@@ -448,7 +490,8 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
     case "light": {
       const s = f.kit.light.hits[a.index]!;
       a.t += dt;
-      if (!a.hit && a.t >= s.startup && a.t < s.startup + s.active) a.hit = resolveStrike(w, f, s, "light", s.damage, false);
+      if (!a.hit && a.t >= s.startup && a.t < s.startup + s.active)
+        a.hit = resolveStrike(w, f, s, "light", s.damage, false, a.t - dt < s.startup);
       const inRecovery = a.t >= s.startup + s.active;
       if (inRecovery && lightWanted && a.index + 1 < f.kit.light.hits.length) {
         faceTarget(w, f);
@@ -470,7 +513,7 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
       a.t += dt;
       if (!a.hit && a.t >= h.startup && a.t < h.startup + h.active) {
         const dmg = h.damage * (1 + (h.chargeBonus - 1) * (h.maxCharge > 0 ? a.charge / h.maxCharge : 0));
-        a.hit = resolveStrike(w, f, h, "heavy", dmg, true);
+        a.hit = resolveStrike(w, f, h, "heavy", dmg, true, a.t - dt < h.startup);
       }
       if (a.t >= strikeLength(h)) f.action = null;
       return;
@@ -546,15 +589,19 @@ function physics(w: BrawlWorld, f: Fighter): void {
     f.vel.x *= k;
     f.vel.z *= k;
   }
-  if (f.pos.y > 0 || f.vel.y > 0) {
+  clampToArena(w, f);
+  f.floor = supportHeight(w, f);
+  if (f.pos.y > f.floor || f.vel.y > 0) {
+    const before = f.pos.y;
     f.vel.y -= c.gravity * dt;
     f.pos.y += f.vel.y * dt;
-    if (f.pos.y <= 0) {
-      f.pos.y = 0;
+    // Measured from the height before this tick's fall, so a fast fall cannot pass through a top.
+    f.floor = supportHeight(w, f, Math.max(before, f.pos.y));
+    if (f.pos.y <= f.floor) {
+      f.pos.y = f.floor;
       f.vel.y = 0;
     }
   }
-  clampToArena(w, f);
 }
 
 /** Fighters do not overlap: push both apart along the line between them. */
@@ -591,7 +638,13 @@ function stepProjectiles(w: BrawlWorld): void {
       if (o.team === p.team || !o.alive || !sphereTouches(p.pos, p.size, o)) continue;
       if (applyHit(w, owner, o, specialHit(sp), { x: p.pos.x - p.dir.x, y: 0, z: p.pos.z - p.dir.z })) return false;
     }
-    return p.remaining > 1e-9 && hlen(p.pos) < w.config.arenaRadius;
+    // Props stop projectiles (and take the damage if they can break).
+    const wall = w.arena.props.find((pr) => pr.alive && p.pos.y < pr.height && distToProp(pr, p.pos.x, p.pos.z) <= p.size * 0.5);
+    if (wall) {
+      damageProp(w, owner, wall, sp.damage);
+      return false;
+    }
+    return p.remaining > 1e-9 && Math.abs(p.pos.x) < w.arena.halfW && Math.abs(p.pos.z) < w.arena.halfD;
   });
 }
 
@@ -601,8 +654,9 @@ function stepZones(w: BrawlWorld): void {
     const owner = w.fighters[z.owner]!;
     const sp = owner.kit.specials[z.slot]!;
     for (const o of w.fighters)
-      if (o.team !== z.team && o.alive && hdist(o.pos, z.center) <= z.radius + o.kit.stats.radius && o.pos.y < 1.5)
+      if (o.team !== z.team && o.alive && hdist(o.pos, z.center) <= z.radius + o.kit.stats.radius && o.pos.y < o.floor + 1.5)
         applyHit(w, owner, o, specialHit(sp), z.center);
+    for (const p of w.arena.props) if (p.alive && distToProp(p, z.center.x, z.center.z) <= z.radius) damageProp(w, owner, p, sp.damage);
     return false;
   });
 }
@@ -624,6 +678,7 @@ export function step(w: BrawlWorld, commands: Command[]): void {
         f.energy = c.energyStart;
         f.pos = { ...f.spawn };
         f.vel = { x: 0, y: 0, z: 0 };
+        f.floor = 0;
         f.action = null;
         f.respawnAt = Infinity;
         f.invulnerableUntil = w.time + c.respawnInvulnerable;

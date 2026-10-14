@@ -1,0 +1,199 @@
+{
+ "schemaVersion": 1,
+ "id": "village",
+ "name": "Village aux lanternes",
+ "width": 62,
+ "depth": 44,
+ "ground": "#f1d9a8",
+ "spawns": [
+  {
+   "x": -10,
+   "z": 19
+  },
+  {
+   "x": 10,
+   "z": -19
+  }
+ ],
+ "props": [
+  {
+   "kind": "house",
+   "x": -20,
+   "z": -12
+  },
+  {
+   "kind": "house",
+   "x": -20,
+   "z": 12
+  },
+  {
+   "kind": "house",
+   "x": 20,
+   "z": -12
+  },
+  {
+   "kind": "house",
+   "x": 20,
+   "z": 12
+  },
+  {
+   "kind": "house",
+   "x": 0,
+   "z": 0
+  },
+  {
+   "kind": "house",
+   "x": -9,
+   "z": -14,
+   "rotated": true
+  },
+  {
+   "kind": "house",
+   "x": 9,
+   "z": 14,
+   "rotated": true
+  },
+  {
+   "kind": "fence",
+   "x": -10,
+   "z": 4
+  },
+  {
+   "kind": "fence",
+   "x": 10,
+   "z": -4
+  },
+  {
+   "kind": "fence",
+   "x": -26,
+   "z": 0,
+   "rotated": true
+  },
+  {
+   "kind": "fence",
+   "x": 26,
+   "z": 0,
+   "rotated": true
+  },
+  {
+   "kind": "fence",
+   "x": 0,
+   "z": -9
+  },
+  {
+   "kind": "fence",
+   "x": 0,
+   "z": 9
+  },
+  {
+   "kind": "crate",
+   "x": -13,
+   "z": -5
+  },
+  {
+   "kind": "crate",
+   "x": -12,
+   "z": -6.3
+  },
+  {
+   "kind": "crate",
+   "x": 13,
+   "z": 5
+  },
+  {
+   "kind": "crate",
+   "x": 12,
+   "z": 6.3
+  },
+  {
+   "kind": "crate",
+   "x": -5,
+   "z": 13
+  },
+  {
+   "kind": "crate",
+   "x": 5,
+   "z": -13
+  },
+  {
+   "kind": "crate",
+   "x": -27,
+   "z": -17
+  },
+  {
+   "kind": "crate",
+   "x": 27,
+   "z": 17
+  },
+  {
+   "kind": "crate",
+   "x": -6,
+   "z": -5
+  },
+  {
+   "kind": "crate",
+   "x": 6,
+   "z": 5
+  },
+  {
+   "kind": "barrel",
+   "x": -15,
+   "z": 9
+  },
+  {
+   "kind": "barrel",
+   "x": 15,
+   "z": -9
+  },
+  {
+   "kind": "barrel",
+   "x": -4,
+   "z": -18
+  },
+  {
+   "kind": "barrel",
+   "x": 4,
+   "z": 18
+  },
+  {
+   "kind": "barrel",
+   "x": -27,
+   "z": 8
+  },
+  {
+   "kind": "barrel",
+   "x": 27,
+   "z": -8
+  },
+  {
+   "kind": "tree",
+   "x": -14,
+   "z": 18
+  },
+  {
+   "kind": "tree",
+   "x": 14,
+   "z": -18
+  },
+  {
+   "kind": "tree",
+   "x": -28,
+   "z": -6
+  },
+  {
+   "kind": "tree",
+   "x": 28,
+   "z": 6
+  },
+  {
+   "kind": "pillar",
+   "x": -7,
+   "z": 7
+  },
+  {
+   "kind": "pillar",
+   "x": 7,
+   "z": -7
+  }
+ ]
+}
