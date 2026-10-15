@@ -2,7 +2,7 @@
 // Built with textContent only: names from fan packs are never parsed as HTML.
 
 import type { Character } from "../brawl/character.ts";
-import { canSee, grabbable, type BrawlWorld } from "../brawl/world.ts";
+import { canSee, dodgeStaleNow, grabbable, type BrawlWorld } from "../brawl/world.ts";
 import { KEY_HELP } from "./input.ts";
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?: HTMLElement, text?: string): HTMLElementTagNameMap[K] {
@@ -68,6 +68,9 @@ export class Hud {
       );
       // The breaker is everyone's escape: shown with the specials, lit when affordable.
       specialEls.push(el("div", "special breaker", specials, `${i === player ? "Maj · " : ""}dégagement (${world.config.breakerCost})`));
+      // Dodge staling, shown as filled pips: the more, the slower and less safe the next dodge.
+      const dodge = el("div", "special dodge-wear ready", specials);
+      dodge.title = "Usure des esquives";
       if (i === 0) top.appendChild(this.center());
       this.sides.push({ hp, hpLag, energy, specials: specialEls, pips: [] });
     });
@@ -120,7 +123,12 @@ export class Hud {
       s.hpLag.style.width = `${Math.max(hp, lag - 0.6)}%`;
       s.energy.style.width = `${(100 * f.energy) / w.config.energyMax}%`;
       f.kit.specials.forEach((sp, k) => s.specials[k]!.classList.toggle("ready", f.alive && f.energy >= sp.energyCost));
-      s.specials.at(-1)!.classList.toggle("ready", f.alive && f.energy >= w.config.breakerCost);
+      s.specials.at(-2)!.classList.toggle("ready", f.alive && f.energy >= w.config.breakerCost);
+      const wear = Math.ceil(dodgeStaleNow(w, f) - 1e-6);
+      const pips = "●".repeat(wear) + "○".repeat(w.config.dodgeStaleMax - wear);
+      const chip = s.specials.at(-1)!;
+      if (chip.textContent !== `esquive ${pips}`) chip.textContent = `esquive ${pips}`;
+      chip.classList.toggle("ready", wear <= 1);
       s.pips.forEach((p, k) => p.classList.toggle("on", k < (w.score[i] ?? 0)));
     });
     // Readability cue for hiding: the player knows when the opponent cannot see them.
@@ -150,6 +158,7 @@ export class Hud {
       if (e.type === "guardBreak") this.flash("BOUCLIER BRISÉ", 0.8);
       if (e.type === "slam") this.flash("CONTRE LE MUR", 0.7);
       if (e.type === "breaker") this.flash("DÉGAGEMENT", 0.6);
+      if (e.type === "parry") this.flash("PARADE !", 0.7);
     }
     this.lastEvent = w.events.length;
     if (performance.now() > this.bannerUntil && !w.over) this.banner.classList.remove("show");

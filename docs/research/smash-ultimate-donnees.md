@@ -75,6 +75,10 @@ Légende : ✅ observé dans plusieurs sources concordantes ; 🟡 une seule sou
 4. **Une piste de fond :** dans Smash, l'**étourdissement découle du recul** (0,4 image par unité), au lieu d'être fixé coup par coup. Chez nous, c'est le kit qui fixe les deux séparément. Les relier rendrait le système plus lisible (un coup qui envoie loin étourdit longtemps) et réduirait le nombre de chiffres qu'un créateur de personnage doit régler.
 5. **Rythme des K.-O. :** nos bots marquent un K.-O. toutes les 40 à 75 s, contre ~1 min 30 par vie dans Smash. Notre combat reste plus rapide que Smash. C'est cohérent avec la barre de vie, mais c'est à juger en jouant.
 
+## Suite donnée
+
+Décision 0012 : **parade**, **usure des esquives** et **petit saut** repris avec les chiffres ci-dessus (fenêtre de 5 images, bouclier tenu ≥ 3 images, retrait du bouclier en 11 images, usure à 5 niveaux qui retombe d'un niveau toutes les 2 s, élan de saut de 3 images, petit saut à 71 % de la vitesse).
+
 ## Sources
 
 - SmashWiki : [Shield](https://www.ssbwiki.com/Shield), [Stun](https://www.ssbwiki.com/Stun), [Shieldstun](https://www.ssbwiki.com/Shieldstun), [Perfect shield](https://www.ssbwiki.com/Perfect_shield), [Out of shield](https://www.ssbwiki.com/Out_of_shield), [Dodge staling](https://www.ssbwiki.com/Dodge_staling), [Roll](https://ssbwiki.com/Roll), [Hitstun](https://www.ssbwiki.com/Hitstun), [Knockback](https://www.ssbwiki.com/Knockback), [Gravity](https://www.ssbwiki.com/Gravity), [Captain Falcon (SSBU)/Neutral attack](https://ssbwiki.com/Captain_Falcon_(SSBU)/Neutral_attack), [Shulk (SSBU)/Neutral attack](https://ssbwiki.com/Shulk_(SSBU)/Neutral_attack), [Time](https://www.ssbwiki.com/Time)

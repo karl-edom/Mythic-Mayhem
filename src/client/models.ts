@@ -9,7 +9,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { ANIME_MODELS, MODELS, isAnime, type Look, type ModelId } from "../brawl/character.ts";
 import type { Archetype } from "../brawl/kit.ts";
-import { KAYKIT_TO_HUMANOID, Retargeter, amplifyClip, amplitudeFor, clenchFists } from "./retarget.ts";
+import { KAYKIT_TO_HUMANOID, LOCOMOTION, Retargeter, amplifyClip, amplitudeFor, clenchFists } from "./retarget.ts";
 import { noOutline, outlineOf, toToon } from "./toon.ts";
 import { buildWeapon } from "./weapons.ts";
 
@@ -132,9 +132,38 @@ export async function loadModels(base: string, onProgress?: (done: number, total
 function animeClips(lib: ModelLibrary, t: AnimeTemplate): Map<string, THREE.AnimationClip> {
   if (!t.clips) {
     const r = new Retargeter({ source: lib.rig, target: t.rig, map: KAYKIT_TO_HUMANOID, armDrop: 0.5 });
-    t.clips = new Map([...lib.clips].map(([name, clip]) => [name, amplifyClip(r.retarget(clip), amplitudeFor(name))] as const));
+    t.clips = new Map(
+      [...lib.clips].map(([name, clip]) => {
+        const loco = LOCOMOTION.test(name);
+        const out = amplifyClip(r.retarget(clip, 30, loco ? 0.3 : 0.6), amplitudeFor(name), loco ? "mean" : "first");
+        if (loco) out.userData.naturalSpeed = naturalSpeed(t, out) * (ANIME_HEIGHT / t.height);
+        return [name, out] as const;
+      }),
+    );
   }
   return t.clips;
+}
+
+/**
+ * Ground speed at which a locomotion cycle plays without foot sliding (rig units per
+ * second): a foot sweeps its full range twice per cycle (one stride per leg).
+ */
+function naturalSpeed(t: AnimeTemplate, clip: THREE.AnimationClip): number {
+  const rig = SkeletonUtils.clone(t.rig);
+  const foot = rig.getObjectByName("leftFoot");
+  if (!foot) return 0;
+  const mixer = new THREE.AnimationMixer(rig);
+  mixer.clipAction(clip).play();
+  const p = new THREE.Vector3();
+  let [minX, maxX, minZ, maxZ] = [Infinity, -Infinity, Infinity, -Infinity];
+  for (let i = 0; i <= 24; i++) {
+    mixer.setTime((i / 24) * clip.duration * 0.999);
+    rig.updateMatrixWorld(true);
+    foot.getWorldPosition(p);
+    [minX, maxX, minZ, maxZ] = [Math.min(minX, p.x), Math.max(maxX, p.x), Math.min(minZ, p.z), Math.max(maxZ, p.z)];
+  }
+  const range = Math.max(maxX - minX, maxZ - minZ);
+  return (2 * range) / clip.duration;
 }
 
 export interface ModelInstance {
@@ -144,6 +173,8 @@ export interface ModelInstance {
   clips: Map<string, THREE.AnimationClip>;
   /** Toon materials of the body, for hit flashes. */
   materials: THREE.MeshToonMaterial[];
+  /** Two points along the main weapon (or the forearm) that a swing trail follows; null: none. */
+  trail: { base: THREE.Object3D; tip: THREE.Object3D } | null;
 }
 
 export function instantiate(lib: ModelLibrary, look: Look): ModelInstance {
@@ -172,7 +203,7 @@ function instantiateKaykit(lib: ModelLibrary, look: Look): ModelInstance {
   const root = new THREE.Group();
   root.add(model);
   model.scale.setScalar(MODEL_HEIGHT / 2.45);
-  return { root, mixer: new THREE.AnimationMixer(model), clips: lib.clips, materials };
+  return { root, mixer: new THREE.AnimationMixer(model), clips: lib.clips, materials, trail: null };
 }
 
 // ---------------------------------------------------------------------------
@@ -272,5 +303,10 @@ function instantiateAnime(lib: ModelLibrary, look: Look): ModelInstance {
   const root = new THREE.Group();
   root.add(rig);
   rig.scale.setScalar(ANIME_HEIGHT / t.height);
-  return { root, mixer: new THREE.AnimationMixer(rig), clips: animeClips(lib, t), materials };
+  // Swing trail along the main-hand weapon; bare hands: along the forearm.
+  const main = rig.getObjectByName("rightHand");
+  const base = main?.getObjectByName("trailBase") ?? rig.getObjectByName("trailBase") ?? rig.getObjectByName("rightLowerArm");
+  const tip = main?.getObjectByName("trailTip") ?? rig.getObjectByName("trailTip") ?? main;
+  const trail = base && tip ? { base, tip } : null;
+  return { root, mixer: new THREE.AnimationMixer(rig), clips: animeClips(lib, t), materials, trail };
 }

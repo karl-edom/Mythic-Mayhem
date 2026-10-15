@@ -5,11 +5,12 @@ import type { Command } from "../brawl/world.ts";
 
 export const KEY_HELP: [string, string][] = [
   ["Z Q S D / flèches", "se déplacer (relatif à la caméra)"],
-  ["Espace", "sauter (encore une fois en l'air : double saut)"],
+  ["Espace", "sauter (maintenu : saut complet ; tapé : petit saut ; en l'air : double saut)"],
   ["J", "attaque légère (répéter : combo de 3 au plus) ; en l'air : coup aérien"],
   ["K (maintenir)", "attaque lourde, chargeable, use le bouclier deux fois plus"],
   ["L (maintenir)", "bouclier : s'use quand on le tient, casse à zéro (étourdi 2 s)"],
-  ["Maj", "esquive (invulnérable au début)"],
+  ["L relâché juste avant l'impact", "parade : coup annulé, l'attaquant est ouvert"],
+  ["Maj", "esquive (invulnérable au début ; enchaînées, elles s'usent)"],
   ["Maj sous les coups ou en garde", "dégagement : repousse l'adversaire (50 d'énergie)"],
   ["U / I / O", "spéciales 1 / 2 / 3"],
   ["F", "ramasser une caisse ou un tonneau, puis lancer"],
@@ -114,6 +115,7 @@ export class Input {
       unit,
       move,
       jump: take("jump"),
+      jumpHeld: has("jump"),
       grab: take("grab"),
       light: take("light"),
       dodge: take("dodge"),

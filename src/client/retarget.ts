@@ -127,7 +127,11 @@ export class Retargeter {
   }
 
   /** Bakes `clip` (authored for the source rig) into an equivalent clip for the target rig. */
-  retarget(clip: THREE.AnimationClip, fps = 30): THREE.AnimationClip {
+  /**
+   * `hipsVertical` scales the hips' vertical motion: chibi rigs crouch and bounce a lot,
+   * which on long legs reads as a collapse (and sinks the feet into the ground).
+   */
+  retarget(clip: THREE.AnimationClip, fps = 30, hipsVertical = 1): THREE.AnimationClip {
     const mixer = new THREE.AnimationMixer(this.source);
     const action = mixer.clipAction(clip);
     // Play once and hold the end: a looping action would wrap the last frame back to the first.
@@ -175,6 +179,7 @@ export class Retargeter {
       if (this.srcHips && this.dstHips) {
         const now = inRoot(this.srcHips, this.source).pos;
         const move = now.sub(this.srcRest.get(this.srcHips)!.pos).multiplyScalar(this.legRatio);
+        move.y *= hipsVertical;
         const p = this.dstRest.get(this.dstHips)!.pos.clone().add(move);
         // Into the hips' parent space.
         const parent = this.dstHips.parent!;
@@ -227,8 +232,9 @@ export function clenchFists(root: THREE.Object3D, angle = 1.25): void {
  * (their last frame equals the first, which is left unchanged). Angles are capped
  * below a half turn so that nothing flips over.
  */
-export function amplifyClip(clip: THREE.AnimationClip, k: number): THREE.AnimationClip {
+export function amplifyClip(clip: THREE.AnimationClip, k: number, about: "first" | "mean" = "first"): THREE.AnimationClip {
   if (k === 1) return clip;
+  if (about === "mean") return scaleAboutMean(clip, k);
   const ref = new THREE.Quaternion();
   const q = new THREE.Quaternion();
   const axis = new THREE.Vector3();
@@ -255,10 +261,57 @@ export function amplifyClip(clip: THREE.AnimationClip, k: number): THREE.Animati
   return new THREE.AnimationClip(clip.name, clip.duration, tracks);
 }
 
+/**
+ * Scales every joint's swing around its average pose: k < 1 tones a cycle down (shorter
+ * strides, smaller bounce) without changing the posture it swings around.
+ */
+function scaleAboutMean(clip: THREE.AnimationClip, k: number): THREE.AnimationClip {
+  const q = new THREE.Quaternion();
+  const axis = new THREE.Vector3();
+  const tracks = clip.tracks.map((t) => {
+    const out = t.clone();
+    const v = out.values;
+    if (t instanceof THREE.QuaternionKeyframeTrack) {
+      // Average orientation: sign-aligned sum, normalised (fine for the moderate swings of a cycle).
+      const mean = new THREE.Quaternion(0, 0, 0, 0);
+      const first = new THREE.Quaternion().fromArray(v, 0);
+      for (let i = 0; i < v.length; i += 4) {
+        q.fromArray(v, i);
+        const sgn = q.dot(first) < 0 ? -1 : 1;
+        mean.set(mean.x + sgn * q.x, mean.y + sgn * q.y, mean.z + sgn * q.z, mean.w + sgn * q.w);
+      }
+      mean.normalize();
+      const inv = mean.clone().invert();
+      for (let i = 0; i < v.length; i += 4) {
+        q.fromArray(v, i).premultiply(inv);
+        if (q.w < 0) q.set(-q.x, -q.y, -q.z, -q.w);
+        const angle = 2 * Math.acos(Math.min(1, q.w));
+        if (angle < 1e-5) continue;
+        axis.set(q.x, q.y, q.z).normalize();
+        q.setFromAxisAngle(axis, angle * k);
+        mean.clone().multiply(q).toArray(v, i);
+      }
+    } else if (t instanceof THREE.VectorKeyframeTrack) {
+      const n = v.length / 3;
+      for (let c = 0; c < 3; c++) {
+        let m = 0;
+        for (let i = 0; i < n; i++) m += v[i * 3 + c]!;
+        m /= n;
+        for (let i = 0; i < n; i++) v[i * 3 + c] = m + (v[i * 3 + c]! - m) * k;
+      }
+    }
+    return out;
+  });
+  return new THREE.AnimationClip(clip.name, clip.duration, tracks);
+}
+
+/** Locomotion cycles: toned down around their average pose on long anime legs. */
+export const LOCOMOTION = /^(Running_A|Running_B|Running_Strafe_Left|Running_Strafe_Right|Walking_Backwards)$/;
+
 /** How much each kind of clip is exaggerated on slim anime bodies (chibi moves are small). */
 export function amplitudeFor(name: string): number {
   if (/Attack|Spellcast_Shoot|Spellcast_Long|Throw|Ranged/.test(name)) return 1.5;
   if (/Hit_|Block_Hit|Dodge|Death|Lie_StandUp|Cheer|Jump_Start|Jump_Land|PickUp/.test(name)) return 1.3;
-  if (/Running|Walking/.test(name)) return 1.2;
+  if (LOCOMOTION.test(name)) return 0.75;
   return 1;
 }

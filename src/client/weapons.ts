@@ -38,6 +38,16 @@ function curvedBlade(length: number, width: number, curve: number): THREE.Buffer
   return g;
 }
 
+/** Where the trail of a swing is drawn: from `base` to `tip` along the weapon (+Y). */
+function markTrail(g: THREE.Group, base: number, tip: number): void {
+  for (const [name, y] of [["trailBase", base], ["trailTip", tip]] as const) {
+    const m = new THREE.Object3D();
+    m.name = name;
+    m.position.y = y;
+    g.add(m);
+  }
+}
+
 function katana(bladeLength: number, handle: number, scale = 1): THREE.Group {
   const g = new THREE.Group();
   const tsuka = part(new THREE.CylinderGeometry(0.017 * scale, 0.017 * scale, handle, 8), 0x1d1b2a);
@@ -56,6 +66,7 @@ function katana(bladeLength: number, handle: number, scale = 1): THREE.Group {
   const blade = part(curvedBlade(bladeLength, 0.032 * scale, 0.05 * scale), STEEL, 0.002);
   blade.position.y = 0.076;
   g.add(blade);
+  markTrail(g, 0.08, 0.076 + bladeLength);
   return g;
 }
 
@@ -77,6 +88,7 @@ function kunai(): THREE.Group {
   const blade = part(bladeGeo, STEEL, 0.002);
   blade.position.y = 0.05;
   g.add(blade);
+  markTrail(g, 0.05, 0.22);
   return g;
 }
 
@@ -101,6 +113,7 @@ function staff(): THREE.Group {
   const fork = part(new THREE.TorusGeometry(0.08, 0.008, 6, 16, Math.PI), 0xc9a646);
   fork.position.y = 1.24;
   g.add(fork);
+  markTrail(g, 0.2, 1.4);
   return g;
 }
 

@@ -55,8 +55,30 @@ export interface BrawlConfig {
   /** Invulnerability at the start of a dodge, seconds. */
   dodgeInvulnerable: number;
   dodgeEnergyCost: number;
-  /** Seconds after a dodge ends before the next one. */
-  dodgeCooldown: number;
+  /**
+   * Dodge staling (Smash Ultimate): each dodge adds a level (up to dodgeStaleMax), and
+   * one level wears off every dodgeStaleDecay seconds. Per level, a dodge lasts
+   * dodgeStaleSlow longer, keeps dodgeStaleInvulnerable less of its invulnerability
+   * and travels dodgeStaleDistance less far (shares of the fresh values).
+   */
+  dodgeStaleMax: number;
+  dodgeStaleDecay: number;
+  dodgeStaleSlow: number;
+  dodgeStaleInvulnerable: number;
+  dodgeStaleDistance: number;
+  /** Take-off before a jump leaves the ground; releasing the button by then gives a short hop. */
+  jumpSquat: number;
+  shortHopFactor: number;
+  /** Lowering the shield takes this long (no attack meanwhile), unless it ends in a jump. */
+  shieldDropLag: number;
+  /**
+   * Parry: a hit landing within parryWindow after the shield is lowered (held at least
+   * parryMinHold) is cancelled; the defender is free at once and a melee attacker is
+   * stunned parryStun.
+   */
+  parryWindow: number;
+  parryMinHold: number;
+  parryStun: number;
   energyMax: number;
   energyStart: number;
   /** Passive energy regeneration, per second. */
@@ -120,7 +142,17 @@ export const BRAWL_CONFIG: BrawlConfig = {
   dodgeDuration: 0.3,
   dodgeInvulnerable: 0.2,
   dodgeEnergyCost: 15,
-  dodgeCooldown: 0.3,
+  dodgeStaleMax: 5,
+  dodgeStaleDecay: 2,
+  dodgeStaleSlow: 0.12,
+  dodgeStaleInvulnerable: 0.15,
+  dodgeStaleDistance: 0.08,
+  jumpSquat: 3 / 60,
+  shortHopFactor: 0.71,
+  shieldDropLag: 11 / 60,
+  parryWindow: 5 / 60,
+  parryMinHold: 3 / 60,
+  parryStun: 0.4,
   energyMax: 100,
   energyStart: 50,
   energyRegen: 4,
@@ -158,7 +190,9 @@ export type Action =
   | { kind: "heavy"; charge: number; charging: boolean; t: number; hit: boolean }
   | { kind: "special"; slot: number; t: number; fired: boolean }
   | { kind: "rush"; slot: number; remaining: number }
-  | { kind: "dodge"; dir: V3; t: number }
+  | { kind: "dodge"; dir: V3; t: number; stale: number }
+  | { kind: "jumpsquat"; t: number }
+  | { kind: "shieldDrop"; until: number; parryUntil: number }
   | { kind: "breaker"; t: number }
   | { kind: "hitstun"; until: number }
   | { kind: "blockstun"; until: number }
@@ -204,7 +238,11 @@ export interface Fighter {
   shieldUsedAt: number;
   /** Jumps left before touching the ground again. */
   airJumpsLeft: number;
-  dodgeReadyAt: number;
+  /** Dodge staling level and when it was last raised (see BrawlConfig.dodgeStale*). */
+  dodgeStale: number;
+  lastDodgeAt: number;
+  /** When the shield went up (a parry needs it held a few frames first). */
+  guardSince: number;
 }
 
 export interface Projectile {
@@ -241,6 +279,7 @@ export type BrawlEvent =
   | { t: number; type: "special"; unit: number; slot: number }
   | { t: number; type: "dodge"; unit: number }
   | { t: number; type: "airJump"; unit: number }
+  | { t: number; type: "parry"; unit: number; attacker: number }
   | { t: number; type: "breaker"; unit: number }
   | { t: number; type: "ko"; target: number; killer: number }
   | { t: number; type: "respawn"; unit: number }
@@ -256,6 +295,8 @@ export interface Command {
   move?: { x: number; z: number };
   /** Presses (true only on the tick the button goes down). */
   jump?: boolean;
+  /** Jump button still held: decides full jump or short hop at take-off. */
+  jumpHeld?: boolean;
   light?: boolean;
   dodge?: boolean;
   special?: number;
@@ -323,7 +364,9 @@ export function createBrawl(
       shield: config.shieldMax,
       shieldUsedAt: -Infinity,
       airJumpsLeft: config.airJumps,
-      dodgeReadyAt: 0,
+      dodgeStale: 0,
+      lastDodgeAt: -Infinity,
+      guardSince: 0,
     })),
     projectiles: [],
     zones: [],
@@ -360,8 +403,16 @@ export const canSee = (w: BrawlWorld, a: Fighter, b: Fighter) =>
   !sightBlocked(w.arena, { ...a.pos, y: a.pos.y + EYE_HEIGHT }, { ...b.pos, y: b.pos.y + EYE_HEIGHT });
 export const isInvulnerable = (w: BrawlWorld, f: Fighter) => 
   f.invulnerableUntil > w.time ||
-  (f.action?.kind === "dodge" && f.action.t < w.config.dodgeInvulnerable) ||
+  (f.action?.kind === "dodge" && f.action.t < dodgeInvulnerability(w.config, f.action.stale)) ||
   f.action?.kind === "breaker";
+
+/** Invulnerable part of a dodge at a given staling level. */
+export const dodgeInvulnerability = (c: BrawlConfig, stale: number) => c.dodgeInvulnerable * Math.max(0, 1 - c.dodgeStaleInvulnerable * stale);
+/** Whole length of a dodge at a given staling level. */
+export const dodgeLength = (c: BrawlConfig, stale: number) => c.dodgeDuration * (1 + c.dodgeStaleSlow * stale);
+/** Current staling level (fractional): it wears off with time since the last dodge. */
+export const dodgeStaleNow = (w: BrawlWorld, f: Fighter) =>
+  Math.max(0, f.dodgeStale - (w.time - f.lastDodgeAt) / w.config.dodgeStaleDecay);
 
 /** States from which the breaker can be used: under pressure, but not already on the floor or guard-broken. */
 const BREAKABLE = new Set<Action["kind"]>(["hitstun", "blockstun", "guard"]);
@@ -525,6 +576,14 @@ function applyHit(w: BrawlWorld, src: Fighter, target: Fighter, hit: HitSpec, fr
   const c = w.config;
   const t = w.time;
   const dir = hnorm({ x: target.pos.x - from.x, y: 0, z: target.pos.z - from.z }, src.facing);
+  const ta = target.action;
+  if (ta?.kind === "shieldDrop" && t <= ta.parryUntil) {
+    // Parry: the blow is cancelled, the defender acts at once, a melee attacker is left open.
+    target.action = null;
+    if (hit.by === "light" || hit.by === "aerial" || hit.by === "heavy") src.action = { kind: "hitstun", until: t + c.parryStun };
+    w.events.push({ t, type: "parry", unit: target.id, attacker: src.id });
+    return true;
+  }
   const guarding = target.action?.kind === "guard";
   if (guarding) {
     // The shield takes the blow: heavy attacks wear it twice as fast, guard-breaking specials three times.
@@ -679,11 +738,15 @@ function startAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, heavyP
       return;
     }
   }
-  if (cmd?.dodge && f.energy >= c.dodgeEnergyCost && w.time >= f.dodgeReadyAt) {
+  if (cmd?.dodge && f.energy >= c.dodgeEnergyCost) {
     const t = lockTarget(w, f);
     const back = t ? hnorm({ x: f.pos.x - t.pos.x, y: 0, z: f.pos.z - t.pos.z }, f.facing) : f.facing;
     f.energy -= c.dodgeEnergyCost;
-    f.action = { kind: "dodge", dir: hnorm({ x: cmd.move?.x ?? 0, y: 0, z: cmd.move?.z ?? 0 }, back), t: 0 };
+    // Staling: this dodge pays for the ones just before it, and makes the next one worse.
+    const stale = dodgeStaleNow(w, f);
+    f.dodgeStale = Math.min(c.dodgeStaleMax, stale + 1);
+    f.lastDodgeAt = w.time;
+    f.action = { kind: "dodge", dir: hnorm({ x: cmd.move?.x ?? 0, y: 0, z: cmd.move?.z ?? 0 }, back), t: 0, stale };
     w.events.push({ t: w.time, type: "dodge", unit: f.id });
     return;
   }
@@ -720,13 +783,17 @@ function startAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, heavyP
   }
   if (cmd?.guard && grounded(f) && f.shield > 0) {
     f.action = { kind: "guard" };
+    f.guardSince = w.time;
     return;
   }
   if (cmd?.charge && grounded(f)) {
     f.action = { kind: "charge" };
     return;
   }
-  if (cmd?.jump && grounded(f)) f.vel.y = f.kit.stats.jumpSpeed;
+  if (cmd?.jump && grounded(f)) {
+    f.action = { kind: "jumpsquat", t: 0 };
+    return;
+  }
   moveBy(w, f, cmd, 1);
 }
 
@@ -824,15 +891,25 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
     }
     case "dodge": {
       a.t += dt;
-      const stepLen = (c.dodgeDistance / c.dodgeDuration) * dt;
+      const length = dodgeLength(c, a.stale);
+      const distance = c.dodgeDistance * Math.max(0, 1 - c.dodgeStaleDistance * a.stale);
+      const stepLen = (distance / length) * dt;
       f.pos.x += a.dir.x * stepLen;
       f.pos.z += a.dir.z * stepLen;
-      if (a.t >= c.dodgeDuration) {
-        f.action = null;
-        f.dodgeReadyAt = w.time + c.dodgeCooldown;
-      }
+      if (a.t >= length) f.action = null;
       return;
     }
+    case "jumpsquat":
+      a.t += dt;
+      if (a.t >= c.jumpSquat) {
+        // Button released during the take-off: short hop.
+        f.vel.y = f.kit.stats.jumpSpeed * (cmd?.jumpHeld ? 1 : c.shortHopFactor);
+        f.action = null;
+      }
+      return;
+    case "shieldDrop":
+      if (w.time >= a.until) f.action = null;
+      return;
     case "breaker":
       a.t += dt;
       if (a.t >= c.breakerDuration) f.action = null;
@@ -850,8 +927,18 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
       return;
     case "guard":
       f.shieldUsedAt = w.time;
+      if (cmd?.jump) {
+        // Jumping out of the shield skips the drop lag.
+        f.action = { kind: "jumpsquat", t: 0 };
+        return;
+      }
       if (!cmd?.guard) {
-        f.action = null;
+        const held = w.time - f.guardSince;
+        f.action = {
+          kind: "shieldDrop",
+          until: w.time + c.shieldDropLag,
+          parryUntil: held >= c.parryMinHold ? w.time + c.parryWindow : -Infinity,
+        };
         return;
       }
       faceTarget(w, f);

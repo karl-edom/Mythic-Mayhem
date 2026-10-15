@@ -46,13 +46,15 @@ export interface BrawlBot {
   backoffUntil: number;
   /** Own action kind last tick, to notice when an attack ends. */
   lastAction: string | null;
+  /** The jump being taken off is a full one (else a short hop). */
+  fullHop: boolean;
 }
 
 export function createBot(random: () => number, params: BrawlBotParams = BOT_LEVELS.normal): BrawlBot {
   return {
     params, random, nextThinkAt: 0, guardUntil: 0, chargeHeavyUntil: 0, strafe: random() < 0.5 ? 1 : -1,
     lastSeen: null, lastSeenAt: -Infinity, wander: null, prevPos: { x: 0, z: 0 }, stuckTicks: 0, detourUntil: 0, fetch: null, route: null,
-    backoffUntil: 0, lastAction: null,
+    backoffUntil: 0, lastAction: null, fullHop: true,
   };
 }
 
@@ -146,6 +148,7 @@ function walkTo(w: BrawlWorld, me: Fighter, bot: BrawlBot, goal: { x: number; z:
     bot.detourUntil = w.time + 0.5 + bot.random() * 0.6;
     if (bot.random() < 0.5) bot.strafe = -bot.strafe;
     cmd.jump = true;
+    bot.fullHop = true; // getting over an obstacle needs the whole jump
   }
 }
 
@@ -178,6 +181,11 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
   const perched = foe.floor - me.pos.y > CLIMB_NEEDED;
   const reach = perched ? -1 : me.kit.stats.radius + foe.kit.stats.radius + (me.kit.light.hits[0]?.reach ?? 1);
 
+  // Keep held buttons consistent with what we started: full jump or short hop.
+  if (me.action?.kind === "jumpsquat") {
+    cmd.jumpHeld = bot.fullHop;
+    return cmd;
+  }
   // Keep held buttons consistent with what we started.
   if (me.action?.kind === "heavy" && me.action.charging) {
     cmd.heavy = w.time < bot.chargeHeavyUntil;
@@ -357,7 +365,11 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
     cmd.move = { x: toFoe.x - toFoe.z * bot.strafe * lateral, z: toFoe.z + toFoe.x * bot.strafe * lateral };
   }
   // Approaching: sometimes by the air (jump, then the aerial strike above).
-  if (!perched && bot.random() < (d < 5 ? 0.08 : 0.03)) cmd.jump = true;
+  if (!perched && bot.random() < (d < 5 ? 0.08 : 0.03)) {
+    cmd.jump = true;
+    // Close in: often a short hop, the quick way into an aerial strike.
+    bot.fullHop = d > 4 || bot.random() < 0.4;
+  }
   bot.prevPos = { x: me.pos.x, z: me.pos.z };
   return cmd;
 }

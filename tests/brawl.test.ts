@@ -314,17 +314,83 @@ test("v3 : le recul grandit quand la vie baisse", () => {
   assert.ok(low > full * 1.3, `${full} → ${low}`);
 });
 
-test("v3 : une esquive ne peut pas suivre immédiatement la précédente", () => {
-  const w = duel(fighter(), fighter(), 6);
+test("usure des esquives : enchaînées, elles durent plus et protègent moins ; ça se dissipe", async () => {
+  const { dodgeInvulnerability, dodgeLength } = await import("../src/brawl/world.ts");
+  const c = BRAWL_CONFIG;
+  const w = duel(fighter(), fighter(), 8);
   const f = w.fighters[0]!;
+  f.energy = 100;
+  const lengths: number[] = [];
+  for (let i = 0; i < 3; i++) {
+    step(w, [{ unit: 0, dodge: true, move: { x: 0, z: 1 } }]);
+    const a = f.action as { kind: string; stale: number };
+    assert.equal(a.kind, "dodge");
+    lengths.push(dodgeLength(c, a.stale));
+    while (f.action) step(w, []);
+  }
+  assert.ok(lengths[1]! > lengths[0]! && lengths[2]! > lengths[1]!, `durées ${lengths}`);
+  assert.ok(dodgeInvulnerability(c, 3) < dodgeInvulnerability(c, 0));
+  // Après une pause, l'usure retombe.
+  run(w, c.dodgeStaleDecay * c.dodgeStaleMax);
   step(w, [{ unit: 0, dodge: true, move: { x: 0, z: 1 } }]);
-  run(w, BRAWL_CONFIG.dodgeDuration + 0.02);
-  assert.equal(f.action, null);
-  step(w, [{ unit: 0, dodge: true, move: { x: 0, z: 1 } }]);
-  assert.equal(f.action, null, "en attente");
-  run(w, BRAWL_CONFIG.dodgeCooldown);
-  step(w, [{ unit: 0, dodge: true, move: { x: 0, z: 1 } }]);
-  assert.equal((f.action as { kind: string } | null)?.kind, "dodge");
+  assert.equal((f.action as { stale: number }).stale, 0);
+});
+
+test("petit saut : relâcher le bouton pendant l'élan donne un saut plus bas", () => {
+  const peak = (held: boolean) => {
+    const w = duel(fighter(), fighter(), 8);
+    const f = w.fighters[0]!;
+    step(w, [{ unit: 0, jump: true, jumpHeld: held }]);
+    assert.equal(f.action?.kind, "jumpsquat");
+    let top = 0;
+    for (let i = 0; i < 120; i++) {
+      step(w, [{ unit: 0, jumpHeld: held }]);
+      top = Math.max(top, f.pos.y);
+    }
+    return top;
+  };
+  const full = peak(true);
+  const short = peak(false);
+  assert.ok(short < full * 0.6 && short > full * 0.4, `${short} contre ${full}`);
+});
+
+test("parade : lâcher le bouclier juste avant l'impact annule le coup et laisse l'attaquant ouvert", () => {
+  const c = BRAWL_CONFIG;
+  const w = duel(fighter(), fighter());
+  const [a, b] = [w.fighters[0]!, w.fighters[1]!];
+  // B lève le bouclier, A lance un coup léger (impact à 0,1 s) ; B lâche 2 images avant l'impact.
+  step(w, [{ unit: 1, guard: true }]);
+  step(w, [{ unit: 0, light: true }, { unit: 1, guard: true }]);
+  const impactTick = Math.round(0.1 * c.tickRate);
+  for (let i = 1; i < impactTick - 2; i++) step(w, [{ unit: 1, guard: true }]);
+  const shieldBefore = b.shield;
+  run(w, 0.1);
+  assert.equal(b.hp, 1000, "aucun dégât");
+  assert.ok(Math.abs(b.shield - shieldBefore) < 2, "bouclier intact");
+  assert.ok(w.events.some((e) => e.type === "parry" && e.unit === 1));
+  assert.equal(a.action?.kind, "hitstun", "l'attaquant est ouvert");
+});
+
+test("lâcher le bouclier trop tôt coûte un temps mort, et le coup passe", () => {
+  const c = BRAWL_CONFIG;
+  const w = duel(fighter(), fighter());
+  const b = w.fighters[1]!;
+  run(w, 0.2, () => [{ unit: 1, guard: true }]);
+  step(w, []); // lâché
+  assert.equal(b.action?.kind, "shieldDrop");
+  run(w, c.parryWindow + 0.02);
+  step(w, [{ unit: 0, light: true }, { unit: 1, light: true }]);
+  assert.equal(b.action?.kind, "shieldDrop", "pas d'attaque pendant le retrait du bouclier");
+  run(w, 0.15);
+  assert.ok(b.hp < 1000, "le coup passe");
+});
+
+test("sauter hors du bouclier évite le temps mort", () => {
+  const w = duel(fighter(), fighter(), 6);
+  const b = w.fighters[1]!;
+  run(w, 0.2, () => [{ unit: 1, guard: true }]);
+  step(w, [{ unit: 1, guard: true, jump: true, jumpHeld: true }]);
+  assert.equal(b.action?.kind, "jumpsquat");
 });
 
 test("v3 : le validateur impose combo court, éjection finale et coups ratés punissables", () => {

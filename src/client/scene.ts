@@ -1,7 +1,7 @@
 // Three.js view of a BrawlWorld, in a cel-shaded anime style. Read-only: it
 // never changes the simulation. Readability first: every state that matters to
 // the opponent has a visual cue.
-//   wind-up (startup) → faint hitbox outline, then the blow's slash arc
+//   strike → a trail that follows the weapon while the blow travels
 //   guard → bubble · guard broken → spinning stars · energy charge → aura column
 //   invulnerable → blinking · area special → magic circle filling up until impact
 
@@ -10,11 +10,12 @@ import { OutlineEffect } from "three/examples/jsm/effects/OutlineEffect.js";
 import { distToProp, segmentInterval, surfaceAt } from "../brawl/arena.ts";
 import type { Character } from "../brawl/character.ts";
 import type { Strike } from "../brawl/kit.ts";
-import { FIGHTER_HEIGHT, bodyCenter, lockTarget, strikeCenter, type BrawlWorld, type Fighter } from "../brawl/world.ts";
+import { FIGHTER_HEIGHT, bodyCenter, lockTarget, type BrawlWorld, type Fighter } from "../brawl/world.ts";
 import { Animator } from "./animator.ts";
 import { buildEnvironment } from "./environment.ts";
 import { defaultLook, instantiate, weaponStyle, type ModelInstance, type ModelLibrary } from "./models.ts";
 import { glowTexture, magicCircleTexture, noOutline, toon } from "./toon.ts";
+import { WeaponTrail } from "./trail.ts";
 import { Vfx } from "./vfx.ts";
 
 interface FighterView {
@@ -27,10 +28,11 @@ interface FighterView {
   guard: THREE.Mesh;
   aura: THREE.Mesh;
   stars: THREE.Group;
-  hitbox: THREE.Sprite;
   chargeOrb: THREE.Sprite;
   /** Red glow while health is low (hits send the fighter further, rhythm v3). */
   lowHp: THREE.Sprite;
+  /** Ribbon following the weapon during strikes (anime models). */
+  trail: WeaponTrail | null;
   flashUntil: number;
   /** Last strike whose slash arc was spawned (so each blow draws one arc). */
   slashKey: string;
@@ -149,11 +151,6 @@ export class ArenaView {
     stars.position.y = FIGHTER_HEIGHT + 0.35;
     root.add(stars);
 
-    // Wind-up telegraph: energy gathering where the blow will land.
-    const hitbox = new THREE.Sprite(
-      noOutline(new THREE.SpriteMaterial({ map: this.glow, color: 0xffffff, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false })),
-    );
-    this.scene.add(hitbox);
 
     const lowHp = new THREE.Sprite(
       noOutline(new THREE.SpriteMaterial({ map: this.glow, color: 0xff2a3d, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false })),
@@ -168,9 +165,15 @@ export class ArenaView {
     );
     root.add(chargeOrb);
 
+    let trail: WeaponTrail | null = null;
+    if (model?.trail) {
+      trail = new WeaponTrail();
+      this.scene.add(trail.mesh);
+    }
+
     this.scene.add(root);
     return {
-      root, model, animator, materials, shadow, guard, aura, stars, hitbox, chargeOrb, lowHp,
+      root, model, animator, materials, shadow, guard, aura, stars, chargeOrb, lowHp, trail,
       flashUntil: 0, slashKey: "", wasAirborne: false,
     };
   }
@@ -256,6 +259,15 @@ export class ArenaView {
           this.freezeUntil = now + 90;
           break;
         }
+        case "parry": {
+          // Parry: a crisp white-cyan flash on the defender, the attacker reels.
+          const d = w.fighters[e.unit]!;
+          this.vfx.hit(this.center(d), 0xbff6ff, true);
+          this.vfx.ring(this.center(d), 0xffffff, 2.6);
+          this.fighters[e.unit]!.flashUntil = w.time + 0.15;
+          this.freezeUntil = now + 160;
+          break;
+        }
         case "airJump": {
           // Double jump: a little ring of air under the feet.
           const f = w.fighters[e.unit]!;
@@ -293,7 +305,6 @@ export class ArenaView {
     const shown = f.alive || v.model !== null;
     v.root.visible = shown;
     v.shadow.visible = f.alive;
-    v.hitbox.visible = false;
     v.root.position.set(f.pos.x, f.pos.y, f.pos.z);
     v.root.rotation.y = Math.atan2(f.facing.x, f.facing.z);
     v.shadow.position.set(f.pos.x, f.floor + 0.02, f.pos.z);
@@ -336,7 +347,9 @@ export class ArenaView {
       v.chargeOrb.position.set(0, FIGHTER_HEIGHT * 0.55, f.kit.stats.radius + 0.4);
     }
 
-    // Attack telegraph: a faint wireframe of the hitbox during the wind-up, then one slash arc when it goes live.
+    // Attack readability: a trail follows the weapon while the blow travels (from just
+    // before the hitbox goes live to just after). Models without weapon points fall back
+    // to one slash arc when the hitbox goes live.
     let strike: Strike | undefined;
     let at = 0;
     let key = "";
@@ -357,14 +370,18 @@ export class ArenaView {
       key = `h${w.tick - Math.round(a.t * w.config.tickRate)}`;
       tilt = 1.2;
     }
-    if (strike && at < strike.startup) {
-      const c = strikeCenter(f, strike);
-      v.hitbox.visible = true;
-      v.hitbox.position.set(c.x, c.y, c.z);
-      const k = strike.startup > 0 ? at / strike.startup : 1;
-      v.hitbox.scale.setScalar(strike.size * (0.8 + 1.4 * k));
-      v.hitbox.material.color.set(a?.kind === "heavy" ? 0xff8a1c : ch.colors.secondary);
-      v.hitbox.material.opacity = 0.2 + 0.5 * k;
+    let swinging = !!strike && at >= strike.startup - 0.12 && at <= strike.startup + strike.active + 0.08;
+    if (a?.kind === "special") {
+      const sp = f.kit.specials[a.slot]!;
+      swinging = a.t >= sp.startup - 0.1 && a.t <= sp.startup + 0.15;
+    }
+    if (a?.kind === "rush") swinging = true;
+    const heavyish = a?.kind === "heavy" || a?.kind === "special" || a?.kind === "rush";
+    if (v.trail && v.model?.trail) {
+      v.model.root.updateMatrixWorld(true);
+      const base = v.model.trail.base.getWorldPosition(new THREE.Vector3());
+      const tip = v.model.trail.tip.getWorldPosition(new THREE.Vector3());
+      v.trail.update(base, tip, swinging && f.alive, dt, heavyish ? 0xffa53d : ch.colors.secondary);
     } else if (strike && at >= strike.startup && v.slashKey !== key) {
       v.slashKey = key;
       const origin = this.center(f).add(new THREE.Vector3(f.facing.x, 0, f.facing.z).multiplyScalar(0.2));
@@ -418,9 +435,14 @@ export class ArenaView {
         return;
       }
       if (!p.alive) return;
-      // Trees reach well beyond their trunk: keep the camera out of the foliage.
+      // Camera inside (or right against) a prop: hide it outright; layered see-through
+      // surfaces would still veil the view. Trees reach well beyond their trunk.
       const reach = p.kind.look === "tree" ? 2.6 : 1;
-      const hides = blocking.has(i) || distToProp(p, cam.x, cam.z) < reach;
+      if (distToProp(p, cam.x, cam.z) < reach && cam.y < p.height + 1.5) {
+        obj.visible = false;
+        return;
+      }
+      const hides = blocking.has(i);
       const damage = p.kind.hp !== null ? 0.5 + 0.5 * Math.max(0, p.hp / p.kind.hp) : 1;
       obj.traverse((o) => {
         if (!(o instanceof THREE.Mesh)) return;

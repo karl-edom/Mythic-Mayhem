@@ -3,7 +3,7 @@
 // simulation's hitbox goes live: what you see is what hits.
 
 import * as THREE from "three";
-import type { BrawlWorld, Fighter } from "../brawl/world.ts";
+import { dodgeLength, type BrawlWorld, type Fighter } from "../brawl/world.ts";
 import type { WeaponStyle } from "./models.ts";
 
 /** Fraction of an attack clip where the blow connects. */
@@ -71,6 +71,15 @@ export class Animator {
     return a;
   }
 
+  /**
+   * Playback rate of a locomotion cycle so that its feet keep pace with the ground:
+   * from the clip's measured stride speed when known, else from a fixed reference.
+   */
+  private pace(name: string, speed: number, fallback: number, min: number): number {
+    const natural = (this.clips.get(name)?.userData.naturalSpeed as number | undefined) ?? fallback;
+    return Math.min(2.2, Math.max(min, speed / Math.max(0.5, natural)));
+  }
+
   private len(name: string): number {
     return this.clips.get(name)?.duration ?? 1;
   }
@@ -107,6 +116,10 @@ export class Animator {
         const s = f.kit.light.hits[0]!;
         return this.strike(AERIAL[this.style], `aerial:${w.tick - Math.round(a.t * c.tickRate)}`, s.startup, s.startup + s.active + s.recovery);
       }
+      case "jumpsquat":
+        return { clip: "Jump_Start", key: "squat", from: 0, duration: 0.25, fade: 0.03 };
+      case "shieldDrop":
+        return { clip: "Block", key: `drop${a.until}`, duration: c.shieldDropLag + 0.1, fade: 0.06 };
       case "landing":
         return { clip: "Jump_Land", key: `land${a.until}`, duration: c.landingLag + 0.15, fade: 0.04 };
       case "heavy": {
@@ -136,7 +149,7 @@ export class Animator {
         const side = a.dir.x * -facing.z + a.dir.z * facing.x;
         const fwd = a.dir.x * facing.x + a.dir.z * facing.z;
         const clip = Math.abs(fwd) >= Math.abs(side) ? (fwd > 0 ? "Dodge_Forward" : "Dodge_Backward") : side > 0 ? "Dodge_Right" : "Dodge_Left";
-        return { clip, key: `dodge${w.tick - Math.round(a.t * c.tickRate)}`, duration: c.dodgeDuration + 0.2, fade: 0.04 };
+        return { clip, key: `dodge${w.tick - Math.round(a.t * c.tickRate)}`, duration: dodgeLength(c, a.stale) + 0.2, fade: 0.04 };
       }
       case "hitstun": {
         const clip = Math.round(a.until * 10) % 2 ? "Hit_A" : "Hit_B";
@@ -174,11 +187,11 @@ export class Animator {
     if (speed > 0.8) {
       const fwd = (v.x * facing.x + v.z * facing.z) / speed;
       const side = (v.x * -facing.z + v.z * facing.x) / speed;
-      if (fwd > 0.5) return { clip: "Running_A", key: "run", loop: true, speed: Math.max(0.7, speed / 6.5), fade: 0.15 };
-      if (fwd < -0.5) return { clip: "Walking_Backwards", key: "back", loop: true, speed: Math.max(0.8, speed / 3), fade: 0.15 };
+      if (fwd > 0.5) return { clip: "Running_A", key: "run", loop: true, speed: this.pace("Running_A", speed, 6.5, 0.7), fade: 0.15 };
+      if (fwd < -0.5) return { clip: "Walking_Backwards", key: "back", loop: true, speed: this.pace("Walking_Backwards", speed, 3, 0.8), fade: 0.15 };
       return side > 0
-        ? { clip: "Running_Strafe_Right", key: "strafeR", loop: true, speed: speed / 6, fade: 0.15 }
-        : { clip: "Running_Strafe_Left", key: "strafeL", loop: true, speed: speed / 6, fade: 0.15 };
+        ? { clip: "Running_Strafe_Right", key: "strafeR", loop: true, speed: this.pace("Running_Strafe_Right", speed, 6, 0.5), fade: 0.15 }
+        : { clip: "Running_Strafe_Left", key: "strafeL", loop: true, speed: this.pace("Running_Strafe_Left", speed, 6, 0.5), fade: 0.15 };
     }
     return { clip: IDLE[this.style], key: "idle", loop: true, fade: 0.2 };
   }
