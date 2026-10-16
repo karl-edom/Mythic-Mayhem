@@ -9,7 +9,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { ANIME_MODELS, MODELS, isAnime, type Look, type ModelId } from "../brawl/character.ts";
 import { turtlePoses } from "./poses.ts";
-import { TURTLE_HEIGHT, buildTurtleRig, paintTurtle } from "./turtle.ts";
+import { TURTLE_HEIGHT, animateTurtle, buildTurtleRig, paintTurtle } from "./turtle.ts";
 import type { Archetype } from "../brawl/kit.ts";
 import { KAYKIT_TO_HUMANOID, LOCOMOTION, Retargeter, amplifyClip, amplitudeFor, clenchFists } from "./retarget.ts";
 import { noOutline, outlineOf, toToon } from "./toon.ts";
@@ -152,7 +152,12 @@ function animeClips(lib: ModelLibrary, t: AnimeTemplate): Map<string, THREE.Anim
         return [name, out] as const;
       }),
     );
-    if (t.poses) for (const [name, clip] of t.poses()) t.clips.set(name, clip);
+    if (t.poses)
+      for (const [name, clip] of t.poses()) {
+        // Hand-keyed cycles get their stride speed measured like the retargeted ones.
+        if (LOCOMOTION.test(name)) clip.userData.naturalSpeed = naturalSpeed(t, clip) * (ANIME_HEIGHT / t.height);
+        t.clips.set(name, clip);
+      }
   }
   return t.clips;
 }
@@ -324,7 +329,10 @@ function instantiateAnime(lib: ModelLibrary, look: Look): ModelInstance {
     materials.push(m);
   });
   clenchFists(rig);
-  if (t.procedural) paintTurtle(rig, look.outfit);
+  if (t.procedural) {
+    paintTurtle(rig, look.outfit);
+    animateTurtle(rig);
+  }
   for (const w of look.show) attachWeapon(rig, w);
   const root = new THREE.Group();
   root.add(rig);

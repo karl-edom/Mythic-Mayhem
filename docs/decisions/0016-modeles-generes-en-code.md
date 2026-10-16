@@ -38,6 +38,20 @@ Un personnage peut être **modélisé entièrement en code**, sans fichier 3D. P
   - Chaque pose respire en boucle (léger va-et-vient entre deux variantes).
 - Le principe vaut pour tout modèle généré : une planche de poses peut devenir des clips propres au personnage.
 
+## Coups propres au personnage (2026-10-16)
+
+> « Fais la course en fente et les coups au saï (avoir des coups spécifiques pour ces personnages est une bonne chose). Et ajuste son bandeau. »
+
+- **Clips à images-clés** (`keyClip` dans `src/client/poses.ts`) : des poses clés, avec une transition douce entre elles, ou à vitesse constante pour les rotations. On peut y indiquer l'instant de l'impact (`impact`), que l'animateur fait tomber pile quand la zone de coup devient active.
+- **Emplacements de coups par modèle** : un modèle qui fournit `@light0`, `@light1`, `@light2`, `@heavy`, `@aerial`, `@special:projectile`, `@special:rush`, `@special:area` ou `@rush` joue ses propres coups. Les autres gardent les animations communes. Le combat ne change pas : seul l'affichage change.
+- **La tortue** :
+  - **course en fente** : penchée en avant, saïs traînant derrière, grandes foulées basses ;
+  - **combo** : estoc du saï droit, crochet du gauche, double estoc en fente profonde ;
+  - **lourde** : les deux saïs levés au-dessus de la tête, puis abattus ;
+  - **aérien** : genou volant, saïs écartés en ciseaux ;
+  - **spéciales** : lancer de saï ; **roulade dans la carapace** (elle se roule en boule et fonce) ; **furie**, un tourbillon sur place.
+- **Bandeau** : la bande est posée sur la surface du crâne (chaque sommet suit la tête), plus basse sur les yeux. Les pans sont du tissu recalculé à chaque image : ils quittent le nœud vers l'arrière, pendent, traînent derrière la tête quand elle bouge et ondulent.
+
 ## Licence
 
 La tortue est une création du porteur de projet, pour un usage personnel. Le dépôt contient le modèle générique ; le pack du personnage « Raphaël » (nom, couleurs, kit) reste dans `packs/local/raphael/`, le dossier prévu pour les personnages d'usage perso.

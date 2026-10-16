@@ -7,6 +7,7 @@ import { OutlineEffect } from "three/examples/jsm/effects/OutlineEffect.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import type { Look, ModelId } from "../brawl/character.ts";
 import { instantiate, loadModels, proceduralEnv } from "./models.ts";
+import { setWrist } from "./poses.ts";
 
 const q = new URLSearchParams(location.search);
 const look: Look = {
@@ -16,6 +17,7 @@ const look: Look = {
   outfit: q.get("outfit") ?? "#d01c1c",
 };
 
+if (q.get("wrist")) setWrist(Number(q.get("wrist")));
 const canvas = document.getElementById("view") as HTMLCanvasElement;
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
 renderer.setPixelRatio(Math.min(2, devicePixelRatio));

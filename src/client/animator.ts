@@ -90,7 +90,8 @@ export class Animator {
    */
   private strike(clip: string, key: string, startup: number, total: number, startFrac = 0): Want {
     const d = this.len(clip);
-    const impact = Math.max(IMPACT * d, startFrac * d + 0.01);
+    const at = (this.clips.get(clip)?.userData.impact as number | undefined) ?? IMPACT;
+    const impact = Math.max(at * d, startFrac * d + 0.01);
     let speed = (d - impact) / Math.max(0.05, total - startup);
     let from = impact - speed * startup;
     if (from < startFrac * d) {
@@ -98,6 +99,11 @@ export class Animator {
       speed = (impact - from) / Math.max(0.02, startup);
     }
     return { clip, key, from, duration: (d - from) / speed, fade: 0.05 };
+  }
+
+  /** A model's own move for a slot (e.g. "@light0", "@heavy"), else the shared clip. */
+  private own(slot: string, shared: string): string {
+    return this.clips.has(slot) ? slot : shared;
   }
 
   private want(w: BrawlWorld, f: Fighter): Want {
@@ -110,11 +116,11 @@ export class Animator {
       case "light": {
         const s = f.kit.light.hits[a.index]!;
         const list = LIGHT[this.style];
-        return this.strike(list[a.index % list.length]!, `light${a.index}:${w.tick - Math.round(a.t * c.tickRate)}`, s.startup, s.startup + s.active + s.recovery);
+        return this.strike(this.own(`@light${a.index}`, list[a.index % list.length]!), `light${a.index}:${w.tick - Math.round(a.t * c.tickRate)}`, s.startup, s.startup + s.active + s.recovery);
       }
       case "aerial": {
         const s = f.kit.light.hits[0]!;
-        return this.strike(AERIAL[this.style], `aerial:${w.tick - Math.round(a.t * c.tickRate)}`, s.startup, s.startup + s.active + s.recovery);
+        return this.strike(this.own("@aerial", AERIAL[this.style]), `aerial:${w.tick - Math.round(a.t * c.tickRate)}`, s.startup, s.startup + s.active + s.recovery);
       }
       case "jumpsquat":
         return { clip: "Jump_Start", key: "squat", from: 0, duration: 0.25, fade: 0.03 };
@@ -124,7 +130,7 @@ export class Animator {
         return { clip: "Jump_Land", key: `land${a.until}`, duration: c.landingLag + 0.15, fade: 0.04 };
       case "heavy": {
         const h = f.kit.heavy;
-        const clip = HEAVY[this.style];
+        const clip = this.own("@heavy", HEAVY[this.style]);
         const d = this.len(clip);
         if (a.charging) {
           const k = h.maxCharge > 0 ? Math.min(1, a.charge / h.maxCharge) : 0;
@@ -135,14 +141,16 @@ export class Animator {
       case "special": {
         const sp = f.kit.specials[a.slot]!;
         const del = sp.delivery;
-        const clip =
+        const clip = this.clips.has(`@special:${del.type}`) ? `@special:${del.type}` :
           del.type === "projectile" ? "Spellcast_Shoot"
           : del.type === "rush" ? "1H_Melee_Attack_Stab"
           : del.castRange <= 0.5 ? "2H_Melee_Attack_Spin" : "Spellcast_Long";
         return this.strike(clip, `special${a.slot}`, sp.startup, sp.startup + sp.recovery);
       }
       case "rush":
-        return { clip: "Running_B", key: "rush", loop: true, speed: 2.2, fade: 0.04 };
+        return this.clips.has("@rush")
+          ? { clip: "@rush", key: "rush", loop: true, speed: 1, fade: 0.06 }
+          : { clip: "Running_B", key: "rush", loop: true, speed: 2.2, fade: 0.04 };
       case "breaker":
         return { clip: "Spellcast_Raise", key: `breaker${w.tick - Math.round(a.t * c.tickRate)}`, duration: c.breakerDuration, fade: 0.03 };
       case "dodge": {

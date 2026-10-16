@@ -33,6 +33,10 @@ const BONES: [string, string | null, number, number, number][] = [
   ["rightToes", "rightFoot", -0.13, 0.03, 0.12],
 ];
 
+/** Mask tails: length (metres) and segments along it. */
+const TAIL_LENGTH = 0.55;
+const TAIL_ROWS = 14;
+
 /** Height of the model (feet to top of head), metres. */
 export const TURTLE_HEIGHT = 1.74;
 
@@ -520,42 +524,66 @@ export function buildTurtleRig(): THREE.Group {
     put("head", smile, mouthMat);
     // Nostrils.
     for (const s of [-1, 1]) put("head", blob(0.007, 0.005, 0.004).translate(s * 0.018, 1.585, 0.19), mouthMat);
-    // Mask band, tied at the back, with two tails.
-    const bandGeo = new THREE.CylinderGeometry(1, 1.03, 0.085, 48, 2, true);
-    bandGeo.scale(0.141, 1, 0.152);
-    bandGeo.translate(0, 1.634, 0.03);
-    put("head", bandGeo, M.mask, "mask");
-    put("head", blob(0.03, 0.026, 0.022).translate(0, 1.635, -0.13), M.mask, "mask");
+    // Mask band: cloth hugging the skull (each vertex laid on the head's surface),
+    // dipping a little over the eyes, knotted at the back.
+    {
+      const c = new THREE.Vector3(0, 1.61, 0.03);
+      const rad = new THREE.Vector3(0.13, 0.135, 0.14);
+      const cols = 64;
+      const rows = 4;
+      const pos: number[] = [];
+      const uvs: number[] = [];
+      const idx: number[] = [];
+      for (let j = 0; j <= rows; j++)
+        for (let i = 0; i <= cols; i++) {
+          const ang = (i / cols) * Math.PI * 2;
+          // 8.5 cm wide, a touch lower at the front (over the eyes) than at the knot.
+          const y = 1.594 + (j / rows) * 0.085 - 0.008 * Math.cos(ang);
+          const k = Math.sqrt(Math.max(0, 1 - ((y - c.y) / rad.y) ** 2));
+          const p = new THREE.Vector3(c.x + Math.sin(ang) * rad.x * k, y, c.z + Math.cos(ang) * rad.z * k);
+          const n = new THREE.Vector3((p.x - c.x) / rad.x ** 2, (p.y - c.y) / rad.y ** 2, (p.z - c.z) / rad.z ** 2).normalize();
+          // Cloth stands off the skin a few millimetres, a little more at its edges (rolled hem).
+          const edge = j === 0 || j === rows ? 0.009 : 0.006;
+          p.addScaledVector(n, edge);
+          pos.push(p.x, p.y, p.z);
+          uvs.push(i / cols, j / rows);
+        }
+      for (let j = 0; j < rows; j++)
+        for (let i = 0; i < cols; i++) {
+          const a0 = j * (cols + 1) + i;
+          const a1 = a0 + cols + 1;
+          idx.push(a0, a0 + 1, a1, a0 + 1, a1 + 1, a1);
+        }
+      const band = new THREE.BufferGeometry();
+      band.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+      band.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+      band.setIndex(idx);
+      band.computeVertexNormals();
+      put("head", band, M.mask, "mask");
+    }
+    put("head", blob(0.032, 0.028, 0.024).translate(0, 1.636, -0.122), M.mask, "mask"); // knot
+    // Two tails hanging from the knot. Their shape is recomputed every frame as cloth
+    // (see animateTurtle): they hang, trail behind when the turtle moves, and ripple.
     for (const s of [-1, 1]) {
-      const L = 0.55;
-      const tail = new THREE.PlaneGeometry(0.06, L, 1, 20);
-      const p = tail.attributes.position!;
-      for (let i = 0; i < p.count; i++) {
-        const t = 0.5 - p.getY(i) / L; // 0 at the knot, 1 at the end
-        p.setXYZ(i, p.getX(i) * (1 - t * 0.3) + s * t * 0.16, p.getY(i), Math.sin(t * 8) * 0.04 * t);
-      }
-      tail.computeVertexNormals();
-      tail.translate(0, -L / 2, 0);
-      tail.rotateX(1.05);
-      tail.rotateZ(s * 0.35);
-      const m = put("head", tail.translate(s * 0.02, 1.635, -0.14), M.mask, "mask");
-      // The tails flutter: a slow wave, different on each side.
-      const phase = s > 0 ? 0 : 1.7;
-      m.onBeforeRender = () => {
-        const t = performance.now() / 1000;
-        m.rotation.x = Math.sin(t * 5 + phase) * 0.12;
-        m.rotation.z = Math.sin(t * 3.3 + phase) * 0.08;
-      };
+      const tail = new THREE.PlaneGeometry(0.055, TAIL_LENGTH, 1, TAIL_ROWS);
+      tail.translate(0, -TAIL_LENGTH / 2, 0);
+      const m = put("head", tail.translate(s * 0.018, 1.632, -0.13), M.mask, "maskTail");
+      m.userData.tailSide = s;
     }
     // Eyes: big, set in the mask, with a determined frown.
     const white = new THREE.MeshPhysicalMaterial({ color: "#f5f2ea", roughness: 0.25, clearcoat: 1 });
     const iris = new THREE.MeshPhysicalMaterial({ color: "#2a1a0e", roughness: 0.1, clearcoat: 1 });
     for (const s of [-1, 1]) {
-      put("head", blob(0.036, 0.026, 0.02).translate(s * 0.054, 1.632, 0.172), white);
-      put("head", blob(0.014, 0.017, 0.008).translate(s * 0.047, 1.628, 0.19), iris);
+      // Set into the mask's eye holes: they follow the curve of the face, barely proud of the cloth.
+      const eye = blob(0.036, 0.026, 0.013);
+      eye.rotateY(s * 0.35);
+      put("head", eye.translate(s * 0.054, 1.632, 0.172), white);
+      const pupil = blob(0.014, 0.017, 0.006);
+      pupil.rotateY(s * 0.35);
+      put("head", pupil.translate(s * 0.05, 1.628, 0.184), iris);
       const brow = new RoundedBoxGeometry(0.075, 0.02, 0.03, 2, 0.009);
       brow.rotateZ(s * 0.32);
-      brow.translate(s * 0.05, 1.655, 0.172);
+      brow.translate(s * 0.05, 1.655, 0.18);
       put("head", brow, M.mask, "mask");
     }
   }
@@ -642,11 +670,80 @@ export function buildTurtleRig(): THREE.Group {
   return rig;
 }
 
+/**
+ * Brings an instance's mask tails to life: each frame they are rebuilt as a ribbon
+ * that leaves the knot backward, then hangs under gravity, trails against the head's
+ * motion (inertia) and ripples. Purely visual.
+ */
+export function animateTurtle(root: THREE.Object3D): void {
+  root.traverse((o) => {
+    if (!(o instanceof THREE.Mesh) || o.name !== "maskTail") return;
+    const mesh = o;
+    mesh.geometry = mesh.geometry.clone();
+    const side = (mesh.userData.tailSide as number) ?? 1;
+    const pos = mesh.geometry.attributes.position as THREE.BufferAttribute;
+    // Rest geometry: the knot point of each row pair (top row's centre), in mesh space.
+    const knot = new THREE.Vector3(pos.getX(0) + pos.getX(1), pos.getY(0) + pos.getY(1), pos.getZ(0) + pos.getZ(1)).multiplyScalar(0.5);
+    const lastKnot = new THREE.Vector3();
+    const flow = new THREE.Vector3(0, -1, 0); // smoothed hanging direction, world space
+    let last = 0;
+    const wp = new THREE.Vector3();
+    const q = new THREE.Quaternion();
+    const back = new THREE.Vector3();
+    const sideV = new THREE.Vector3();
+    const inv = new THREE.Matrix4();
+    const pt = new THREE.Vector3();
+    mesh.onBeforeRender = () => {
+      const now = performance.now() / 1000;
+      // Shadow and outline passes render the mesh again in the same frame: once is enough.
+      if (last && now - last < 0.004) return;
+      const dt = last ? Math.min(0.05, now - last) : 0;
+      last = now;
+      mesh.updateWorldMatrix(true, false);
+      wp.copy(knot).applyMatrix4(mesh.matrixWorld);
+      mesh.getWorldQuaternion(q);
+      back.set(0, 0, -1).applyQuaternion(q);
+      sideV.set(1, 0, 0).applyQuaternion(q);
+      // Inertia: the knot's motion pushes the cloth the other way.
+      const vel = dt > 0 && lastKnot.lengthSq() > 0 ? wp.clone().sub(lastKnot).divideScalar(dt) : new THREE.Vector3();
+      lastKnot.copy(wp);
+      const want = new THREE.Vector3(0, -1, 0)
+        .addScaledVector(back, 0.55)
+        .addScaledVector(sideV, side * 0.22)
+        .addScaledVector(vel, -0.09)
+        .normalize();
+      flow.lerp(want, dt > 0 ? 1 - Math.exp(-dt * 7) : 1).normalize();
+      inv.copy(mesh.matrixWorld).invert();
+      // Walk down the ribbon: leaves the knot backward, bends into the hanging direction.
+      const p = wp.clone();
+      const seg = TAIL_LENGTH / TAIL_ROWS;
+      for (let r = 0; r <= TAIL_ROWS; r++) {
+        const t = r / TAIL_ROWS;
+        if (r > 0) {
+          const dir = back.clone().lerp(flow, Math.min(1, t * 2.2)).normalize();
+          p.addScaledVector(dir, seg);
+        }
+        // Ripple across the ribbon, growing toward its end; plus a slight twist.
+        const wave = Math.sin(now * 7 + side - t * 9) * 0.035 * t;
+        const twist = Math.sin(now * 4 + side * 2 - t * 5) * 0.5 * t;
+        const across = sideV.clone().multiplyScalar(Math.cos(twist)).addScaledVector(back, Math.sin(twist));
+        const w = 0.0275 * (1 - t * 0.35);
+        for (const k of [0, 1]) {
+          pt.copy(p).addScaledVector(across, (k === 0 ? -1 : 1) * w).addScaledVector(sideV, wave * side).applyMatrix4(inv);
+          pos.setXYZ(r * 2 + k, pt.x, pt.y, pt.z);
+        }
+      }
+      pos.needsUpdate = true;
+      mesh.geometry.computeVertexNormals();
+    };
+  });
+}
+
 /** Recolours the mask of an instance (its materials are its own copies by then). */
 export function paintTurtle(root: THREE.Object3D, mask: string | undefined): void {
   if (!mask) return;
   const c = new THREE.Color(mask);
   root.traverse((o) => {
-    if (o instanceof THREE.Mesh && (o.material as THREE.Material).name === "mask") (o.material as THREE.MeshPhysicalMaterial).color.copy(c);
+    if (o instanceof THREE.Mesh && /^mask/.test((o.material as THREE.Material).name)) (o.material as THREE.MeshPhysicalMaterial).color.copy(c);
   });
 }
