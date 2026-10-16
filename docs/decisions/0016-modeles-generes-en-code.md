@@ -23,9 +23,24 @@ Un personnage peut être **modélisé entièrement en code**, sans fichier 3D. P
 - **Nouvelle arme** : le **saï** (`Sai`, `Sai_Offhand`), en acier poli.
 - **Vitrine** (`vitrine.html`), outil de développement : un modèle sur fond de studio, qui tourne et joue une animation. Exemple : `vitrine.html?model=turtle&outfit=%23b8121a&clip=Running_A`.
 
+## Fidélité à la planche de référence (2026-10-16)
+
+> « Pourquoi tu n'as pas pris mes photos avec les poses ? Il s'agissait d'une tortue que j'ai faite moi. »
+
+- Le look suit la planche du porteur de projet :
+  - ceinture de tissu enroulée deux fois, nouée devant, avec un long pan entre les cuisses ;
+  - bandes larges aux poignets, tibias entièrement bandés, genouillères ;
+  - peau olive marbrée, plastron ocre, carapace brun-olive.
+- **Poses de la planche** (`src/client/poses.ts`) : des clips faits à la main remplacent, pour ce modèle seulement, les animations reciblées du même nom :
+  - **repos** = garde basse, jambes écartées, saïs croisés ;
+  - **bouclier** = garde haute, saï levé devant le visage ;
+  - **en l'air** = bond, genou ramené haut.
+  - Chaque pose respire en boucle (léger va-et-vient entre deux variantes).
+- Le principe vaut pour tout modèle généré : une planche de poses peut devenir des clips propres au personnage.
+
 ## Licence
 
-Les Tortues Ninja sont une licence. Le dépôt ne contient que le modèle **générique**. Le personnage « Raphaël » (nom, bandeau rouge, deux saïs, kit) vit dans `packs/local/raphael/`, ignoré par git, conformément à la vision : usage privé, jamais commité ni publié.
+La tortue est une création du porteur de projet, pour un usage personnel. Le dépôt contient le modèle générique ; le pack du personnage « Raphaël » (nom, couleurs, kit) reste dans `packs/local/raphael/`, le dossier prévu pour les personnages d'usage perso.
 
 ## Limites et suite
 

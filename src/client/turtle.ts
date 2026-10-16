@@ -118,6 +118,18 @@ function skinTextures(): { map: THREE.CanvasTexture; bump: THREE.CanvasTexture }
     }
   gm.putImageData(img, 0, 0);
   gb.putImageData(bimg, 0, 0);
+  // Mottling: broad, soft darker patches, as on the reference sheet.
+  gm.globalCompositeOperation = "multiply";
+  for (let i = 0; i < 26; i++) {
+    const x = r() * N;
+    const y = r() * N;
+    const rad = 30 + r() * 70;
+    const grad = gm.createRadialGradient(x, y, 0, x, y, rad);
+    grad.addColorStop(0, "rgba(120,130,90,0.55)");
+    grad.addColorStop(1, "rgba(255,255,255,0)");
+    gm.fillStyle = grad;
+    gm.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+  }
   // Freckles: a few darker spots.
   gm.globalCompositeOperation = "multiply";
   for (let i = 0; i < 70; i++) {
@@ -211,8 +223,8 @@ function plastronTextures(): { map: THREE.CanvasTexture; bump: THREE.CanvasTextu
   const [cm, gm] = canvas(W, H);
   const [cb, gb] = canvas(W, H);
   const grad = gm.createRadialGradient(W / 2, H / 2, 40, W / 2, H / 2, W * 0.7);
-  grad.addColorStop(0, "#d9b25a");
-  grad.addColorStop(1, "#9a7631");
+  grad.addColorStop(0, "#d2ad55");
+  grad.addColorStop(1, "#a07a2e");
   gm.fillStyle = grad;
   gm.fillRect(0, 0, W, H);
   gb.fillStyle = "#c8c8c8";
@@ -244,6 +256,26 @@ function plastronTextures(): { map: THREE.CanvasTexture; bump: THREE.CanvasTextu
     g.stroke();
   }
   return { map: texture(cm), bump: texture(cb, false) };
+}
+
+/** Coarse dyed cloth: weave, stains and worn patches. */
+function clothTexture(): THREE.CanvasTexture {
+  const [c, g] = canvas(256, 256);
+  g.fillStyle = "#9a7a5c";
+  g.fillRect(0, 0, 256, 256);
+  const r = seeded(3);
+  for (let i = 0; i < 256; i += 2) {
+    g.fillStyle = `rgba(60,40,25,${0.08 + r() * 0.08})`;
+    g.fillRect(0, i, 256, 1);
+    g.fillRect(i, 0, 1, 256);
+  }
+  for (let i = 0; i < 40; i++) {
+    g.fillStyle = `rgba(${r() < 0.5 ? "40,25,12" : "190,160,120"},${0.08 + r() * 0.1})`;
+    g.beginPath();
+    g.arc(r() * 256, r() * 256, 6 + r() * 26, 0, Math.PI * 2);
+    g.fill();
+  }
+  return texture(c, true, [2, 2]);
 }
 
 /** Leather strips: diagonal wraps with darker edges and stitches. */
@@ -337,6 +369,7 @@ export interface TurtleMaterials {
   shell: THREE.MeshPhysicalMaterial;
   plastron: THREE.MeshPhysicalMaterial;
   leather: THREE.MeshStandardMaterial;
+  cloth: THREE.MeshStandardMaterial;
   rim: THREE.MeshPhysicalMaterial;
   mask: THREE.MeshPhysicalMaterial;
 }
@@ -350,7 +383,7 @@ function materials(): TurtleMaterials {
   const plastron = plastronTextures();
   shared = {
     skin: new THREE.MeshPhysicalMaterial({
-      name: "skin", color: "#4b6b20", map: skin.map, bumpMap: skin.bump, bumpScale: 1.4,
+      name: "skin", color: "#506a22", map: skin.map, bumpMap: skin.bump, bumpScale: 1.4,
       roughness: 0.62, clearcoat: 0.15, clearcoatRoughness: 0.5, sheen: 0.15, sheenColor: new THREE.Color("#a6c46a"), sheenRoughness: 0.7,
     }),
     shell: new THREE.MeshPhysicalMaterial({
@@ -361,6 +394,7 @@ function materials(): TurtleMaterials {
       name: "plastron", color: "#ffffff", map: plastron.map, bumpMap: plastron.bump, bumpScale: 3,
       roughness: 0.62, clearcoat: 0.2, clearcoatRoughness: 0.5,
     }),
+    cloth: new THREE.MeshStandardMaterial({ name: "cloth", color: "#5a3a22", map: clothTexture(), roughness: 0.92, side: THREE.DoubleSide }),
     rim: new THREE.MeshPhysicalMaterial({ name: "rim", color: "#4b3b1b", roughness: 0.5, clearcoat: 0.4, clearcoatRoughness: 0.35 }),
     leather: new THREE.MeshStandardMaterial({ name: "leather", color: "#ffffff", map: wrapTexture(), roughness: 0.78 }),
     mask: new THREE.MeshPhysicalMaterial({
@@ -438,20 +472,36 @@ export function buildTurtleRig(): THREE.Group {
     g.translate(0, 1.13, -0.06);
     put("chest", g, M.rim);
   }
-  // Pelvis, belt with a knot, and two hanging tails of cloth.
+  // Pelvis, and a cloth sash wound twice round the waist, knotted in front, with a
+  // long flap hanging between the thighs (as on the reference sheet).
   put("hips", blob(0.2, 0.13, 0.15).translate(0, 0.88, 0), M.skin);
   {
-    const g = new THREE.TorusGeometry(1, 0.035, 10, 48);
-    g.rotateX(Math.PI / 2);
-    g.scale(0.25, 1, 0.19);
-    g.translate(0, 0.93, 0.01);
-    put("hips", g, M.leather, "belt");
-    put("hips", blob(0.05, 0.04, 0.035).translate(0.02, 0.93, 0.2), M.leather);
-    for (const [x, rot, len] of [[0.0, 0.08, 0.26], [0.05, -0.12, 0.2]] as const) {
-      const flap = new RoundedBoxGeometry(0.07, len, 0.012, 2, 0.006);
-      flap.rotateZ(rot);
-      flap.translate(x, 0.92 - len / 2, 0.215);
-      put("hips", flap, M.leather);
+    for (const [y, r] of [[0.95, 0.045], [0.9, 0.04]] as const) {
+      const g = new THREE.TorusGeometry(1, r, 10, 48);
+      g.rotateX(Math.PI / 2);
+      g.scale(0.25, 1, 0.195);
+      g.translate(0, y, 0.01);
+      put("hips", g, M.cloth, "sash");
+    }
+    put("hips", blob(0.055, 0.045, 0.04).translate(0, 0.93, 0.205), M.cloth); // knot
+    // Front flap: wider at the bottom, gently curved over the thighs, frayed hem.
+    const L = 0.36;
+    const flap = new THREE.PlaneGeometry(0.13, L, 4, 12);
+    const fp = flap.attributes.position!;
+    for (let i = 0; i < fp.count; i++) {
+      const t = 0.5 - fp.getY(i) / L; // 0 at the knot, 1 at the hem
+      const x = fp.getX(i) * (0.75 + t * 0.5);
+      fp.setXYZ(i, x, fp.getY(i), -x * x * 2 + t * 0.03 + Math.sin(fp.getX(i) * 60) * 0.004 * t);
+    }
+    flap.computeVertexNormals();
+    flap.translate(0, 0.91 - L / 2, 0.215);
+    put("hips", flap, M.cloth, "flap");
+    // Two short tails of the knot.
+    for (const [x, rot] of [[-0.035, 0.35], [0.04, -0.3]] as const) {
+      const tail = new RoundedBoxGeometry(0.045, 0.14, 0.012, 2, 0.005);
+      tail.rotateZ(rot);
+      tail.translate(x, 0.87, 0.225);
+      put("hips", tail, M.cloth);
     }
   }
 
@@ -524,10 +574,10 @@ export function buildTurtleRig(): THREE.Group {
     put(LA, limb(V(sx(0.52), 1.37, 0), V(sx(0.72), 1.37, 0), 0.074, 0.054), M.skin);
     put(LA, blob(0.07, 0.066, 0.068).translate(sx(0.57), 1.38, 0.008), M.skin); // forearm muscle
     // Wrist wraps: overlapping strips of worn leather.
-    for (let k = 0; k < 4; k++) {
-      const b = band(0.074 - k * 0.004, 0.032, (k % 2 ? 1 : -1) * 0.14);
+    for (let k = 0; k < 6; k++) {
+      const b = band(0.08 - k * 0.003, 0.034, (k % 2 ? 1 : -1) * 0.15);
       b.rotateZ(Math.PI / 2);
-      b.translate(sx(0.6 + k * 0.028), 1.37, 0);
+      b.translate(sx(0.565 + k * 0.028), 1.372, 0);
       put(LA, b, M.leather);
     }
     // Fist: palm, three thick fingers curled, the thumb across.
@@ -572,9 +622,9 @@ export function buildTurtleRig(): THREE.Group {
     strap.translate(sx(0.13), 0.5, 0.0);
     put(LL, strap, M.leather);
     // Shin wraps, over the skin.
-    for (let k = 0; k < 6; k++) {
-      const b = band(0.092 - k * 0.005, 0.036, (k % 2 ? 1 : -1) * 0.13);
-      b.translate(sx(0.13), 0.38 - k * 0.04, -0.005);
+    for (let k = 0; k < 8; k++) {
+      const b = band(0.1 - k * 0.0045, 0.05, (k % 2 ? 1 : -1) * 0.12);
+      b.translate(sx(0.13), 0.41 - k * 0.037, -0.01);
       put(LL, b, M.leather);
     }
     // Foot: a broad pad with three stubby toes.

@@ -8,6 +8,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { ANIME_MODELS, MODELS, isAnime, type Look, type ModelId } from "../brawl/character.ts";
+import { turtlePoses } from "./poses.ts";
 import { TURTLE_HEIGHT, buildTurtleRig, paintTurtle } from "./turtle.ts";
 import type { Archetype } from "../brawl/kit.ts";
 import { KAYKIT_TO_HUMANOID, LOCOMOTION, Retargeter, amplifyClip, amplitudeFor, clenchFists } from "./retarget.ts";
@@ -29,6 +30,8 @@ interface AnimeTemplate {
   clips?: Map<string, THREE.AnimationClip>;
   /** Built in code with physically based materials: kept as they are (not cel-shaded). */
   procedural?: boolean;
+  /** Hand-keyed clips that replace the retargeted ones of the same name (stances from a reference sheet). */
+  poses?: () => Map<string, THREE.AnimationClip>;
 }
 
 /** Reflections for procedural models (lacquer, steel, shell): set by the view once it has a renderer. */
@@ -126,7 +129,9 @@ export async function loadModels(base: string, onProgress?: (done: number, total
     const box = new THREE.Box3().setFromObject(rig);
     anime.set(m, { rig, height: box.max.y - Math.min(0, box.min.y) });
   });
-  anime.set("turtle", { rig: buildTurtleRig(), height: TURTLE_HEIGHT, procedural: true });
+  const turtle = buildTurtleRig();
+  const hipsRest = turtle.getObjectByName("hips")!.position.clone();
+  anime.set("turtle", { rig: turtle, height: TURTLE_HEIGHT, procedural: true, poses: () => turtlePoses(hipsRest) });
   return {
     templates,
     anime,
@@ -147,6 +152,7 @@ function animeClips(lib: ModelLibrary, t: AnimeTemplate): Map<string, THREE.Anim
         return [name, out] as const;
       }),
     );
+    if (t.poses) for (const [name, clip] of t.poses()) t.clips.set(name, clip);
   }
   return t.clips;
 }
