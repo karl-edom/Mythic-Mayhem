@@ -284,6 +284,7 @@ export type BrawlEvent =
   | { t: number; type: "ko"; target: number; killer: number }
   | { t: number; type: "respawn"; unit: number }
   | { t: number; type: "propBroken"; prop: number; source: number }
+  | { t: number; type: "propHit"; prop: number; amount: number }
   | { t: number; type: "lift"; unit: number; prop: number }
   | { t: number; type: "throw"; unit: number; prop: number }
   | { t: number; type: "slam"; target: number; amount: number }
@@ -541,7 +542,10 @@ export function grabbable(w: BrawlWorld, f: Fighter): Prop | undefined {
 function damageProp(w: BrawlWorld, src: Fighter, p: Prop, amount: number): void {
   if (!p.alive || p.kind.hp === null) return;
   p.hp -= amount;
-  if (p.hp > 0) return;
+  if (p.hp > 0) {
+    w.events.push({ t: w.time, type: "propHit", prop: p.id, amount });
+    return;
+  }
   p.alive = false;
   w.events.push({ t: w.time, type: "propBroken", prop: p.id, source: src.id });
 }

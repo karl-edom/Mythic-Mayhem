@@ -1,19 +1,19 @@
-// The arena's surroundings and props, in the cel-shaded style: gradient sky,
-// clouds, distant mountains, painted ground, stone walls, and stylised props.
-// Props keep exactly the footprint and height the simulation uses.
+// The arena's surroundings: lights, the landscape beyond the walls, the floor,
+// the boundary walls, grass, and the props (built in props3d.ts).
 
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
-import type { Arena, Prop } from "../brawl/arena.ts";
-import { broadleafGeometry, buildLandscape } from "./landscape.ts";
+import type { Arena } from "../brawl/arena.ts";
+import { buildLandscape } from "./landscape.ts";
+import { buildProp, stonework, type Theme } from "./props3d.ts";
 import {
-  dirtTexture, grassTexture, noOutline, outlineOf, pavingTexture, stoneTexture, toon, woodTexture,
+  dirtTexture, grassTexture, noOutline, outlineOf, pavingTexture,
 } from "./toon.ts";
 
-type Theme = "meadow" | "village";
-
-function themeOf(arena: Arena): Theme {
-  return arena.def.id.includes("village") ? "village" : "meadow";
+export function themeOf(arena: Arena): Theme {
+  const id = arena.def.id;
+  if (/japan|sanctuaire|shrine|kyoto/.test(id)) return "japan";
+  return id.includes("village") ? "village" : "meadow";
 }
 
 /** Seeded random so the scenery is the same every match on a map. */
@@ -32,186 +32,6 @@ function mesh(geo: THREE.BufferGeometry, mat: THREE.Material, shadows = true): T
   return m;
 }
 
-const tex = {
-  wood: null as THREE.Texture | null,
-  stone: null as THREE.Texture | null,
-};
-const wood = () => (tex.wood ??= woodTexture());
-const stone = () => (tex.stone ??= stoneTexture());
-
-/** Toon material with a texture repeated to the given size in metres. */
-function textured(color: THREE.ColorRepresentation, map: THREE.Texture, sx = 1, sy = 1): THREE.MeshToonMaterial {
-  const t = map.clone();
-  t.needsUpdate = true;
-  t.repeat.set(sx, sy);
-  return toon(color, t);
-}
-
-export function buildProp(p: Prop): THREE.Group {
-  const g = new THREE.Group();
-  const w = p.halfW * 2;
-  const d = p.halfD * 2;
-  const h = p.height;
-  const add = (m: THREE.Mesh, y: number) => {
-    m.position.y = y;
-    g.add(m);
-    return m;
-  };
-
-  if (p.rise) {
-    const run = p.rise.axis === "x" ? w : d;
-    const across = p.rise.axis === "x" ? d : w;
-    const body = new THREE.Group();
-    if (p.kind.look === "stairs") {
-      const n = Math.max(2, Math.round(h / 0.3));
-      for (let i = 0; i < n; i++) {
-        const sh = (h * (i + 1)) / n;
-        const step = mesh(new THREE.BoxGeometry(run / n, sh, across), textured(0xffffff, wood(), 1, sh));
-        step.position.set(-run / 2 + (run / n) * (i + 0.5), sh / 2, 0);
-        body.add(step);
-      }
-    } else {
-      const tri = new THREE.Shape([new THREE.Vector2(0, 0), new THREE.Vector2(run, 0), new THREE.Vector2(run, h)]);
-      const geo = new THREE.ExtrudeGeometry(tri, { depth: across, bevelEnabled: false });
-      geo.translate(-run / 2, 0, -across / 2);
-      body.add(mesh(geo, textured(0xffffff, stone(), 0.4, 0.4)));
-    }
-    body.rotation.y = p.rise.axis === "x" ? (p.rise.sign > 0 ? 0 : Math.PI) : p.rise.sign > 0 ? -Math.PI / 2 : Math.PI / 2;
-    g.add(body);
-    return g;
-  }
-
-  switch (p.kind.look) {
-    case "tree": {
-      // Same faceted broadleaf as the woods outside, sized to the prop (trunk = its footprint).
-      const r = rand(Math.round(p.x * 13 + p.z * 7) + 1000);
-      const geo = broadleafGeometry(r, new THREE.Color(p.kind.color).lerp(new THREE.Color("#5f9a3e"), 0.5));
-      const tree = add(mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true })), 0);
-      tree.scale.set(1.1, h / 6.6, 1.1);
-      tree.rotation.y = r() * Math.PI * 2;
-      break;
-    }
-    case "rock": {
-      const r = add(mesh(new THREE.DodecahedronGeometry(1, 0), textured(0xe6e2da, stone(), 0.6, 0.6)), h / 2);
-      r.scale.set(w / 2, h / 2, d / 2);
-      r.rotation.y = p.x * 0.7;
-      break;
-    }
-    case "house": {
-      const wallH = h * 0.6;
-      add(mesh(new THREE.BoxGeometry(w, wallH, d), toon(0xf6ead2)), wallH / 2);
-      // Timber frame: corner posts and a beam under the roof.
-      const beam = toon(0x7a4a2a);
-      for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
-        const post = mesh(new THREE.BoxGeometry(0.25, wallH, 0.25), beam);
-        post.position.set((x * w) / 2, wallH / 2, (z * d) / 2);
-        g.add(post);
-      }
-      add(mesh(new THREE.BoxGeometry(w + 0.1, 0.22, d + 0.1), beam), wallH - 0.1);
-      // Door and windows on the long sides.
-      const door = mesh(new THREE.BoxGeometry(1, 1.8, 0.1), beam, false);
-      door.position.set(0, 0.9, d / 2 + 0.03);
-      g.add(door);
-      const glass = toon(0x8fd3ff);
-      for (const side of [-1, 1])
-        for (const x of [-w / 3, w / 3]) {
-          const win = mesh(new THREE.BoxGeometry(0.9, 0.8, 0.08), glass, false);
-          win.position.set(x, wallH * 0.6, (side * d) / 2 + side * 0.03);
-          g.add(win);
-        }
-      // Gable roof, overhanging.
-      const roofH = h - wallH;
-      const tri = new THREE.Shape([new THREE.Vector2(-d / 2 - 0.5, 0), new THREE.Vector2(d / 2 + 0.5, 0), new THREE.Vector2(0, roofH)]);
-      const roofGeo = new THREE.ExtrudeGeometry(tri, { depth: w + 0.6, bevelEnabled: false });
-      roofGeo.translate(0, 0, -(w + 0.6) / 2);
-      const roof = mesh(roofGeo, toon(0xd2553f));
-      roof.rotation.y = Math.PI / 2;
-      roof.position.y = wallH;
-      g.add(roof);
-      break;
-    }
-    case "crate": {
-      add(mesh(new THREE.BoxGeometry(w, h, d), textured(0xffffff, wood())), h / 2);
-      const frame = toon(0x7a4a22);
-      for (const y of [0.06, h - 0.06]) add(mesh(new THREE.BoxGeometry(w + 0.04, 0.12, d + 0.04), frame, false), y);
-      break;
-    }
-    case "barrel": {
-      const pts = Array.from({ length: 9 }, (_, i) => {
-        const t = i / 8;
-        return new THREE.Vector2(p.halfW * (0.82 + 0.18 * Math.sin(t * Math.PI)), t * h);
-      });
-      add(mesh(new THREE.LatheGeometry(pts, 16), textured(0xd9a070, wood(), 2, 1)), 0);
-      const band = toon(0x55504a);
-      for (const y of [0.18, h - 0.18]) add(mesh(new THREE.CylinderGeometry(p.halfW * 0.92, p.halfW * 0.92, 0.07, 16, 1, true), band, false), y);
-      break;
-    }
-    case "fence": {
-      const m = toon(p.kind.color);
-      const long = Math.max(w, d);
-      const n = Math.max(2, Math.round(long / 1));
-      for (let i = 0; i <= n; i++) {
-        const post = mesh(new THREE.BoxGeometry(0.14, h, 0.14), m);
-        const along = -long / 2 + (long * i) / n;
-        post.position.set(w > d ? along : 0, h / 2, w > d ? 0 : along);
-        g.add(post);
-      }
-      for (const y of [h * 0.35, h * 0.78]) add(mesh(new THREE.BoxGeometry(w > d ? long : 0.08, 0.12, w > d ? 0.08 : long), m), y);
-      break;
-    }
-    case "pillar": {
-      const m = textured(0xffffff, stone(), 1, 2);
-      add(mesh(new THREE.CylinderGeometry(p.halfW * 0.8, p.halfW * 0.8, h - 0.6, 12), m), h / 2);
-      add(mesh(new THREE.BoxGeometry(w, 0.3, d), m), 0.15);
-      add(mesh(new THREE.BoxGeometry(w * 1.05, 0.3, d * 1.05), m), h - 0.15);
-      break;
-    }
-    case "wall": {
-      const m = textured(0xffffff, stone(), Math.max(w, d) / 2, h / 2);
-      add(mesh(new THREE.BoxGeometry(w, h - 0.3, d), m), (h - 0.3) / 2);
-      // Crenellations.
-      const long = Math.max(w, d);
-      const n = Math.max(2, Math.floor(long / 1.2));
-      for (let i = 0; i < n; i++) {
-        const c = mesh(new THREE.BoxGeometry(w > d ? 0.6 : d, 0.3, w > d ? d : 0.6), m);
-        const along = -long / 2 + 0.3 + ((long - 0.6) * i) / (n - 1);
-        c.position.set(w > d ? along : 0, h - 0.15, w > d ? 0 : along);
-        g.add(c);
-      }
-      break;
-    }
-    case "platform": {
-      add(mesh(new THREE.BoxGeometry(w, h, d), textured(0xffffff, stone(), w / 2, h / 2)), h / 2);
-      add(mesh(new THREE.BoxGeometry(w + 0.15, 0.2, d + 0.15), toon(0xefe6cf), false), h - 0.1);
-      break;
-    }
-    case "terrace":
-    case "tower": {
-      add(mesh(new THREE.BoxGeometry(w, h, d), textured(0xffffff, wood(), w / 1.5, h / 1.5)), h / 2);
-      add(mesh(new THREE.BoxGeometry(w + 0.2, 0.18, d + 0.2), toon(0x8a5a32), false), h - 0.09);
-      // Corner posts and cross bands: reads as a built structure, not a block.
-      const beam = toon(0x7a4a2a);
-      for (const [x, z] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
-        const post = mesh(new THREE.BoxGeometry(0.3, h, 0.3), beam);
-        post.position.set((x * w) / 2, h / 2, (z * d) / 2);
-        g.add(post);
-      }
-      for (let y = 1.2; y < h - 0.4; y += 1.2) add(mesh(new THREE.BoxGeometry(w + 0.06, 0.16, d + 0.06), beam, false), y);
-      break;
-    }
-    default:
-      add(
-        mesh(
-          p.kind.shape.type === "cylinder" ? new THREE.CylinderGeometry(p.halfW, p.halfW, h, 16) : new THREE.BoxGeometry(w, h, d),
-          toon(p.kind.color),
-        ),
-        h / 2,
-      );
-  }
-  return g;
-}
-
-/** Sky dome with a vertical gradient, drawn behind everything. */
 export interface Environment {
   /** One object per arena prop, same order as arena.props. */
   props: THREE.Object3D[];
@@ -239,9 +59,9 @@ export function buildEnvironment(scene: THREE.Scene, arena: Arena): Environment 
   buildLandscape(scene, arena, sun.position.clone(), { theme, seed: theme === "village" ? 7 : 3 });
 
   // The arena floor inside the walls.
-  const floorTex = theme === "village" ? pavingTexture() : dirtTexture();
+  const floorTex = theme === "village" ? pavingTexture() : theme === "japan" ? dirtTexture("#e6dcc6") : dirtTexture();
   floorTex.repeat.set(halfW / 3, halfD / 3);
-  const floorMat = noOutline(toon(theme === "village" ? 0xffffff : 0xfff6e0, floorTex));
+  const floorMat = noOutline(new THREE.MeshStandardMaterial({ color: theme === "village" ? 0xffffff : 0xfff6e0, map: floorTex, roughness: 0.95 }));
   const floor = new THREE.Mesh(new THREE.PlaneGeometry(halfW * 2 + 1.6, halfD * 2 + 1.6), floorMat);
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = 0.01;
@@ -249,7 +69,7 @@ export function buildEnvironment(scene: THREE.Scene, arena: Arena): Environment 
   scene.add(floor);
   if (theme === "meadow") {
     // Meadow arena: grass over most of the floor, a worn dirt ring in the middle.
-    const inner = noOutline(toon(0xffffff, grassTexture("#9bd874")));
+    const inner = noOutline(new THREE.MeshStandardMaterial({ color: 0xffffff, map: grassTexture("#8fcb68"), roughness: 0.95 }));
     inner.map!.repeat.set(halfW / 2, halfD / 2);
     inner.transparent = true;
     inner.alphaMap = radialMask();
@@ -260,20 +80,26 @@ export function buildEnvironment(scene: THREE.Scene, arena: Arena): Environment 
     scene.add(g);
   }
 
-  // Boundary: stone walls with crenellations on the four sides.
-  const wallMat = textured(0xd9d0bc, stone(), 1, 0.6);
-  outlineOf(wallMat, 0.003);
+  // Boundary: coursed stone walls with merlons (white plaster and tiles in Japan).
+  const wr = rand(5);
+  const capMat = new THREE.MeshStandardMaterial({ color: theme === "japan" ? 0x4a505a : 0xd8cfba, roughness: 0.9 });
   const edge = (x0: number, z0: number, x1: number, z1: number) => {
     const len = Math.hypot(x1 - x0, z1 - z0);
-    const wall = mesh(new THREE.BoxGeometry(len, 1.2, 0.8), wallMat);
-    (wall.material as THREE.MeshToonMaterial).map!.repeat.set(len / 2, 0.6);
-    wall.position.set((x0 + x1) / 2, 0.6, (z0 + z1) / 2);
+    const wall = stonework(len, 1.2, 0.8, wr, theme === "japan" ? "#b9b2a4" : "#cfc6b2");
+    wall.position.set((x0 + x1) / 2, 0, (z0 + z1) / 2);
     wall.rotation.y = -Math.atan2(z1 - z0, x1 - x0);
     scene.add(wall);
+    if (theme === "japan") {
+      const cap = mesh(new THREE.BoxGeometry(len + 0.6, 0.18, 1.2), capMat);
+      cap.position.set(wall.position.x, 1.29, wall.position.z);
+      cap.rotation.y = wall.rotation.y;
+      scene.add(cap);
+      return;
+    }
     const n = Math.floor(len / 1.6);
     for (let i = 0; i < n; i++) {
       const t = (i + 0.5) / n;
-      const c = mesh(new THREE.BoxGeometry(0.7, 0.4, 0.8), wallMat);
+      const c = mesh(new THREE.BoxGeometry(0.7, 0.4, 0.8), capMat);
       c.position.set(x0 + (x1 - x0) * t, 1.4, z0 + (z1 - z0) * t);
       c.rotation.y = wall.rotation.y;
       scene.add(c);
@@ -296,7 +122,7 @@ export function buildEnvironment(scene: THREE.Scene, arena: Arena): Environment 
     });
     const tuft = mergeGeometries(blades);
     const n = 900;
-    const inst = new THREE.InstancedMesh(tuft, noOutline(toon(0x5fae4c)), n);
+    const inst = new THREE.InstancedMesh(tuft, noOutline(new THREE.MeshStandardMaterial({ color: 0x5f9e45, roughness: 0.9 })), n);
     const m4 = new THREE.Matrix4();
     let k = 0;
     for (let i = 0; i < n * 3 && k < n; i++) {
@@ -314,7 +140,7 @@ export function buildEnvironment(scene: THREE.Scene, arena: Arena): Environment 
   }
 
   const props = arena.props.map((p) => {
-    const obj = buildProp(p);
+    const obj = buildProp(p, theme);
     obj.position.set(p.x, 0, p.z);
     obj.userData.prop = p.id;
     scene.add(obj);

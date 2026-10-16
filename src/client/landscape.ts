@@ -477,7 +477,7 @@ function cloudSprite(r: Rng): THREE.CanvasTexture {
 
 export interface LandscapeOptions {
   /** Wooded meadow around the ruins, or farmland around the village. */
-  theme: "meadow" | "village";
+  theme: "meadow" | "village" | "japan";
   seed: number;
 }
 

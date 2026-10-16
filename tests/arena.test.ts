@@ -223,6 +223,8 @@ test("le bot rejoint par la rampe un adversaire perché sur une plateforme", asy
   const { botCommand, createBot } = await import("../src/brawl/bot.ts");
   const { rng } = await import("../src/sim/math.ts");
   const w = world(tower, -12, 0);
+  // This test is about climbing: the tower must not be shot down meanwhile (everything breaks now).
+  for (const p of w.arena.props) p.hp = Infinity;
   const target = w.fighters[1]!;
   target.pos = { x: -1, y: 3, z: 1 };
   target.floor = 3;
@@ -233,4 +235,20 @@ test("le bot rejoint par la rampe un adversaire perché sur une plateforme", asy
     reached = w.fighters[0]!.pos.y >= 3 - 1e-6;
   }
   assert.ok(reached, `le bot reste en bas (x = ${w.fighters[0]!.pos.x.toFixed(1)}, z = ${w.fighters[0]!.pos.z.toFixed(1)})`);
+});
+
+test("tout est cassable : chaque élément du catalogue a des points de vie", () => {
+  for (const [id, k] of Object.entries(catalog)) assert.ok(typeof k.hp === "number" && k.hp > 0, `${id} : hp ${k.hp}`);
+});
+
+test("une plateforme détruite fait tomber ceux qui sont dessus", () => {
+  const w = world([{ kind: "platform", x: 0, z: 0 }], -10, 10);
+  const f = w.fighters[0]!;
+  f.pos = { x: 0, y: 3, z: 0 };
+  f.floor = 3;
+  run(w, 0.2);
+  assert.equal(f.pos.y, 3);
+  w.arena.props[0]!.alive = false;
+  run(w, 1.5);
+  assert.equal(f.pos.y, 0);
 });

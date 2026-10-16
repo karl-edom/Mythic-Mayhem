@@ -62,6 +62,8 @@ export class ArenaView {
   private camLook = new THREE.Vector3();
   private lastEvent = 0;
   private props: THREE.Object3D[] = [];
+  /** Props shuddering after a hit, until this time (ms). */
+  private propShake = new Map<number, number>();
   private raycaster = new THREE.Raycaster();
   private vfx: Vfx;
   private outline: OutlineEffect;
@@ -237,6 +239,13 @@ export class ArenaView {
           this.slowUntil = now + 900;
           this.freezeUntil = now + 160;
           break;
+        case "propHit": {
+          // A blow that does not break it yet: the prop shudders and sheds chips.
+          const p = w.arena.props[e.prop]!;
+          this.propShake.set(e.prop, now + 160);
+          if (e.amount >= 20) this.vfx.dust(new THREE.Vector3(p.x, Math.min(p.height * 0.5, 1.5), p.z), 3);
+          break;
+        }
         case "propBroken": {
           const p = w.arena.props[e.prop]!;
           this.props[p.id]!.visible = false;
@@ -435,6 +444,12 @@ export class ArenaView {
         return;
       }
       if (!p.alive) return;
+      const shakeUntil = this.propShake.get(i);
+      if (shakeUntil !== undefined) {
+        const k = Math.max(0, (shakeUntil - performance.now()) / 160);
+        obj.position.set(p.x + Math.sin(performance.now() * 0.09) * 0.06 * k, 0, p.z + Math.cos(performance.now() * 0.11) * 0.06 * k);
+        if (k <= 0) this.propShake.delete(i);
+      }
       // Camera inside (or right against) a prop: hide it outright; layered see-through
       // surfaces would still veil the view. Trees reach well beyond their trunk.
       const reach = p.kind.look === "tree" ? 2.6 : 1;

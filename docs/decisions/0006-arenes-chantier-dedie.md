@@ -26,7 +26,7 @@ Le chantier avance par étapes courtes et jouables :
 | --- | --- | --- |
 | Les éléments hauts (≥ 1,6 m) **cachent** : un bot qui ne te voit plus suit ta dernière position 4 s, puis fouille la carte | les spéciales de **zone** se posent à travers les murs ; à moins de 2,5 m on se sent toujours ; celui qui se cache n'attaque pas | étiquette « Hors de vue » dans ton panneau |
 | Les éléments **arrêtent les projectiles** | contourner, ou casser l'élément | — (l'impact se voit) |
-| Les éléments marqués cassables **perdent des PV** sous les coups, projectiles et zones, puis disparaissent | — | ils foncent à mesure qu'ils s'abîment, puis éclatent en débris |
+| **Tout est cassable** (mise à jour du 2026-10-16) : chaque élément du catalogue a des PV (tonneau 40, barrière 50, caisse 60, arbre 220, escalier 300 à 400, muret 300, colonne 350, rampe 400, rocher et terrasse 500, plateforme et tour de guet 600, maison 800). Il en perd sous les coups, projectiles et zones, puis disparaissent ; celui qui est dessus tombe | se mettre à l'abri derrière un élément solide coûte du temps à l'adversaire ; casser la tour de celui qui s'y est perché | l'élément tremble à chaque coup (poussière au-delà de 20 dégâts), fonce à mesure qu'il s'abîme, puis éclate en débris |
 | On peut **sauter sur** les éléments bas (caisse 1,1 m, tonneau 1,2 m, barrière 1 m) | frapper : celui qui est dessus tombe si l'élément casse | ombre portée sur le dessus |
 | Un recul qui envoie contre un élément s'y arrête net | — | — |
 
