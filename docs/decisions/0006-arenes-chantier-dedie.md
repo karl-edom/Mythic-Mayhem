@@ -59,3 +59,13 @@ Mesure (bots, 20 duels par carte) : environ 4 lancers, 5 à 6 chocs contre un mu
 Cartes mises à jour : la Clairière a deux tours de ruines avec rampes et une terrasse centrale à escaliers ; le Village a deux tours de guet (grands escaliers) et deux terrasses.
 
 Effet mesuré sur l'équilibre (bots, 20 duels) : Kaminari contre Rōnin passe à 35 % (Clairière) et 33 % (Village) — les hauteurs et les recoins favorisent le sabreur. C'est un effet de carte ; l'épreuve d'équilibrage se joue en terrain vague et n'est pas affectée.
+
+## Troisième carte : le Sanctuaire des cerisiers (2026-10-16)
+
+Carte japonaise de 60 × 42 m (`data/arenas/sanctuaire.json`), au thème « japan » (choisi par l'identifiant de la carte) : sanctuaire sur estrade avec escaliers vermillon, deux torii, deux yagura (tours de guet) et deux ishigaki (socles de pierre) avec rampes, machiya, murets dobei, clôtures de bambou, cerisier central, tonneaux de saké.
+
+Nouvel élément au catalogue, **lanterne de pierre** (`lantern`, cylindre 0,45 m × 2,2 m, 150 PV) : obstacle bas qui coupe les tirs et cache un combattant accroupi derrière ; contre-jeu : la casser (150 PV) ou la contourner ; indicateur : sa lumière, qui s'éteint avec elle. Les autres éléments réutilisent le catalogue existant avec un habillage japonais : la simulation est identique d'une carte à l'autre.
+
+Autour : rizières en terrasses dans la vallée, bambouseraies, cèdres sur les hauteurs, cerisiers en fleur, deux pagodes à cinq étages et un temple sur la colline, un pont arqué vermillon sur la rivière, un volcan enneigé à l'horizon.
+
+Mesure (bots, 20 duels par paire) : tous les duels se terminent ; comme sur la Clairière et le Village, Shino gagne la plupart de ses duels (75 à 95 % ici). C'est un déséquilibre de personnage sur cartes encombrées, pas propre à cette carte.

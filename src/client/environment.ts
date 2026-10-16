@@ -146,12 +146,47 @@ export function buildEnvironment(scene: THREE.Scene, arena: Arena): Environment 
     scene.add(obj);
     return obj;
   });
+  // Torii: in Japan, two vermilion posts side by side get their crossbeams. The beams
+  // belong to the first post, so they go when it breaks.
+  if (theme === "japan")
+    arena.props.forEach((a, i) => {
+      const b = arena.props.find((q) => q !== a && q.kind.look === "pillar" && Math.abs(q.z - a.z) < 0.1 && q.x - a.x > 2 && q.x - a.x < 5);
+      if (a.kind.look !== "pillar" || !b) return;
+      props[i]!.add(toriiBeams(b.x - a.x, a.height, a.halfW));
+    });
   // Outlines on everything solid; props carry their own materials.
   for (const o of props)
     o.traverse((m) => {
       if (m instanceof THREE.Mesh) outlineOf(m.material as THREE.Material, 0.003);
     });
   return { props, sun };
+}
+
+/** Kasagi (black top beam, ends swept up) over a vermilion nuki, spanning two posts `gap` apart. */
+function toriiBeams(gap: number, h: number, r: number): THREE.Group {
+  const g = new THREE.Group();
+  const len = gap + r * 4;
+  const top = new THREE.BoxGeometry(len, 0.35, 0.6, 16, 1, 1);
+  const pos = top.attributes.position!;
+  for (let i = 0; i < pos.count; i++) {
+    const t = pos.getX(i) / (len / 2);
+    pos.setY(i, pos.getY(i) + t * t * 0.35);
+  }
+  top.computeVertexNormals();
+  const kasagi = mesh(top, new THREE.MeshStandardMaterial({ color: 0x1f1b1b, roughness: 0.4 }));
+  kasagi.position.set(gap / 2, h + 0.35, 0);
+  g.add(kasagi);
+  const red = new THREE.MeshStandardMaterial({ color: 0xd2452f, roughness: 0.5 });
+  const shimaki = mesh(new THREE.BoxGeometry(len - 0.4, 0.3, 0.5), red);
+  shimaki.position.set(gap / 2, h + 0.05, 0);
+  g.add(shimaki);
+  const nuki = mesh(new THREE.BoxGeometry(gap + r * 2.6, 0.28, 0.32), red);
+  nuki.position.set(gap / 2, h - 0.9, 0);
+  g.add(nuki);
+  const plaque = mesh(new THREE.BoxGeometry(0.5, 0.75, 0.12), new THREE.MeshStandardMaterial({ color: 0x1f1b1b, roughness: 0.4 }));
+  plaque.position.set(gap / 2, h - 0.45, 0);
+  g.add(plaque);
+  return g;
 }
 
 /** Alpha mask: opaque at the edges, clear in a soft central circle (the worn fighting ground). */

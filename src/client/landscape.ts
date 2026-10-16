@@ -85,11 +85,11 @@ function makeLand(arena: Arena, seed: number): Land {
 }
 
 /** Field grid: which field (cell) a point is in, and how close it is to a field edge (0 = on it). */
-function fieldAt(x: number, z: number): { cu: number; cv: number; edge: number } {
+function fieldAt(x: number, z: number, scale = 1): { cu: number; cv: number; edge: number } {
   const ang = 0.35;
   const [ca, sa] = [Math.cos(ang), Math.sin(ang)];
-  const u = (x * ca - z * sa) / 26;
-  const v = (x * sa + z * ca) / 18 + Math.floor(u) * 0.37;
+  const u = (x * ca - z * sa) / (26 * scale);
+  const v = (x * sa + z * ca) / (18 * scale) + Math.floor(u) * 0.37;
   const fu = u - Math.floor(u);
   const fv = v - Math.floor(v);
   return { cu: Math.floor(u), cv: Math.floor(v), edge: Math.min(fu, 1 - fu, fv, 1 - fv) };
@@ -102,8 +102,11 @@ const FIELD_COLORS = ["#7aa34e", "#8fb65a", "#a7bf63", "#d2bf6e", "#c9ad5f", "#9
 const HEDGE = new THREE.Color("#4a6e34");
 const MEADOW = new THREE.Color("#86b356");
 const ROCK = new THREE.Color("#9c9787");
+// Japan: rice paddies, some flooded (they mirror the sky), some green with young rice, on earth dikes.
+const PADDY_COLORS = ["#86c05a", "#95c963", "#74b04f", "#a9cd6c", "#b4d1d6", "#7fae45", "#9cc45e", "#8bbd57"].map((c) => new THREE.Color(c));
+const DIKE = new THREE.Color("#9a8a5e");
 
-function buildTerrain(arena: Arena, land: Land, seed: number): THREE.Mesh {
+function buildTerrain(arena: Arena, land: Land, seed: number, japan: boolean): THREE.Mesh {
   const span = Math.max(arena.halfW, arena.halfD);
   const size = span * 18;
   const seg = 220;
@@ -118,12 +121,15 @@ function buildTerrain(arena: Arena, land: Land, seed: number): THREE.Mesh {
     const z = pos.getZ(i);
     const y = land.height(x, z);
     pos.setY(i, y);
-    const f = fieldAt(x, z);
-    const cell = FIELD_COLORS[Math.floor(hash(f.cu, f.cv, seed) * FIELD_COLORS.length)]!;
+    const f = fieldAt(x, z, japan ? 0.5 : 1);
+    const palette = japan ? PADDY_COLORS : FIELD_COLORS;
+    const cell = palette[Math.floor(hash(f.cu, f.cv, seed) * palette.length)]!;
     const border = f.edge;
     const nearArena = 1 - smoothstep(span * 0.35, span * 1.2, Math.hypot(Math.max(0, Math.abs(x) - arena.halfW), Math.max(0, Math.abs(z) - arena.halfD)));
-    c.copy(cell).lerp(MEADOW, nearArena);
-    if (border < 0.05 && nearArena < 0.5) c.lerp(HEDGE, 0.75);
+    // Paddies only on the flat valley floor; slopes stay wooded grass.
+    const flat = japan ? 1 - smoothstep(span * 0.15, span * 0.45, y) : 1;
+    c.copy(MEADOW).lerp(cell, flat).lerp(MEADOW, nearArena);
+    if (border < (japan ? 0.07 : 0.05) && nearArena < 0.5 && flat > 0.5) c.lerp(japan ? DIKE : HEDGE, 0.75);
     // Large-scale tone variation and rocky high ground.
     const tone = 0.88 + fbm(x / 30, z / 30, seed + 9, 3) * 0.24;
     c.multiplyScalar(tone);
@@ -415,6 +421,262 @@ function townGeometry(r: Rng): THREE.Group {
 }
 
 // ---------------------------------------------------------------------------
+// Japan: bamboo groves, cedars, cherry trees, a five-storey pagoda and temple halls on
+// the hill, a vermilion bridge over the river, and a snow-capped volcano far away.
+
+/** Bamboo clump: a dozen tall leaning canes with feathery tufts, about 11 m. */
+function bambooGeometry(r: Rng): THREE.BufferGeometry {
+  const parts: THREE.BufferGeometry[] = [];
+  const cane = new THREE.Color("#8fae4c");
+  const leaf = new THREE.Color("#8cb850");
+  for (let i = 0; i < 12; i++) {
+    const h = 8 + r() * 4;
+    const lean = new THREE.Euler((r() - 0.5) * 0.25, 0, (r() - 0.5) * 0.25);
+    const base = new THREE.Vector3((r() - 0.5) * 2.4, 0, (r() - 0.5) * 2.4);
+    const c = new THREE.CylinderGeometry(0.06, 0.09, h, 5);
+    c.translate(0, h / 2, 0);
+    c.applyMatrix4(new THREE.Matrix4().makeRotationFromEuler(lean));
+    c.translate(base.x, 0, base.z);
+    parts.push(paint(c, cane, r, 0.1));
+    // Feathery foliage: many small leaf sprays along the upper half, hanging out sideways.
+    for (let k = 0; k < 7; k++) {
+      const t = 0.45 + (k / 7) * 0.55;
+      const spray = new THREE.IcosahedronGeometry(0.45 + r() * 0.3, 1);
+      spray.scale(1.6, 0.45, 0.9);
+      spray.rotateY(r() * Math.PI * 2);
+      const at = new THREE.Vector3(0, h * t, 0).applyEuler(lean).add(base);
+      const a = r() * Math.PI * 2;
+      const out = 0.5 + r() * 0.7;
+      spray.translate(at.x + Math.cos(a) * out, at.y - 0.2, at.z + Math.sin(a) * out);
+      parts.push(paint(jitter(spray, 0.12, r), leaf.clone().multiplyScalar(0.85 + r() * 0.3), r));
+    }
+  }
+  return mergeGeometries(parts)!;
+}
+
+/** Japanese cedar: tall dark narrow cone, about 14 m. */
+function cedarGeometry(r: Rng): THREE.BufferGeometry {
+  const parts = [paint(new THREE.CylinderGeometry(0.16, 0.3, 4, 6).translate(0, 2, 0), new THREE.Color("#5b3b2a"), r, 0.05)];
+  for (let i = 0; i < 5; i++) {
+    const cone = new THREE.ConeGeometry(1.7 - i * 0.28, 3.2, 8);
+    cone.translate(0, 4 + i * 2, 0);
+    parts.push(paint(jitter(cone, 0.25, r), new THREE.Color("#355a35"), r));
+  }
+  return mergeGeometries(parts)!;
+}
+
+/** Roof with upturned corners: a flat pyramid whose eave corners lift. */
+function eaveRoof(w: number, rise: number, mat: THREE.Material): THREE.Mesh {
+  const geo = new THREE.ConeGeometry(w * 0.72, rise, 4, 2, true);
+  geo.rotateY(Math.PI / 4);
+  const p = geo.attributes.position!;
+  for (let i = 0; i < p.count; i++) {
+    const y = p.getY(i);
+    if (y < -rise / 2 + 1e-3) {
+      // Corners flare up and out; mid-edges sag a little.
+      const x = p.getX(i);
+      const z = p.getZ(i);
+      const corner = Math.min(1, (Math.abs(x) * Math.abs(z)) / ((w / 2) * (w / 2)));
+      p.setY(i, y + corner * rise * 0.35);
+    }
+  }
+  geo.computeVertexNormals();
+  const m = new THREE.Mesh(geo, mat);
+  return m;
+}
+
+function pagodaGroup(): THREE.Group {
+  const g = new THREE.Group();
+  const red = noOutline(new THREE.MeshStandardMaterial({ color: "#c2452f", roughness: 0.6 }));
+  const plaster = noOutline(new THREE.MeshStandardMaterial({ color: "#efe6d4", roughness: 0.9 }));
+  const roof = noOutline(new THREE.MeshStandardMaterial({ color: "#3d434d", roughness: 0.6, side: THREE.DoubleSide }));
+  const gold = noOutline(new THREE.MeshStandardMaterial({ color: "#c9a548", roughness: 0.4, metalness: 0.6 }));
+  const stone = noOutline(new THREE.MeshStandardMaterial({ color: "#b3ab9b", roughness: 0.95 }));
+  const base = new THREE.Mesh(new THREE.BoxGeometry(14, 1.6, 14), stone);
+  base.position.y = 0.8;
+  g.add(base);
+  let y = 1.6;
+  for (let i = 0; i < 5; i++) {
+    const w = 10 - i * 1.3;
+    const h = i === 0 ? 4.2 : 3;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, w), i % 2 ? plaster : red);
+    body.position.y = y + h / 2;
+    g.add(body);
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(w + 0.6, 0.3, w + 0.6), red);
+    rail.position.y = y + 0.15;
+    g.add(rail);
+    const rf = eaveRoof(w * 1.75, 2.4, roof);
+    rf.position.y = y + h + 0.9;
+    g.add(rf);
+    y += h + 1.1;
+  }
+  const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 9, 8), gold);
+  spire.position.y = y + 4;
+  g.add(spire);
+  for (let k = 0; k < 7; k++) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.12, 6, 12), gold);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = y + 1.5 + k * 0.9;
+    g.add(ring);
+  }
+  return g;
+}
+
+function templeHall(w: number, d: number, h: number): THREE.Group {
+  const g = new THREE.Group();
+  const wood = noOutline(new THREE.MeshStandardMaterial({ color: "#8a5b3a", roughness: 0.8 }));
+  const red = noOutline(new THREE.MeshStandardMaterial({ color: "#c2452f", roughness: 0.6 }));
+  const roof = noOutline(new THREE.MeshStandardMaterial({ color: "#3d434d", roughness: 0.6, side: THREE.DoubleSide }));
+  const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wood);
+  body.position.y = h / 2 + 1;
+  g.add(body);
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(w + 3, 1, d + 3), red);
+  deck.position.y = 0.5;
+  g.add(deck);
+  const rf = eaveRoof(Math.max(w, d) * 1.6, h * 0.9, roof);
+  rf.scale.set(1, 1, d / w);
+  rf.position.y = h + 1 + h * 0.4;
+  g.add(rf);
+  return g;
+}
+
+/** Snow-capped volcano: a broad concave cone, fading blue with distance, snow on top. */
+function volcano(radius: number, height: number, seed: number): THREE.Mesh {
+  const geo = new THREE.CylinderGeometry(radius * 0.08, radius, height, 96, 24, true);
+  const p = geo.attributes.position!;
+  const col = new Float32Array(p.count * 3);
+  // Already hazed by distance (fog is off for it, so it can stand beyond the fog's end).
+  const rock = new THREE.Color("#93a1bb");
+  const snow = new THREE.Color("#f2f5fa");
+  const c = new THREE.Color();
+  for (let i = 0; i < p.count; i++) {
+    const y = p.getY(i) / height + 0.5; // 0 foot, 1 rim
+    const a = Math.atan2(p.getZ(i), p.getX(i));
+    // Concave profile: steep at the top, sweeping out at the foot.
+    const prof = Math.pow(1 - y, 1.8);
+    const rad = radius * (0.08 + 0.92 * prof);
+    p.setXYZ(i, Math.cos(a) * rad, y * height, Math.sin(a) * rad);
+    // Snow line with ragged gullies.
+    const line = 0.62 + 0.08 * Math.sin(a * 9 + seed) + 0.05 * Math.sin(a * 23);
+    c.copy(rock).lerp(snow, smoothstep(line, line + 0.04, y));
+    col.set([c.r, c.g, c.b], i * 3);
+  }
+  geo.setAttribute("color", new THREE.BufferAttribute(col, 3));
+  geo.computeVertexNormals();
+  const mat = noOutline(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1, fog: false }));
+  return new THREE.Mesh(geo, mat);
+}
+
+/** Arched vermilion footbridge, `span` metres long, deck rising along X. */
+function archBridge(span: number, width: number): THREE.Group {
+  const g = new THREE.Group();
+  const red = noOutline(new THREE.MeshStandardMaterial({ color: "#c94a31", roughness: 0.6 }));
+  const deck = noOutline(new THREE.MeshStandardMaterial({ color: "#7d5a3c", roughness: 0.85 }));
+  const n = 16;
+  const arc = (t: number) => Math.sin(t * Math.PI) * span * 0.18;
+  for (let i = 0; i < n; i++) {
+    const t0 = i / n;
+    const t1 = (i + 1) / n;
+    const x0 = (t0 - 0.5) * span;
+    const x1 = (t1 - 0.5) * span;
+    const len = Math.hypot(x1 - x0, arc(t1) - arc(t0));
+    const plank = new THREE.Mesh(new THREE.BoxGeometry(len + 0.05, 0.3, width), deck);
+    plank.position.set((x0 + x1) / 2, (arc(t0) + arc(t1)) / 2, 0);
+    plank.rotation.z = Math.atan2(arc(t1) - arc(t0), x1 - x0);
+    g.add(plank);
+    for (const s of [-1, 1]) {
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(len + 0.05, 0.18, 0.18), red);
+      rail.position.set(plank.position.x, plank.position.y + 1.1, (s * width) / 2);
+      rail.rotation.z = plank.rotation.z;
+      g.add(rail);
+      if (i % 2 === 0) {
+        const post = new THREE.Mesh(new THREE.BoxGeometry(0.22, 1.2, 0.22), red);
+        post.position.set(x0, arc(t0) + 0.6, (s * width) / 2);
+        g.add(post);
+      }
+    }
+  }
+  return g;
+}
+
+/** The Japanese countryside around the shrine. */
+function buildJapan(scene: THREE.Scene, arena: Arena, land: Land, r: Rng, free: (x: number, z: number, m: number) => boolean): void {
+  const { halfW, halfD } = arena;
+  const span = Math.max(halfW, halfD);
+  const cedars: { x: number; z: number; s: number }[] = [];
+  const sakura: { x: number; z: number; s: number }[] = [];
+  const bamboo: { x: number; z: number; s: number }[] = [];
+  // Hills: cedar forest high up, cherry trees and bamboo lower down.
+  for (let i = 0; i < 50; i++) {
+    const a = r() * Math.PI * 2;
+    const d = span * (1.5 + r() * 5.5);
+    const cx = Math.cos(a) * d;
+    const cz = Math.sin(a) * d;
+    const n = 6 + Math.floor(r() * 16);
+    for (let k = 0; k < n; k++) {
+      const x = cx + (r() - 0.5) * 22;
+      const z = cz + (r() - 0.5) * 22;
+      if (!free(x, z, 8)) continue;
+      const h = land.height(x, z);
+      if (h > span * 0.35) cedars.push({ x, z, s: 0.7 + r() * 0.5 });
+      else if (h > span * 0.12) (r() < 0.5 ? bamboo : sakura).push({ x, z, s: 0.7 + r() * 0.4 });
+    }
+  }
+  // Around the walls: cherry trees in bloom and bamboo groves.
+  for (let i = 0; i < 80; i++) {
+    const a = r() * Math.PI * 2;
+    const x = Math.cos(a) * (halfW + 12 + r() * 30);
+    const z = Math.sin(a) * (halfD + 12 + r() * 30);
+    if (free(x, z, 10)) (r() < 0.55 ? sakura : bamboo).push({ x, z, s: 0.75 + r() * 0.35 });
+  }
+  scene.add(forest(cedarGeometry(r), cedars, land, r, false));
+  scene.add(forest(broadleafGeometry(r, new THREE.Color("#f3b9cb")), sakura, land, r, true));
+  scene.add(forest(bambooGeometry(r), bamboo, land, r, false));
+
+  // Pagoda and temple halls on the hill beyond the river.
+  const tx = -span * 3.2;
+  const tz = span * 5.2;
+  const temple = new THREE.Group();
+  const pagoda = pagodaGroup();
+  pagoda.position.set(-14, 0, 0);
+  temple.add(pagoda);
+  const hall = templeHall(22, 14, 8);
+  hall.position.set(14, 0, -4);
+  temple.add(hall);
+  const gate = templeHall(10, 6, 5);
+  gate.position.set(10, 0, 18);
+  temple.add(gate);
+  temple.position.set(tx, land.height(tx, tz) - 0.5, tz);
+  temple.rotation.y = 0.5;
+  temple.scale.setScalar(1.2);
+  scene.add(temple);
+  // A second pagoda on the other side, so one shows from every angle.
+  const p2 = pagodaGroup();
+  const px = span * 4.5;
+  const pz = -span * 3.6;
+  p2.position.set(px, land.height(px, pz) - 0.5, pz);
+  p2.scale.setScalar(0.9);
+  scene.add(p2);
+
+  // Vermilion bridge over the river, just in front of the arena.
+  let bz = halfD;
+  let best = Infinity;
+  for (let z = halfD; z < halfD + span * 2; z += 0.5) {
+    const d = land.river(6, z);
+    if (d < best) [best, bz] = [d, z];
+  }
+  const bridge = archBridge(18, 3);
+  bridge.rotation.y = Math.PI / 2;
+  bridge.position.set(6, land.height(6, bz) + 0.4, bz);
+  scene.add(bridge);
+
+  // The volcano on the horizon, behind the shrine.
+  const v = volcano(span * 5, span * 2.6, 1);
+  v.position.set(span * 2.5, -span * 0.5, -span * 9.5);
+  scene.add(v);
+}
+
+// ---------------------------------------------------------------------------
 // Sky: gradient with a warm glow toward the sun; soft layered clouds.
 
 function skyDome(radius: number, sunDir: THREE.Vector3): THREE.Mesh {
@@ -503,72 +765,75 @@ export function buildLandscape(scene: THREE.Scene, arena: Arena, sunDir: THREE.V
   scene.fog = new THREE.Fog(horizon, span * 1.8, span * 10);
   scene.add(skyDome(span * 12, sunDir));
 
-  scene.add(buildTerrain(arena, land, opts.seed));
+  scene.add(buildTerrain(arena, land, opts.seed, opts.theme === "japan"));
   scene.add(buildRiver(arena, land));
 
   // Where trees may stand: outside the walls, off the river, sparse on the near meadow.
   const free = (x: number, z: number, margin: number) =>
     (Math.abs(x) > halfW + margin || Math.abs(z) > halfD + margin) && land.river(x, z) > 9;
 
-  // Woods: clumps of broadleaf trees and pines on the hills.
-  const broad: { x: number; z: number; s: number }[] = [];
-  const pines: { x: number; z: number; s: number }[] = [];
-  const clumps = opts.theme === "meadow" ? 46 : 30;
-  for (let i = 0; i < clumps; i++) {
-    const a = r() * Math.PI * 2;
-    const d = span * (1.5 + r() * 5.5);
-    const cx = Math.cos(a) * d;
-    const cz = Math.sin(a) * d;
-    const n = 6 + Math.floor(r() * 16);
-    for (let k = 0; k < n; k++) {
-      const x = cx + (r() - 0.5) * 22;
-      const z = cz + (r() - 0.5) * 22;
-      if (!free(x, z, 8)) continue;
-      (land.height(x, z) > span * 0.5 && r() < 0.6 ? pines : broad).push({ x, z, s: 0.65 + r() * 0.45 });
+  if (opts.theme === "japan") buildJapan(scene, arena, land, r, free);
+  else {
+    // Woods: clumps of broadleaf trees and pines on the hills.
+    const broad: { x: number; z: number; s: number }[] = [];
+    const pines: { x: number; z: number; s: number }[] = [];
+    const clumps = opts.theme === "meadow" ? 46 : 30;
+    for (let i = 0; i < clumps; i++) {
+      const a = r() * Math.PI * 2;
+      const d = span * (1.5 + r() * 5.5);
+      const cx = Math.cos(a) * d;
+      const cz = Math.sin(a) * d;
+      const n = 6 + Math.floor(r() * 16);
+      for (let k = 0; k < n; k++) {
+        const x = cx + (r() - 0.5) * 22;
+        const z = cz + (r() - 0.5) * 22;
+        if (!free(x, z, 8)) continue;
+        (land.height(x, z) > span * 0.5 && r() < 0.6 ? pines : broad).push({ x, z, s: 0.65 + r() * 0.45 });
+      }
     }
-  }
-  // A ring of trees just outside the walls, framing the arena.
-  for (let i = 0; i < 70; i++) {
-    const a = r() * Math.PI * 2;
-    const x = Math.cos(a) * (halfW + 16 + r() * 30);
-    const z = Math.sin(a) * (halfD + 16 + r() * 30);
-    if (free(x, z, 12)) broad.push({ x, z, s: 0.7 + r() * 0.35 });
-  }
-  // Poplar lines along field edges and the river.
-  const poplars: { x: number; z: number; s: number }[] = [];
-  for (let line = 0; line < 7; line++) {
-    const a = r() * Math.PI * 2;
-    const d = span * (1.6 + r() * 4);
-    const dir = r() * Math.PI;
-    for (let k = 0; k < 9; k++) {
-      const x = Math.cos(a) * d + Math.cos(dir) * k * 7;
-      const z = Math.sin(a) * d + Math.sin(dir) * k * 7;
-      if (free(x, z, 8)) poplars.push({ x, z, s: 0.85 + r() * 0.3 });
+    // A ring of trees just outside the walls, framing the arena.
+    for (let i = 0; i < 70; i++) {
+      const a = r() * Math.PI * 2;
+      const x = Math.cos(a) * (halfW + 16 + r() * 30);
+      const z = Math.sin(a) * (halfD + 16 + r() * 30);
+      if (free(x, z, 12)) broad.push({ x, z, s: 0.7 + r() * 0.35 });
     }
-  }
-  // Hedgerows: bushes along the field edges, on the farmland beyond the near meadow.
-  const bushes: { x: number; z: number; s: number }[] = [];
-  for (let x = -span * 7; x < span * 7; x += 1.5)
-    for (let z = -span * 7; z < span * 7; z += 1.5) {
-      const out = Math.hypot(Math.max(0, Math.abs(x) - halfW), Math.max(0, Math.abs(z) - halfD));
-      if (out < span * 1.1 || !free(x, z, 8)) continue;
-      // Not every edge is hedged: some fields stay open.
-      const f = fieldAt(x, z);
-      if (f.edge < 0.03 && hash(f.cu, f.cv, opts.seed + 3) < 0.7) bushes.push({ x: x + (r() - 0.5) * 0.6, z: z + (r() - 0.5) * 0.6, s: 0.55 + r() * 0.5 });
+    // Poplar lines along field edges and the river.
+    const poplars: { x: number; z: number; s: number }[] = [];
+    for (let line = 0; line < 7; line++) {
+      const a = r() * Math.PI * 2;
+      const d = span * (1.6 + r() * 4);
+      const dir = r() * Math.PI;
+      for (let k = 0; k < 9; k++) {
+        const x = Math.cos(a) * d + Math.cos(dir) * k * 7;
+        const z = Math.sin(a) * d + Math.sin(dir) * k * 7;
+        if (free(x, z, 8)) poplars.push({ x, z, s: 0.85 + r() * 0.3 });
+      }
     }
-  scene.add(forest(bushGeometry(r), bushes, land, r, false));
-  scene.add(forest(broadleafGeometry(r), broad, land, r, true));
-  scene.add(forest(pineGeometry(r), pines, land, r, false));
-  scene.add(forest(poplarGeometry(r), poplars, land, r, false));
+    // Hedgerows: bushes along the field edges, on the farmland beyond the near meadow.
+    const bushes: { x: number; z: number; s: number }[] = [];
+    for (let x = -span * 7; x < span * 7; x += 1.5)
+      for (let z = -span * 7; z < span * 7; z += 1.5) {
+        const out = Math.hypot(Math.max(0, Math.abs(x) - halfW), Math.max(0, Math.abs(z) - halfD));
+        if (out < span * 1.1 || !free(x, z, 8)) continue;
+        // Not every edge is hedged: some fields stay open.
+        const f = fieldAt(x, z);
+        if (f.edge < 0.03 && hash(f.cu, f.cv, opts.seed + 3) < 0.7) bushes.push({ x: x + (r() - 0.5) * 0.6, z: z + (r() - 0.5) * 0.6, s: 0.55 + r() * 0.5 });
+      }
+    scene.add(forest(bushGeometry(r), bushes, land, r, false));
+    scene.add(forest(broadleafGeometry(r), broad, land, r, true));
+    scene.add(forest(pineGeometry(r), pines, land, r, false));
+    scene.add(forest(poplarGeometry(r), poplars, land, r, false));
 
-  // The walled town on a hill, beyond the river.
-  const town = townGeometry(r);
-  const tx = -span * 3.2;
-  const tz = span * 5.2;
-  town.position.set(tx, land.height(tx, tz) - 1, tz);
-  town.rotation.y = 0.4;
-  town.scale.setScalar(opts.theme === "village" ? 1.1 : 0.9);
-  scene.add(town);
+    // The walled town on a hill, beyond the river.
+    const town = townGeometry(r);
+    const tx = -span * 3.2;
+    const tz = span * 5.2;
+    town.position.set(tx, land.height(tx, tz) - 1, tz);
+    town.rotation.y = 0.4;
+    town.scale.setScalar(opts.theme === "village" ? 1.1 : 0.9);
+    scene.add(town);
+  }
 
   // Clouds: big soft sprites high above, a few low wisps.
   for (let i = 0; i < 16; i++) {

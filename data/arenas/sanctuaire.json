@@ -1,0 +1,268 @@
+{
+ "schemaVersion": 1,
+ "id": "sanctuaire",
+ "name": "Sanctuaire des cerisiers",
+ "width": 60,
+ "depth": 42,
+ "ground": "#e6dcc6",
+ "spawns": [
+  {
+   "x": -10,
+   "z": 17
+  },
+  {
+   "x": 10,
+   "z": -17
+  }
+ ],
+ "props": [
+  {
+   "kind": "terrace",
+   "x": 0,
+   "z": -14
+  },
+  {
+   "kind": "stairs",
+   "x": 6.75,
+   "z": -14,
+   "dir": "-x"
+  },
+  {
+   "kind": "stairs",
+   "x": -6.75,
+   "z": -14,
+   "dir": "+x"
+  },
+  {
+   "kind": "watchtower",
+   "x": -18,
+   "z": -10
+  },
+  {
+   "kind": "stairs-tall",
+   "x": -12,
+   "z": -10,
+   "dir": "-x"
+  },
+  {
+   "kind": "watchtower",
+   "x": 18,
+   "z": 10
+  },
+  {
+   "kind": "stairs-tall",
+   "x": 12,
+   "z": 10,
+   "dir": "+x"
+  },
+  {
+   "kind": "platform",
+   "x": 22,
+   "z": -8
+  },
+  {
+   "kind": "ramp",
+   "x": 16,
+   "z": -8,
+   "dir": "+x"
+  },
+  {
+   "kind": "platform",
+   "x": -22,
+   "z": 8
+  },
+  {
+   "kind": "ramp",
+   "x": -16,
+   "z": 8,
+   "dir": "-x"
+  },
+  {
+   "kind": "house",
+   "x": -24,
+   "z": -3
+  },
+  {
+   "kind": "house",
+   "x": 24,
+   "z": 3
+  },
+  {
+   "kind": "house",
+   "x": 16,
+   "z": -17
+  },
+  {
+   "kind": "house",
+   "x": -16,
+   "z": 17
+  },
+  {
+   "kind": "pillar",
+   "x": -1.8,
+   "z": 7
+  },
+  {
+   "kind": "pillar",
+   "x": 1.8,
+   "z": 7
+  },
+  {
+   "kind": "pillar",
+   "x": -1.8,
+   "z": -7
+  },
+  {
+   "kind": "pillar",
+   "x": 1.8,
+   "z": -7
+  },
+  {
+   "kind": "wall",
+   "x": -6,
+   "z": -2
+  },
+  {
+   "kind": "wall",
+   "x": 6,
+   "z": 2
+  },
+  {
+   "kind": "wall",
+   "x": -28,
+   "z": -12,
+   "rotated": true
+  },
+  {
+   "kind": "wall",
+   "x": 28,
+   "z": 12,
+   "rotated": true
+  },
+  {
+   "kind": "lantern",
+   "x": -4,
+   "z": 10
+  },
+  {
+   "kind": "lantern",
+   "x": 4,
+   "z": 10
+  },
+  {
+   "kind": "lantern",
+   "x": -4,
+   "z": -9.5
+  },
+  {
+   "kind": "lantern",
+   "x": 4,
+   "z": -9.5
+  },
+  {
+   "kind": "lantern",
+   "x": -10,
+   "z": 0
+  },
+  {
+   "kind": "lantern",
+   "x": 10,
+   "z": 0
+  },
+  {
+   "kind": "tree",
+   "x": 0,
+   "z": 0
+  },
+  {
+   "kind": "tree",
+   "x": -26,
+   "z": -17
+  },
+  {
+   "kind": "tree",
+   "x": 26,
+   "z": 17
+  },
+  {
+   "kind": "tree",
+   "x": -10,
+   "z": -19
+  },
+  {
+   "kind": "tree",
+   "x": 10,
+   "z": 19
+  },
+  {
+   "kind": "fence",
+   "x": -12,
+   "z": 3
+  },
+  {
+   "kind": "fence",
+   "x": 12,
+   "z": -3
+  },
+  {
+   "kind": "fence",
+   "x": -24,
+   "z": 19
+  },
+  {
+   "kind": "fence",
+   "x": 24,
+   "z": -19
+  },
+  {
+   "kind": "rock",
+   "x": -8,
+   "z": -5
+  },
+  {
+   "kind": "rock",
+   "x": 8,
+   "z": 5
+  },
+  {
+   "kind": "barrel",
+   "x": -14,
+   "z": -3
+  },
+  {
+   "kind": "barrel",
+   "x": 14,
+   "z": 3
+  },
+  {
+   "kind": "barrel",
+   "x": -25,
+   "z": 14
+  },
+  {
+   "kind": "barrel",
+   "x": 25,
+   "z": -14
+  },
+  {
+   "kind": "crate",
+   "x": -12.6,
+   "z": -3.6
+  },
+  {
+   "kind": "crate",
+   "x": 12.6,
+   "z": 3.6
+  },
+  {
+   "kind": "crate",
+   "x": -6,
+   "z": -17
+  },
+  {
+   "kind": "crate",
+   "x": 6,
+   "z": 17
+  }
+ ]
+}

@@ -44,7 +44,8 @@ const run = (w: BrawlWorld, seconds: number, cmds: () => Command[] = () => []) =
 
 test("les arènes du dépôt sont valides", () => {
   const defs = loadArenas(catalog);
-  assert.ok(defs.length >= 2);
+  assert.ok(defs.length >= 3);
+  assert.ok(defs.some((d) => d.id === "sanctuaire"), "l'arène japonaise est chargée");
   for (const d of defs) assert.ok(d.width * d.depth > 40 * 30, `${d.id} doit être plus grande que le terrain vague`);
 });
 
