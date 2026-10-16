@@ -5,8 +5,9 @@
 import * as THREE from "three";
 import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { Arena, Prop } from "../brawl/arena.ts";
+import { broadleafGeometry, buildLandscape } from "./landscape.ts";
 import {
-  cloudTexture, dirtTexture, grassTexture, noOutline, outlineOf, pavingTexture, stoneTexture, toon, woodTexture,
+  dirtTexture, grassTexture, noOutline, outlineOf, pavingTexture, stoneTexture, toon, woodTexture,
 } from "./toon.ts";
 
 type Theme = "meadow" | "village";
@@ -82,18 +83,12 @@ export function buildProp(p: Prop): THREE.Group {
 
   switch (p.kind.look) {
     case "tree": {
-      const trunk = add(mesh(new THREE.CylinderGeometry(p.halfW * 0.55, p.halfW * 0.85, h * 0.5, 8), toon(0x8a5a36)), h * 0.25);
-      trunk.rotation.y = 0.3;
-      const r = rand(Math.round(p.x * 13 + p.z * 7));
-      const leaf = toon(p.kind.color);
-      const leafDark = toon(new THREE.Color(p.kind.color).multiplyScalar(0.8));
-      for (let i = 0; i < 5; i++) {
-        const blob = mesh(new THREE.IcosahedronGeometry(p.halfW * (1.6 + r() * 0.8), 1), i % 2 ? leaf : leafDark);
-        const a = (i / 5) * Math.PI * 2;
-        blob.position.set(Math.cos(a) * p.halfW * 1.2, h * (0.62 + r() * 0.2), Math.sin(a) * p.halfW * 1.2);
-        g.add(blob);
-      }
-      add(mesh(new THREE.IcosahedronGeometry(p.halfW * 2.1, 1), leaf), h * 0.85);
+      // Same faceted broadleaf as the woods outside, sized to the prop (trunk = its footprint).
+      const r = rand(Math.round(p.x * 13 + p.z * 7) + 1000);
+      const geo = broadleafGeometry(r, new THREE.Color(p.kind.color).lerp(new THREE.Color("#5f9a3e"), 0.5));
+      const tree = add(mesh(geo, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true })), 0);
+      tree.scale.set(1.1, h / 6.6, 1.1);
+      tree.rotation.y = r() * Math.PI * 2;
       break;
     }
     case "rock": {
@@ -217,21 +212,6 @@ export function buildProp(p: Prop): THREE.Group {
 }
 
 /** Sky dome with a vertical gradient, drawn behind everything. */
-function sky(radius: number): THREE.Mesh {
-  const mat = noOutline(
-    new THREE.ShaderMaterial({
-      side: THREE.BackSide,
-      depthWrite: false,
-      fog: false,
-      uniforms: { top: { value: new THREE.Color(0x3f8be0) }, horizon: { value: new THREE.Color(0xd8efff) } },
-      vertexShader: "varying vec3 vPos; void main(){ vPos = position; gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); }",
-      fragmentShader:
-        "uniform vec3 top; uniform vec3 horizon; varying vec3 vPos; void main(){ float h = clamp(normalize(vPos).y, 0.0, 1.0); gl_FragColor = vec4(mix(horizon, top, pow(h, 0.6)), 1.0); }",
-    }),
-  );
-  return new THREE.Mesh(new THREE.SphereGeometry(radius, 32, 16), mat);
-}
-
 export interface Environment {
   /** One object per arena prop, same order as arena.props. */
   props: THREE.Object3D[];
@@ -243,34 +223,28 @@ export function buildEnvironment(scene: THREE.Scene, arena: Arena): Environment 
   const span = Math.max(halfW, halfD);
   const theme = themeOf(arena);
   const r = rand(theme === "village" ? 99 : 42);
-  const horizon = new THREE.Color(0xd8efff);
-  scene.background = horizon;
-  scene.fog = new THREE.Fog(horizon, span * 2.2, span * 6);
-  scene.add(sky(span * 8));
 
-  scene.add(new THREE.HemisphereLight(0xdcefff, 0x8d7a58, 1.3));
-  const sun = new THREE.DirectionalLight(0xfff1d6, 2.6);
+  // Afternoon light: warm sun from high on one side, cool sky fill, warm bounce from the ground.
+  scene.add(new THREE.HemisphereLight(0xd6e8ff, 0x7a6a48, 1.15));
+  const sun = new THREE.DirectionalLight(0xffeccc, 2.9);
   sun.position.set(span * 0.7, span * 1.5, span * 0.5);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.bias = -0.0008;
   sun.shadow.normalBias = 0.06;
-  Object.assign(sun.shadow.camera, { left: -span - 4, right: span + 4, top: span + 4, bottom: -span - 4, far: span * 5 });
+  Object.assign(sun.shadow.camera, { left: -span - 12, right: span + 12, top: span + 12, bottom: -span - 12, far: span * 5 });
   scene.add(sun);
 
-  // Ground: meadow all around, the arena floor inside the walls.
-  const grassMat = noOutline(toon(0xffffff, grassTexture()));
-  grassMat.map!.repeat.set(span * 1.5, span * 1.5);
-  const grass = new THREE.Mesh(new THREE.PlaneGeometry(span * 10, span * 10), grassMat);
-  grass.rotation.x = -Math.PI / 2;
-  grass.position.y = -0.03;
-  grass.receiveShadow = true;
-  scene.add(grass);
+  // Everything beyond the walls: hills, fields, river, woods, a town, sky and clouds.
+  buildLandscape(scene, arena, sun.position.clone(), { theme, seed: theme === "village" ? 7 : 3 });
+
+  // The arena floor inside the walls.
   const floorTex = theme === "village" ? pavingTexture() : dirtTexture();
   floorTex.repeat.set(halfW / 3, halfD / 3);
   const floorMat = noOutline(toon(theme === "village" ? 0xffffff : 0xfff6e0, floorTex));
-  const floor = new THREE.Mesh(new THREE.PlaneGeometry(halfW * 2, halfD * 2), floorMat);
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(halfW * 2 + 1.6, halfD * 2 + 1.6), floorMat);
   floor.rotation.x = -Math.PI / 2;
+  floor.position.y = 0.01;
   floor.receiveShadow = true;
   scene.add(floor);
   if (theme === "meadow") {
@@ -281,7 +255,7 @@ export function buildEnvironment(scene: THREE.Scene, arena: Arena): Environment 
     inner.alphaMap = radialMask();
     const g = new THREE.Mesh(new THREE.PlaneGeometry(halfW * 2, halfD * 2), inner);
     g.rotation.x = -Math.PI / 2;
-    g.position.y = 0.005;
+    g.position.y = 0.015;
     g.receiveShadow = true;
     scene.add(g);
   }
@@ -311,49 +285,7 @@ export function buildEnvironment(scene: THREE.Scene, arena: Arena): Environment 
   edge(halfW + o, halfD + o, -halfW - o, halfD + o);
   edge(-halfW - o, halfD + o, -halfW - o, -halfD - o);
 
-  // Scenery outside the walls: forest edge, distant mountains, clouds.
-  const leaf = toon(0x4fa64a);
-  const leafDark = toon(0x3e8c3f);
-  const trunk = toon(0x7d5132);
-  for (let i = 0; i < 70; i++) {
-    const a = r() * Math.PI * 2;
-    const dist = 1.25 + r() * 0.9;
-    const x = Math.cos(a) * (halfW + 4) * dist;
-    const z = Math.sin(a) * (halfD + 4) * dist;
-    if (Math.abs(x) < halfW + 3 && Math.abs(z) < halfD + 3) continue;
-    const s = 1 + r() * 1.2;
-    const t = mesh(new THREE.CylinderGeometry(0.25 * s, 0.35 * s, 2 * s, 6), trunk);
-    t.position.set(x, s, z);
-    scene.add(t);
-    const c = mesh(new THREE.ConeGeometry(1.5 * s, 3.5 * s, 7), r() < 0.5 ? leaf : leafDark);
-    c.position.set(x, 2 * s + 1.5 * s, z);
-    scene.add(c);
-  }
-  const mountain = [toon(0x7aa0c8), toon(0x8fb3d6), toon(0x6d93bd)];
-  for (let i = 0; i < 18; i++) {
-    const a = (i / 18) * Math.PI * 2 + r() * 0.2;
-    const dist = span * (4 + r() * 1.5);
-    const hgt = span * (0.9 + r() * 0.9);
-    const m = new THREE.Mesh(new THREE.ConeGeometry(span * (1 + r() * 0.8), hgt, 6), mountain[i % 3]!);
-    m.position.set(Math.cos(a) * dist, hgt / 2 - 2, Math.sin(a) * dist);
-    noOutline(m.material as THREE.Material);
-    scene.add(m);
-    const snow = new THREE.Mesh(new THREE.ConeGeometry(span * 0.3, hgt * 0.25, 6), noOutline(toon(0xffffff)));
-    snow.position.set(m.position.x, hgt - 2 - hgt * 0.125 + 0.01, m.position.z);
-    snow.scale.setScalar(((m.geometry as THREE.ConeGeometry).parameters.radius / (span * 0.3)) * 0.26);
-    scene.add(snow);
-  }
-  const cloud = cloudTexture();
-  for (let i = 0; i < 14; i++) {
-    const s = new THREE.Sprite(noOutline(new THREE.SpriteMaterial({ map: cloud, transparent: true, depthWrite: false, fog: false })));
-    const a = r() * Math.PI * 2;
-    const dist = span * (2.5 + r() * 3);
-    s.position.set(Math.cos(a) * dist, span * (1.2 + r() * 1.2), Math.sin(a) * dist);
-    s.scale.set(span * (1.6 + r()), span * (0.8 + r() * 0.4), 1);
-    scene.add(s);
-  }
-
-  // Grass tufts outside the walls, and on the meadow floor away from props (instanced: cheap).
+  // Grass tufts on the meadow floor away from props (instanced: cheap).
   {
     const blades = [-0.5, 0, 0.5].map((tilt, i) => {
       const b = new THREE.ConeGeometry(0.05, 0.38, 3);
@@ -368,9 +300,9 @@ export function buildEnvironment(scene: THREE.Scene, arena: Arena): Environment 
     const m4 = new THREE.Matrix4();
     let k = 0;
     for (let i = 0; i < n * 3 && k < n; i++) {
-      const x = (r() * 2 - 1) * span * 2.5;
-      const z = (r() * 2 - 1) * span * 2.5;
-      const inside = Math.abs(x) < halfW && Math.abs(z) < halfD;
+      const x = (r() * 2 - 1) * halfW;
+      const z = (r() * 2 - 1) * halfD;
+      const inside = true;
       if (inside && (theme === "village" || arena.props.some((p) => Math.abs(p.x - x) < p.halfW + 0.3 && Math.abs(p.z - z) < p.halfD + 0.3))) continue;
       if (inside && Math.hypot(x / halfW, z / halfD) < 0.75) continue;
       m4.compose(new THREE.Vector3(x, 0, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(0, r() * 6, (r() - 0.5) * 0.5)), new THREE.Vector3(1, 0.7 + r() * 0.8, 1));
