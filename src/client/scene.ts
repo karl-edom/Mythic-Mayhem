@@ -37,6 +37,10 @@ interface FighterView {
   flashUntil: number;
   /** Last strike whose slash arc was spawned (so each blow draws one arc). */
   slashKey: string;
+  /** Last wind-up glinted (so each heavy or special glints once). */
+  windupKey: string;
+  /** Frames rendered for this fighter. */
+  frame: number;
   wasAirborne: boolean;
 }
 
@@ -177,7 +181,7 @@ export class ArenaView {
     this.scene.add(root);
     return {
       root, model, animator, materials, shadow, guard, aura, stars, chargeOrb, lowHp, trail,
-      flashUntil: 0, slashKey: "", wasAirborne: false,
+      flashUntil: 0, slashKey: "", wasAirborne: false, windupKey: "", frame: 0,
     };
   }
 
@@ -216,7 +220,6 @@ export class ArenaView {
           const big = e.knockdown || e.by === "heavy" || e.by === "special" || e.by === "throw";
           this.fighters[e.target]!.flashUntil = w.time + 0.1;
           this.vfx.hit(this.center(w.fighters[e.target]!), this.characters[e.source]!.colors.secondary, big);
-          this.freezeUntil = now + (big ? 110 : 55);
           if (e.knockdown) this.vfx.groundWave(new THREE.Vector3(w.fighters[e.target]!.pos.x, w.fighters[e.target]!.floor, w.fighters[e.target]!.pos.z), 0xffffff, 3);
           break;
         }
@@ -328,10 +331,37 @@ export class ArenaView {
     v.root.visible = shown;
     v.shadow.visible = f.alive;
     v.root.position.set(f.pos.x, f.pos.y, f.pos.z);
-    v.root.rotation.y = Math.atan2(f.facing.x, f.facing.z);
+    // Turning is smoothed (the simulation snaps): a fast but visible pivot.
+    const yaw = Math.atan2(f.facing.x, f.facing.z);
+    let dy = yaw - v.root.rotation.y;
+    dy = Math.atan2(Math.sin(dy), Math.cos(dy));
+    v.root.rotation.y += v.frame > 0 && dt > 0 ? dy * (1 - Math.exp(-dt * 20)) : dy;
     v.shadow.position.set(f.pos.x, f.floor + 0.02, f.pos.z);
     v.shadow.scale.setScalar(Math.max(0.4, 1 - (f.pos.y - f.floor) * 0.15));
-    v.animator?.update(w, f, dt, frozen);
+    // Hitlag freezes the pose of both bodies at the moment of contact.
+    const lagged = f.hitlagUntil > w.time;
+    v.animator?.update(w, f, dt, frozen || lagged);
+    // A hitlag shudder: the struck body trembles in place.
+    if (lagged && f.action && (f.action.kind === "hitstun" || f.action.kind === "knockdown"))
+      v.root.position.x += Math.sin(performance.now() * 0.25) * 0.05;
+    v.frame++;
+
+    // Launched hard: a trail of puffs shows how far and how fast the blow sends.
+    const launch = Math.hypot(f.vel.x, f.vel.z);
+    if (f.alive && !lagged && launch > w.config.knockdownSpeed * 0.8 && v.frame % 2 === 0)
+      this.vfx.puff(this.center(f), 0.5 + launch * 0.06);
+
+    // Wind-up: a glint just before a heavy blow or a special goes off.
+    const act = f.action;
+    let windup: string | null = null;
+    if (act?.kind === "heavy" && !act.charging) windup = `h${act.charge}`;
+    else if (act?.kind === "special") windup = `s${act.slot}:${w.tick - Math.round(act.t * w.config.tickRate)}`;
+    if (windup && windup !== v.windupKey) {
+      v.windupKey = windup;
+      const color = act?.kind === "heavy" ? 0xffb347 : this.characters[f.id]!.colors.secondary;
+      const at = this.center(f).add(new THREE.Vector3(f.facing.x, 0.25, f.facing.z).multiplyScalar(0.6));
+      this.vfx.glint(at, color, act?.kind === "heavy" ? 1.6 : 1.3);
+    } else if (!windup) v.windupKey = "";
 
     const a = f.action;
     const flashing = v.flashUntil > t;

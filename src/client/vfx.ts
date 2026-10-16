@@ -146,6 +146,39 @@ export class Vfx {
   }
 
   /** Soft dust puffs at the feet. */
+  /**
+   * Wind-up glint: a sharp star that pops and shrinks on the attacker just before a
+   * heavy blow or a special goes off — the « here it comes » of anime fighters.
+   */
+  glint(pos: THREE.Vector3, color: THREE.ColorRepresentation, size = 1.4): void {
+    const s = this.sprite(this.star, color);
+    s.position.copy(pos);
+    this.add(s, 0.28, (k) => {
+      const grow = k < 0.25 ? k / 0.25 : 1 - (k - 0.25) / 0.75;
+      s.scale.setScalar(size * Math.max(0.05, grow));
+      s.material.rotation = k * 2.5;
+      s.material.opacity = 1 - k * 0.6;
+    });
+    const halo = this.sprite(this.glow, color, 0.7);
+    halo.position.copy(pos);
+    this.add(halo, 0.28, (k) => {
+      halo.scale.setScalar(size * 1.6 * (0.4 + k));
+      halo.material.opacity = 0.7 * (1 - k);
+    });
+  }
+
+  /** Launch trail: a puff left behind a fighter sent flying, bigger the faster it goes. */
+  puff(pos: THREE.Vector3, size: number): void {
+    const s = new THREE.Sprite(
+      noOutline(new THREE.SpriteMaterial({ map: this.glow, color: 0xf2efe8, transparent: true, opacity: 0.55, depthWrite: false })),
+    );
+    s.position.copy(pos);
+    this.add(s, 0.45, (k) => {
+      s.scale.setScalar(size * (0.6 + k * 0.9));
+      s.material.opacity = 0.55 * (1 - k);
+    });
+  }
+
   dust(pos: THREE.Vector3, count = 5): void {
     for (let i = 0; i < count; i++) {
       const m = noOutline(new THREE.SpriteMaterial({ map: this.glow, color: 0xe8dcc0, transparent: true, opacity: 0.6, depthWrite: false }));

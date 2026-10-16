@@ -410,3 +410,74 @@ test("v3 : le validateur impose combo court, éjection finale et coups ratés pu
   assert.match(String(errs({ ...kit, light: { hits: hits.map((h) => ({ ...h, recovery: 0.1 })) } })), /recovery/);
   assert.match(String(errs({ ...kit, heavy: { ...kit.heavy, recovery: 0.3 } })), /heavy.recovery/);
 });
+
+// Moteur v4 (décision 0015) : aisance, fluidité, lisibilité.
+
+test("v4 : gel à l'impact, l'attaquant et la cible s'arrêtent ensemble, puis le recul part", () => {
+  const c = BRAWL_CONFIG;
+  const w = duel(fighter(), fighter());
+  step(w, [{ unit: 0, light: true }]);
+  let t = 0;
+  while (w.fighters[1]!.hp === 1000 && t++ < 60) step(w, []);
+  const [a, b] = w.fighters as [BrawlWorld["fighters"][0], BrawlWorld["fighters"][0]];
+  const lag = Math.min(c.hitlagMax, c.hitlagBase + 50 * c.hitlagPerDamage);
+  assert.ok(Math.abs(a.hitlagUntil - w.time - lag) < 1e-9 && Math.abs(b.hitlagUntil - w.time - lag) < 1e-9);
+  const aT = a.action?.kind === "light" ? a.action.t : -1;
+  const bx = b.pos.x;
+  step(w, []);
+  assert.equal(a.action?.kind === "light" ? a.action.t : -2, aT, "l'attaque de l'attaquant est figée");
+  assert.equal(b.pos.x, bx, "la cible ne recule pas encore");
+  run(w, lag + 0.05);
+  assert.ok(b.pos.x > bx, "après le gel, le recul part");
+});
+
+test("v4 : le combo ne continue que si le coup a touché ; dans le vide, un seul coup", () => {
+  const w = duel(fighter(), fighter(), 6);
+  for (let i = 0; i < 30; i++) step(w, [{ unit: 0, light: true }]);
+  const a = w.fighters[0]!;
+  assert.ok(a.action === null || (a.action.kind === "light" && a.action.index === 0), "pas de 2e coup dans le vide");
+  const w2 = duel(fighter(), fighter());
+  let second = false;
+  for (let i = 0; i < 40; i++) {
+    step(w2, [{ unit: 0, light: true }]);
+    const act = w2.fighters[0]!.action;
+    if (act?.kind === "light" && act.index === 1) second = true;
+  }
+  assert.ok(second, "au contact, le combo s'enchaîne");
+});
+
+test("v4 : on regarde où l'on court, et l'adversaire dès qu'on s'arrête", () => {
+  const w = duel(fighter(), fighter(), 5);
+  const a = w.fighters[0]!;
+  run(w, 0.2, () => [{ unit: 0, move: { x: 0, z: 1 } }]);
+  assert.ok(a.facing.z > 0.99, "face à sa course");
+  run(w, 0.05);
+  assert.ok(a.facing.x > 0.9, "face à l'adversaire à l'arrêt");
+});
+
+test("v4 : un saut garde l'élan de la course, et le perd peu à peu sans direction", () => {
+  const w = duel(fighter(), fighter(), 20);
+  const a = w.fighters[0]!;
+  run(w, 0.2, () => [{ unit: 0, move: { x: 0, z: 1 } }]);
+  step(w, [{ unit: 0, jump: true, jumpHeld: true, move: { x: 0, z: 1 } }]);
+  run(w, 0.1, () => [{ unit: 0, jumpHeld: true, move: { x: 0, z: 1 } }]);
+  assert.ok(a.pos.y > 0, "en l'air");
+  const z0 = a.pos.z;
+  run(w, 0.2, () => [{ unit: 0, jumpHeld: true }]); // direction relâchée
+  const moved = a.pos.z - z0;
+  assert.ok(moved > 6 * 0.2 * 0.8, `l'élan porte encore (${moved.toFixed(2)} m)`);
+  assert.ok(Math.hypot(a.drift.x, a.drift.z) < 6, "et diminue");
+});
+
+test("v4 : une attaque avance vers la cible, sans la traverser", () => {
+  const w = duel(fighter(), fighter(), 2);
+  step(w, [{ unit: 0, light: true }]);
+  run(w, 0.15);
+  const a = w.fighters[0]!;
+  assert.ok(a.pos.x > 0.2, `le coup avance (${a.pos.x.toFixed(2)} m)`);
+  assert.equal(w.fighters[1]!.hp, 950, "et touche une cible qui était un peu loin");
+  const w2 = duel(fighter(), fighter(), 1.0);
+  step(w2, [{ unit: 0, light: true }]);
+  run(w2, 0.15);
+  assert.ok(w2.fighters[1]!.pos.x - w2.fighters[0]!.pos.x >= 0.85 - 1e-6, "pas d'avancée quand la cible est déjà à portée");
+});

@@ -12,7 +12,7 @@
   "light": {
     "hits": [
       {
-        "damage": 29,
+        "damage": 36,
         "startup": 0.14,
         "active": 0.1,
         "recovery": 0.22,
@@ -22,7 +22,7 @@
         "knockback": 4
       },
       {
-        "damage": 29,
+        "damage": 36,
         "startup": 0.14,
         "active": 0.1,
         "recovery": 0.22,
@@ -32,7 +32,7 @@
         "knockback": 4
       },
       {
-        "damage": 53,
+        "damage": 65,
         "startup": 0.18,
         "active": 0.1,
         "recovery": 0.45,
@@ -44,7 +44,7 @@
     ]
   },
   "heavy": {
-    "damage": 116,
+    "damage": 143,
     "startup": 0.5,
     "active": 0.12,
     "recovery": 0.6,
@@ -67,7 +67,7 @@
         "range": 18,
         "size": 0.5
       },
-      "damage": 67,
+      "damage": 82,
       "hitstun": 0.45,
       "knockback": 5,
       "guardBreak": false
@@ -83,7 +83,7 @@
         "radius": 2,
         "delay": 0.8
       },
-      "damage": 142,
+      "damage": 174,
       "hitstun": 0.7,
       "knockback": 13,
       "guardBreak": true
@@ -99,7 +99,7 @@
         "radius": 3,
         "delay": 0.3
       },
-      "damage": 76,
+      "damage": 93,
       "hitstun": 0.5,
       "knockback": 14,
       "guardBreak": false

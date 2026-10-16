@@ -42,10 +42,30 @@ export interface BrawlConfig {
   /** Seconds after releasing the shield before it regenerates. */
   shieldRegenDelay: number;
   shieldDamageFactor: number;
-  /** Air game: extra jumps in the air, their strength, and movement speed share in the air. */
+  /** Air game: extra jumps in the air and their strength. */
   airJumps: number;
   airJumpFactor: number;
-  airControl: number;
+  /**
+   * Air momentum (engine v4): a jump keeps the speed it took off with. The stick steers
+   * toward run speed at airAccel (m/s²); with the stick released, speed bleeds off at airDrag.
+   */
+  airAccel: number;
+  airDrag: number;
+  /**
+   * Strikes step in: over their startup and active time, light and heavy attacks carry
+   * the fighter this far forward (metres), stopping once the target is within reach.
+   */
+  lightLunge: number;
+  heavyLunge: number;
+  /**
+   * Hitlag (engine v4): on contact, attacker and target both freeze for
+   * hitlagBase + damage × hitlagPerDamage seconds (at most hitlagMax); a blocked blow
+   * freezes for blockHitlagFactor of that. Hitstun and knockback start after it.
+   */
+  hitlagBase: number;
+  hitlagPerDamage: number;
+  hitlagMax: number;
+  blockHitlagFactor: number;
   /** Seconds stuck when landing during an aerial attack. */
   landingLag: number;
   /** Knockback grows as health drops: × (1 + bonus × share of health lost). */
@@ -135,7 +155,14 @@ export const BRAWL_CONFIG: BrawlConfig = {
   shieldDamageFactor: 0.3,
   airJumps: 1,
   airJumpFactor: 0.85,
-  airControl: 0.7,
+  airAccel: 16,
+  airDrag: 2.5,
+  lightLunge: 0.45,
+  heavyLunge: 0.9,
+  hitlagBase: 3 / 60,
+  hitlagPerDamage: 1 / 30 / 60,
+  hitlagMax: 12 / 60,
+  blockHitlagFactor: 0.6,
   landingLag: 0.1,
   knockbackLowHpBonus: 0.6,
   dodgeDistance: 3.5,
@@ -243,6 +270,10 @@ export interface Fighter {
   lastDodgeAt: number;
   /** When the shield went up (a parry needs it held a few frames first). */
   guardSince: number;
+  /** Own horizontal speed in the air (momentum), m/s; zero on the ground. */
+  drift: V3;
+  /** Frozen by hitlag until then: no action, no movement. */
+  hitlagUntil: number;
 }
 
 export interface Projectile {
@@ -368,6 +399,8 @@ export function createBrawl(
       dodgeStale: 0,
       lastDodgeAt: -Infinity,
       guardSince: 0,
+      drift: { x: 0, y: 0, z: 0 },
+      hitlagUntil: -Infinity,
     })),
     projectiles: [],
     zones: [],
@@ -439,6 +472,7 @@ function breaker(w: BrawlWorld, f: Fighter): void {
     o.vel.x = dir.x * speed;
     o.vel.z = dir.z * speed;
     // Interrupts whatever the enemy was doing (a rush or a charge included).
+    o.hitlagUntil = -Infinity;
     o.action = { kind: "hitstun", until: w.time + c.breakerStun };
   }
 }
@@ -573,8 +607,16 @@ export interface HitSpec {
 }
 
 /** Resolves one hit. Returns false if it whiffed on an invulnerable target. */
-function applyHit(w: BrawlWorld, src: Fighter, target: Fighter, hit: HitSpec, from: V3): boolean {
+function applyHit(w: BrawlWorld, src: Fighter, target: Fighter, hit: HitSpec, from: V3, contact = false): boolean {
   if (!target.alive || isInvulnerable(w, target)) return false;
+  target.drift = { x: 0, y: 0, z: 0 };
+  // Hitlag: both bodies freeze an instant on contact (the attacker only if it struck in person).
+  const lag = Math.min(w.config.hitlagMax, w.config.hitlagBase + hit.damage * w.config.hitlagPerDamage);
+  const freeze = (k: number) => {
+    target.hitlagUntil = w.time + lag * k;
+    if (contact) src.hitlagUntil = w.time + lag * k;
+    return lag * k;
+  };
   if (src.team !== target.team) target.lastHitBy = src.id;
   dropCarried(w, target);
   const c = w.config;
@@ -601,7 +643,8 @@ function applyHit(w: BrawlWorld, src: Fighter, target: Fighter, hit: HitSpec, fr
       w.events.push({ t, type: "guardBreak", source: src.id, target: target.id, amount, by: hit.by });
       return true;
     }
-    if (target.alive) target.action = { kind: "blockstun", until: t + c.blockstun };
+    const bl = freeze(c.blockHitlagFactor);
+    if (target.alive) target.action = { kind: "blockstun", until: t + bl + c.blockstun };
     target.vel.x = dir.x * 2;
     target.vel.z = dir.z * 2;
     w.events.push({ t, type: "block", source: src.id, target: target.id, amount, by: hit.by });
@@ -615,10 +658,11 @@ function applyHit(w: BrawlWorld, src: Fighter, target: Fighter, hit: HitSpec, fr
   target.vel.x = dir.x * speed;
   target.vel.z = dir.z * speed;
   if (knockdown && target.alive) target.vel.y = Math.max(target.vel.y, 4);
+  const hl = freeze(1);
   if (target.alive)
     target.action = knockdown
-      ? { kind: "knockdown", until: t + hit.hitstun + c.knockdownTime }
-      : { kind: "hitstun", until: t + hit.hitstun };
+      ? { kind: "knockdown", until: t + hl + hit.hitstun + c.knockdownTime }
+      : { kind: "hitstun", until: t + hl + hit.hitstun };
   w.events.push({ t, type: "hit", source: src.id, target: target.id, amount: hit.damage, by: hit.by, knockdown });
   return true;
 }
@@ -654,13 +698,16 @@ function end(w: BrawlWorld, winner: number | null): void {
 /** Strikes the first time the hitbox touches each enemy (one hit per strike). Props are hit on the first live tick. */
 function resolveStrike(w: BrawlWorld, f: Fighter, s: Strike, by: HitKind, dmg: number, guardBreak: boolean, firstTick: boolean): boolean {
   const c = strikeCenter(f, s);
+  let hitAny = false;
   if (firstTick)
     for (const p of w.arena.props)
-      if (p.alive && c.y - s.size < p.height && distToProp(p, c.x, c.z) <= s.size) damageProp(w, f, p, dmg);
-  let hitAny = false;
+      if (p.alive && p.kind.hp !== null && c.y - s.size < p.height && distToProp(p, c.x, c.z) <= s.size) {
+        damageProp(w, f, p, dmg);
+        hitAny = true;
+      }
   for (const o of w.fighters) {
     if (o.team === f.team || !o.alive || !sphereTouches(c, s.size, o)) continue;
-    hitAny = applyHit(w, f, o, { damage: dmg, hitstun: s.hitstun, knockback: s.knockback, guardBreak, by }, f.pos) || hitAny;
+    hitAny = applyHit(w, f, o, { damage: dmg, hitstun: s.hitstun, knockback: s.knockback, guardBreak, by }, f.pos, true) || hitAny;
   }
   return hitAny;
 }
@@ -769,9 +816,16 @@ function startAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, heavyP
     if (cmd?.jump && f.airJumpsLeft > 0) {
       f.airJumpsLeft--;
       f.vel.y = f.kit.stats.jumpSpeed * c.airJumpFactor;
+      // A second jump can change direction at once, toward the stick.
+      const mv = cmd.move;
+      if (mv && Math.hypot(mv.x, mv.z) > 0.1) {
+        const d = hnorm({ x: mv.x, y: 0, z: mv.z }, f.facing);
+        const sp = Math.max(hlen(f.drift), f.kit.stats.moveSpeed * 0.8);
+        f.drift = { x: d.x * sp, y: 0, z: d.z * sp };
+      }
       w.events.push({ t: w.time, type: "airJump", unit: f.id });
     }
-    moveBy(w, f, cmd, c.airControl);
+    airSteer(w, f, cmd);
     return;
   }
   if (heavyPressed) {
@@ -801,16 +855,64 @@ function startAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, heavyP
   moveBy(w, f, cmd, 1);
 }
 
+/**
+ * Walking and running: the fighter faces where it goes (engine v4), and turns back to
+ * its opponent when it stops. Attacks, guard and specials still face the opponent.
+ */
 function moveBy(w: BrawlWorld, f: Fighter, cmd: Command | undefined, factor: number): void {
   const mv = cmd?.move;
-  if (mv && Math.hypot(mv.x, mv.z) > 1e-6) {
+  const amount = mv ? Math.min(1, Math.hypot(mv.x, mv.z)) : 0;
+  if (mv && amount > 1e-6) {
     const dir = hnorm({ x: mv.x, y: 0, z: mv.z }, f.facing);
-    const step = (f.kit.stats.moveSpeed * factor) / w.config.tickRate;
-    f.pos.x += dir.x * step;
-    f.pos.z += dir.z * step;
+    const speed = f.kit.stats.moveSpeed * factor * amount;
+    f.pos.x += (dir.x * speed) / w.config.tickRate;
+    f.pos.z += (dir.z * speed) / w.config.tickRate;
+    f.facing = dir;
     f.moving = true;
+  } else faceTarget(w, f);
+}
+
+/** In the air: momentum is kept; the stick steers toward run speed, releasing it lets speed bleed off. */
+function airSteer(w: BrawlWorld, f: Fighter, cmd: Command | undefined): void {
+  const c = w.config;
+  const dt = 1 / c.tickRate;
+  const mv = cmd?.move;
+  const amount = mv ? Math.min(1, Math.hypot(mv.x, mv.z)) : 0;
+  const d = f.drift;
+  if (mv && amount > 0.1) {
+    const dir = hnorm({ x: mv.x, y: 0, z: mv.z }, f.facing);
+    const top = Math.max(f.kit.stats.moveSpeed * amount, Math.min(hlen(d), f.kit.stats.moveSpeed));
+    const tx = dir.x * top - d.x;
+    const tz = dir.z * top - d.z;
+    const l = Math.hypot(tx, tz);
+    const k = l > 1e-9 ? Math.min(1, (c.airAccel * dt) / l) : 0;
+    d.x += tx * k;
+    d.z += tz * k;
+    if (f.action === null) f.facing = dir;
+  } else {
+    const sp = hlen(d);
+    const k = sp > 0 ? Math.max(0, sp - c.airDrag * dt) / sp : 0;
+    d.x *= k;
+    d.z *= k;
   }
-  faceTarget(w, f);
+  f.moving = hlen(d) > 0.5;
+}
+
+/**
+ * Strikes step in: the attacker moves toward its target over the startup and active
+ * time, and stops as soon as the target is within the strike's reach.
+ */
+function lunge(w: BrawlWorld, f: Fighter, s: Strike, t: number, distance: number): void {
+  const span = s.startup + s.active;
+  if (distance <= 0 || t > span || !grounded(f)) return;
+  let step = (distance / span) / w.config.tickRate;
+  const target = lockTarget(w, f);
+  if (target) {
+    const room = hdist(f.pos, target.pos) - s.reach * 0.85;
+    step = Math.min(step, Math.max(0, room));
+  }
+  f.pos.x += f.facing.x * step;
+  f.pos.z += f.facing.z * step;
 }
 
 /** Advances a fighter's current action by one tick. May clear it. */
@@ -823,10 +925,13 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
     case "light": {
       const s = f.kit.light.hits[a.index]!;
       a.t += dt;
+      lunge(w, f, s, a.t, c.lightLunge);
       if (!a.hit && a.t >= s.startup && a.t < s.startup + s.active)
         a.hit = resolveStrike(w, f, s, "light", s.damage, false, a.t - dt < s.startup);
       const inRecovery = a.t >= s.startup + s.active;
-      if (inRecovery && lightWanted && a.index + 1 < f.kit.light.hits.length) {
+      // The combo goes on only if this blow touched something: hammering the button in the
+      // air gives one swing and its full recovery (engine v4).
+      if (inRecovery && a.hit && lightWanted && a.index + 1 < f.kit.light.hits.length) {
         faceTarget(w, f);
         f.action = { kind: "light", index: a.index + 1, t: 0, hit: false };
         f.bufferedLightUntil = -Infinity;
@@ -837,6 +942,7 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
       // One strike with the first light hit's numbers; the fall goes on meanwhile.
       const s = f.kit.light.hits[0]!;
       a.t += dt;
+      airSteer(w, f, cmd);
       if (!a.hit && a.t >= s.startup && a.t < s.startup + s.active)
         a.hit = resolveStrike(w, f, s, "aerial", s.damage, false, a.t - dt < s.startup);
       if (a.t >= strikeLength(s)) f.action = null;
@@ -856,6 +962,7 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
         a.charging = false;
       }
       a.t += dt;
+      lunge(w, f, h, a.t, c.heavyLunge);
       if (!a.hit && a.t >= h.startup && a.t < h.startup + h.active) {
         const dmg = h.damage * (1 + (h.chargeBonus - 1) * (h.maxCharge > 0 ? a.charge / h.maxCharge : 0));
         a.hit = resolveStrike(w, f, h, "heavy", dmg, true, a.t - dt < h.startup);
@@ -885,7 +992,7 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
       const c3 = bodyCenter(f);
       for (const o of w.fighters) {
         if (o.team === f.team || !o.alive || !sphereTouches(c3, d.size, o)) continue;
-        if (applyHit(w, f, o, specialHit(sp), f.pos)) {
+        if (applyHit(w, f, o, specialHit(sp), f.pos, true)) {
           a.remaining = 0;
           break;
         }
@@ -908,6 +1015,14 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
       if (a.t >= c.jumpSquat) {
         // Button released during the take-off: short hop.
         f.vel.y = f.kit.stats.jumpSpeed * (cmd?.jumpHeld ? 1 : c.shortHopFactor);
+        // The jump takes off with the run's speed, in the stick's direction.
+        const mv = cmd?.move;
+        const amount = mv ? Math.min(1, Math.hypot(mv.x, mv.z)) : 0;
+        if (mv && amount > 0.1) {
+          const d = hnorm({ x: mv.x, y: 0, z: mv.z }, f.facing);
+          f.drift = { x: d.x * f.kit.stats.moveSpeed * amount, y: 0, z: d.z * f.kit.stats.moveSpeed * amount };
+          f.facing = d;
+        } else f.drift = { x: 0, y: 0, z: 0 };
         f.action = null;
       }
       return;
@@ -990,6 +1105,13 @@ function physics(w: BrawlWorld, f: Fighter): void {
   const dt = 1 / c.tickRate;
   f.pos.x += f.vel.x * dt;
   f.pos.z += f.vel.z * dt;
+  if (f.pos.y > f.floor + 1e-6 || f.vel.y > 0) {
+    // Air momentum (frozen during a dodge or a rush, which move the body themselves).
+    if (f.action?.kind !== "dodge" && f.action?.kind !== "rush") {
+      f.pos.x += f.drift.x * dt;
+      f.pos.z += f.drift.z * dt;
+    }
+  } else if (f.drift.x !== 0 || f.drift.z !== 0) f.drift = { x: 0, y: 0, z: 0 };
   const sp = Math.hypot(f.vel.x, f.vel.z);
   if (sp > 0) {
     const k = Math.max(0, sp - c.friction * dt) / sp;
@@ -1025,6 +1147,7 @@ function physics(w: BrawlWorld, f: Fighter): void {
 /** Touching the ground: jumps come back; an aerial strike still going costs a short landing lag. */
 function land(w: BrawlWorld, f: Fighter): void {
   f.airJumpsLeft = w.config.airJumps;
+  f.drift = { x: 0, y: 0, z: 0 };
   if (f.action?.kind === "aerial") f.action = { kind: "landing", until: w.time + w.config.landingLag };
 }
 
@@ -1127,6 +1250,8 @@ export function step(w: BrawlWorld, commands: Command[]): void {
         f.action = null;
         f.shield = c.shieldMax;
         f.airJumpsLeft = c.airJumps;
+        f.drift = { x: 0, y: 0, z: 0 };
+        f.hitlagUntil = -Infinity;
         f.respawnAt = Infinity;
         f.invulnerableUntil = w.time + c.respawnInvulnerable;
         w.events.push({ t: w.time, type: "respawn", unit: f.id });
@@ -1142,8 +1267,16 @@ export function step(w: BrawlWorld, commands: Command[]): void {
     if (f.action?.kind !== "charge") f.energy = Math.min(c.energyMax, f.energy + c.energyRegen * dt);
     if (f.action?.kind !== "guard" && w.time - f.shieldUsedAt >= c.shieldRegenDelay)
       f.shield = Math.min(c.shieldMax, f.shield + c.shieldRegen * dt);
-    if (cmd?.dodge && canBreak(w, f)) breaker(w, f);
-    else if (f.action) advanceAction(w, f, cmd, lightWanted);
+    // The breaker answers pressure at once, even frozen by hitlag.
+    if (cmd?.dodge && canBreak(w, f)) {
+      f.hitlagUntil = -Infinity;
+      breaker(w, f);
+      physics(w, f);
+      continue;
+    }
+    // Hitlag: frozen in place; presses made meanwhile stay buffered.
+    if (f.hitlagUntil > w.time) continue;
+    if (f.action) advanceAction(w, f, cmd, lightWanted);
     else startAction(w, f, cmd, heavyPressed, lightWanted);
     if (f.alive) physics(w, f);
   }

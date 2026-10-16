@@ -32,7 +32,7 @@
         "knockback": 4
       },
       {
-        "damage": 58,
+        "damage": 59,
         "startup": 0.15,
         "active": 0.1,
         "recovery": 0.4,
@@ -44,7 +44,7 @@
     ]
   },
   "heavy": {
-    "damage": 126,
+    "damage": 127,
     "startup": 0.45,
     "active": 0.1,
     "recovery": 0.6,
@@ -67,7 +67,7 @@
         "speed": 25,
         "size": 0.8
       },
-      "damage": 135,
+      "damage": 136,
       "hitstun": 0.6,
       "knockback": 13,
       "guardBreak": false
@@ -83,7 +83,7 @@
         "range": 12,
         "size": 0.6
       },
-      "damage": 91,
+      "damage": 92,
       "hitstun": 0.5,
       "knockback": 6,
       "guardBreak": false
@@ -99,7 +99,7 @@
         "radius": 2.5,
         "delay": 0.5
       },
-      "damage": 180,
+      "damage": 182,
       "hitstun": 0.7,
       "knockback": 14,
       "guardBreak": true
