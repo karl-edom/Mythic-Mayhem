@@ -7,6 +7,7 @@
 
 import * as THREE from "three";
 import { OutlineEffect } from "three/examples/jsm/effects/OutlineEffect.js";
+import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { distToProp, segmentInterval, surfaceAt } from "../brawl/arena.ts";
 import type { Character } from "../brawl/character.ts";
 import type { Strike } from "../brawl/kit.ts";
@@ -14,7 +15,7 @@ import { FIGHTER_HEIGHT, bodyCenter, lockTarget, type BrawlWorld, type Fighter }
 import { Animator } from "./animator.ts";
 import { applyWear, damageStage, propColor, wearLean } from "./damage.ts";
 import { buildEnvironment } from "./environment.ts";
-import { defaultLook, instantiate, weaponStyle, type ModelInstance, type ModelLibrary } from "./models.ts";
+import { defaultLook, instantiate, proceduralEnv, weaponStyle, type ModelInstance, type ModelLibrary } from "./models.ts";
 import { glowTexture, magicCircleTexture, noOutline, toon } from "./toon.ts";
 import { WeaponTrail } from "./trail.ts";
 import { Vfx } from "./vfx.ts";
@@ -24,7 +25,7 @@ interface FighterView {
   model: ModelInstance | null;
   animator: Animator | null;
   /** Body materials (model or fallback capsule), for the hit flash. */
-  materials: THREE.MeshToonMaterial[];
+  materials: (THREE.MeshToonMaterial | THREE.MeshStandardMaterial)[];
   shadow: THREE.Mesh;
   guard: THREE.Mesh;
   aura: THREE.Mesh;
@@ -94,6 +95,8 @@ export class ArenaView {
     this.library = library;
     this.outline = new OutlineEffect(renderer, { defaultThickness: 0.003, defaultColor: [0.08, 0.06, 0.1], defaultAlpha: 1 });
     this.vfx = new Vfx(this.scene);
+    // A soft studio reflection for the physically lit models (shell, steel, lacquer).
+    if (!proceduralEnv.map) proceduralEnv.map = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
     this.props = buildEnvironment(this.scene, world.arena).props;
     this.fighters = world.fighters.map((f) => this.buildFighter(f, characters[f.id]!));
     this.resize();
@@ -104,7 +107,7 @@ export class ArenaView {
     const root = new THREE.Group();
     let model: ModelInstance | null = null;
     let animator: Animator | null = null;
-    let materials: THREE.MeshToonMaterial[];
+    let materials: (THREE.MeshToonMaterial | THREE.MeshStandardMaterial)[];
     if (this.library) {
       const look = ch.look ?? defaultLook(f.kit.archetype);
       model = instantiate(this.library, look);

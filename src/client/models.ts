@@ -8,6 +8,7 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { ANIME_MODELS, MODELS, isAnime, type Look, type ModelId } from "../brawl/character.ts";
+import { TURTLE_HEIGHT, buildTurtleRig, paintTurtle } from "./turtle.ts";
 import type { Archetype } from "../brawl/kit.ts";
 import { KAYKIT_TO_HUMANOID, LOCOMOTION, Retargeter, amplifyClip, amplitudeFor, clenchFists } from "./retarget.ts";
 import { noOutline, outlineOf, toToon } from "./toon.ts";
@@ -26,7 +27,12 @@ interface AnimeTemplate {
   rig: THREE.Group;
   height: number;
   clips?: Map<string, THREE.AnimationClip>;
+  /** Built in code with physically based materials: kept as they are (not cel-shaded). */
+  procedural?: boolean;
 }
+
+/** Reflections for procedural models (lacquer, steel, shell): set by the view once it has a renderer. */
+export const proceduralEnv: { map: THREE.Texture | null } = { map: null };
 
 export interface ModelLibrary {
   templates: Map<ModelId, THREE.Object3D>;
@@ -120,6 +126,7 @@ export async function loadModels(base: string, onProgress?: (done: number, total
     const box = new THREE.Box3().setFromObject(rig);
     anime.set(m, { rig, height: box.max.y - Math.min(0, box.min.y) });
   });
+  anime.set("turtle", { rig: buildTurtleRig(), height: TURTLE_HEIGHT, procedural: true });
   return {
     templates,
     anime,
@@ -172,7 +179,7 @@ export interface ModelInstance {
   /** Clips this model plays (retargeted for anime avatars). */
   clips: Map<string, THREE.AnimationClip>;
   /** Toon materials of the body, for hit flashes. */
-  materials: THREE.MeshToonMaterial[];
+  materials: (THREE.MeshToonMaterial | THREE.MeshStandardMaterial)[];
   /** Two points along the main weapon (or the forearm) that a swing trail follows; null: none. */
   trail: { base: THREE.Object3D; tip: THREE.Object3D } | null;
 }
@@ -285,9 +292,21 @@ function attachWeapon(rig: THREE.Object3D, name: string): void {
 function instantiateAnime(lib: ModelLibrary, look: Look): ModelInstance {
   const t = lib.anime.get(look.model)!;
   const rig = SkeletonUtils.clone(t.rig) as THREE.Group;
-  const materials: THREE.MeshToonMaterial[] = [];
+  const materials: (THREE.MeshToonMaterial | THREE.MeshStandardMaterial)[] = [];
   rig.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return;
+    if (t.procedural) {
+      // Own copies (hit flashes, mask colour), reflections, a thin ink line for readability.
+      const m = (o.material as THREE.MeshStandardMaterial).clone();
+      m.envMap = proceduralEnv.map;
+      m.envMapIntensity = 0.8;
+      outlineOf(m, 0.0022);
+      o.material = m;
+      o.castShadow = true;
+      o.frustumCulled = false;
+      materials.push(m);
+      return;
+    }
     const src = o.material as THREE.MeshStandardMaterial;
     // Draw order from the avatar (eyelashes and highlights over the face).
     o.renderOrder = ((src.userData as AnimeHints).queue ?? 2000) - 2000;
@@ -299,6 +318,7 @@ function instantiateAnime(lib: ModelLibrary, look: Look): ModelInstance {
     materials.push(m);
   });
   clenchFists(rig);
+  if (t.procedural) paintTurtle(rig, look.outfit);
   for (const w of look.show) attachWeapon(rig, w);
   const root = new THREE.Group();
   root.add(rig);

@@ -5,10 +5,14 @@
 export const MODELS = ["knight", "barbarian", "mage", "rogue", "rogue_hooded"] as const;
 /** Anime 3D models available to every pack (VRoid Studio samples, CC0). */
 export const ANIME_MODELS = ["kaito", "fumiriya", "shino", "akane", "vita", "rubin"] as const;
-export type ModelId = (typeof MODELS)[number] | (typeof ANIME_MODELS)[number];
-const ALL_MODELS: readonly string[] = [...MODELS, ...ANIME_MODELS];
+/** Models built entirely in code (no file), on the same humanoid skeleton as the anime ones. */
+export const PROCEDURAL_MODELS = ["turtle"] as const;
+export type ModelId = (typeof MODELS)[number] | (typeof ANIME_MODELS)[number] | (typeof PROCEDURAL_MODELS)[number];
+const ALL_MODELS: readonly string[] = [...MODELS, ...ANIME_MODELS, ...PROCEDURAL_MODELS];
 
-export const isAnime = (m: ModelId): m is (typeof ANIME_MODELS)[number] => (ANIME_MODELS as readonly string[]).includes(m);
+/** Humanoid models (anime or procedural): they play the retargeted clips. */
+export const isAnime = (m: ModelId): m is (typeof ANIME_MODELS)[number] | (typeof PROCEDURAL_MODELS)[number] =>
+  (ANIME_MODELS as readonly string[]).includes(m) || (PROCEDURAL_MODELS as readonly string[]).includes(m);
 
 export interface Look {
   model: ModelId;

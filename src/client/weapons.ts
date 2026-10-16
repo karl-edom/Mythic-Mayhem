@@ -5,7 +5,7 @@
 import * as THREE from "three";
 import { noOutline, outlineOf, toon } from "./toon.ts";
 
-export const ANIME_WEAPONS = ["1H_Katana", "2H_Odachi", "Kunai", "Kunai_Offhand", "2H_Staff"] as const;
+export const ANIME_WEAPONS = ["1H_Katana", "2H_Odachi", "Kunai", "Kunai_Offhand", "2H_Staff", "Sai", "Sai_Offhand"] as const;
 
 const STEEL = 0xe8eef6;
 
@@ -117,6 +117,37 @@ function staff(): THREE.Group {
   return g;
 }
 
+/**
+ * Sai: a round steel prong with two curved side tines (yoku) and a wrapped grip with a
+ * pommel. Polished steel, physically lit: it catches the light when it turns.
+ */
+function sai(): THREE.Group {
+  const g = new THREE.Group();
+  const steel = new THREE.MeshStandardMaterial({ color: 0xd2d6dd, metalness: 1, roughness: 0.22 });
+  const wrap = new THREE.MeshStandardMaterial({ color: 0x5a3520, roughness: 0.8 });
+  outlineOf(steel, 0.002);
+  outlineOf(wrap, 0.0025);
+  const add = (geo: THREE.BufferGeometry, m: THREE.Material) => {
+    const mesh = new THREE.Mesh(geo, m);
+    mesh.castShadow = true;
+    g.add(mesh);
+    return mesh;
+  };
+  add(new THREE.CylinderGeometry(0.016, 0.016, 0.13, 10), wrap).position.y = 0;
+  add(new THREE.SphereGeometry(0.022, 12, 8), steel).position.y = -0.075;
+  // Central prong: octagonal, tapering to a point.
+  add(new THREE.CylinderGeometry(0.004, 0.011, 0.4, 8), steel).position.y = 0.28;
+  // Side tines: a curve out from the guard, then up.
+  for (const s of [-1, 1]) {
+    const curve = new THREE.QuadraticBezierCurve3(new THREE.Vector3(0, 0.07, 0), new THREE.Vector3(s * 0.075, 0.075, 0), new THREE.Vector3(s * 0.06, 0.19, 0));
+    add(new THREE.TubeGeometry(curve, 16, 0.0065, 6), steel);
+    add(new THREE.SphereGeometry(0.008, 8, 6), steel).position.set(s * 0.06, 0.19, 0);
+  }
+  add(new THREE.CylinderGeometry(0.02, 0.02, 0.016, 10), steel).position.y = 0.07;
+  markTrail(g, 0.1, 0.48);
+  return g;
+}
+
 /** Builds a weapon by name, or null for names that are not anime weapons. */
 export function buildWeapon(name: string): THREE.Group | null {
   switch (name) {
@@ -129,6 +160,9 @@ export function buildWeapon(name: string): THREE.Group | null {
       return kunai();
     case "2H_Staff":
       return staff();
+    case "Sai":
+    case "Sai_Offhand":
+      return sai();
     default:
       return null;
   }
