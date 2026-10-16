@@ -12,7 +12,7 @@
   "light": {
     "hits": [
       {
-        "damage": 43,
+        "damage": 56,
         "startup": 0.08,
         "active": 0.06,
         "recovery": 0.2,
@@ -22,7 +22,7 @@
         "knockback": 4
       },
       {
-        "damage": 43,
+        "damage": 56,
         "startup": 0.08,
         "active": 0.06,
         "recovery": 0.2,
@@ -32,7 +32,7 @@
         "knockback": 4
       },
       {
-        "damage": 85,
+        "damage": 111,
         "startup": 0.13,
         "active": 0.08,
         "recovery": 0.4,
@@ -44,7 +44,7 @@
     ]
   },
   "heavy": {
-    "damage": 191,
+    "damage": 248,
     "startup": 0.4,
     "active": 0.1,
     "recovery": 0.6,
@@ -58,8 +58,8 @@
   "specials": [
     {
       "id": "kunai",
-      "energyCost": 15,
-      "startup": 0.12,
+      "energyCost": 30,
+      "startup": 0.2,
       "recovery": 0.35,
       "delivery": {
         "type": "projectile",
@@ -67,7 +67,7 @@
         "range": 14,
         "size": 0.35
       },
-      "damage": 116,
+      "damage": 151,
       "hitstun": 0.35,
       "knockback": 3,
       "guardBreak": false
@@ -83,7 +83,7 @@
         "speed": 32,
         "size": 0.7
       },
-      "damage": 201,
+      "damage": 261,
       "hitstun": 0.5,
       "knockback": 10,
       "guardBreak": false
@@ -99,7 +99,7 @@
         "radius": 2.6,
         "delay": 0.4
       },
-      "damage": 297,
+      "damage": 386,
       "hitstun": 0.6,
       "knockback": 12,
       "guardBreak": false

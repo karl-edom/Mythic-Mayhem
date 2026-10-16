@@ -4,7 +4,8 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
 import { DATA_DIR } from "../data/load.ts";
-import { validateArena, type ArenaDef, type PropCatalog } from "./arena.ts";
+import { buildArena, validateArena, type ArenaDef, type PropCatalog } from "./arena.ts";
+import type { GauntletGround } from "./gauntlet.ts";
 import type { BrawlCostTable } from "./budget.ts";
 import { parseCharacter, type Character } from "./character.ts";
 import { validateFighter, type FighterValidation } from "./validate.ts";
@@ -70,4 +71,9 @@ export function loadArenas(catalog = loadPropCatalog()): ArenaDef[] {
   }
   if (errors.length > 0) throw new Error(errors.join("\n"));
   return defs;
+}
+
+/** The gauntlet's grounds: open ground, then every arena of the repository (fresh props each duel). */
+export function gauntletGrounds(catalog = loadPropCatalog()): GauntletGround[] {
+  return [() => undefined, ...loadArenas(catalog).map((def) => () => buildArena(def, catalog))];
 }

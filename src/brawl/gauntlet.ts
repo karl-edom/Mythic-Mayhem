@@ -5,6 +5,7 @@
 // each one is held to the same yardstick.
 
 import { rng } from "../sim/math.ts";
+import type { Arena } from "./arena.ts";
 import type { BrawlCostTable } from "./budget.ts";
 import { randomRoster, scaleDamage } from "./generate.ts";
 import type { FighterKit } from "./kit.ts";
@@ -20,13 +21,22 @@ export function referencePanel(costs: BrawlCostTable): FighterKit[] {
   return randomRoster(rng(GAUNTLET_SEED), GAUNTLET_SIZE, costs, costs.budget.target);
 }
 
+/**
+ * Where the gauntlet is fought: each entry builds a fresh battlefield (undefined = open
+ * ground). Duels rotate through them, so a fighter that only shines among obstacles,
+ * or only in the open, is measured on both. Same number of duels whatever the list.
+ */
+export type GauntletGround = () => Arena | undefined;
+export const OPEN_GROUND: GauntletGround[] = [() => undefined];
+
 /** Share of duels won against the panel (each opponent twice, sides swapped; a draw counts half). */
-export function gauntletRate(kit: FighterKit, panel: FighterKit[]): number {
+export function gauntletRate(kit: FighterKit, panel: FighterKit[], grounds: GauntletGround[] = OPEN_GROUND): number {
   let score = 0;
   let games = 0;
   panel.forEach((opp, i) => {
     for (const side of [0, 1] as const) {
-      const r = side === 0 ? runDuel(kit, opp, 7919 * i + 1) : runDuel(opp, kit, 7919 * i + 2);
+      const arena = grounds[(2 * i + side) % grounds.length]!();
+      const r = side === 0 ? runDuel(kit, opp, 7919 * i + 1, undefined, undefined, arena) : runDuel(opp, kit, 7919 * i + 2, undefined, undefined, arena);
       score += r.winner === null ? 0.5 : r.winner === side ? 1 : 0;
       games++;
     }
@@ -38,13 +48,18 @@ export function gauntletRate(kit: FighterKit, panel: FighterKit[]): number {
  * Scales the fighter's damage until its gauntlet win rate is close to 50 %.
  * Identity (timings, reach, specials) is untouched. Returns the factor used.
  */
-export function tuneToGauntlet(kit: FighterKit, panel: FighterKit[], steps = 7): { kit: FighterKit; factor: number; rate: number } {
+export function tuneToGauntlet(
+  kit: FighterKit,
+  panel: FighterKit[],
+  steps = 7,
+  grounds: GauntletGround[] = OPEN_GROUND,
+): { kit: FighterKit; factor: number; rate: number } {
   let [lo, hi] = [0.5, 2];
-  let best = { kit, factor: 1, rate: gauntletRate(kit, panel) };
+  let best = { kit, factor: 1, rate: gauntletRate(kit, panel, grounds) };
   for (let i = 0; i < steps; i++) {
     const mid = Math.sqrt(lo * hi);
     const k = scaleDamage(kit, mid);
-    const rate = gauntletRate(k, panel);
+    const rate = gauntletRate(k, panel, grounds);
     if (Math.abs(rate - 0.5) < Math.abs(best.rate - 0.5)) best = { kit: k, factor: mid, rate };
     if (rate < 0.5) lo = mid;
     else hi = mid;
