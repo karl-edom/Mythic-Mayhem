@@ -12,6 +12,7 @@ import type { Character } from "../brawl/character.ts";
 import type { Strike } from "../brawl/kit.ts";
 import { FIGHTER_HEIGHT, bodyCenter, lockTarget, type BrawlWorld, type Fighter } from "../brawl/world.ts";
 import { Animator } from "./animator.ts";
+import { applyWear, damageStage, propColor, wearLean } from "./damage.ts";
 import { buildEnvironment } from "./environment.ts";
 import { defaultLook, instantiate, weaponStyle, type ModelInstance, type ModelLibrary } from "./models.ts";
 import { glowTexture, magicCircleTexture, noOutline, toon } from "./toon.ts";
@@ -240,16 +241,28 @@ export class ArenaView {
           this.freezeUntil = now + 160;
           break;
         case "propHit": {
-          // A blow that does not break it yet: the prop shudders and sheds chips.
+          // A blow that does not break it yet: the prop shudders and sheds dust; past
+          // 2/3 and 1/3 of its hit points it cracks, loses parts, and leans.
           const p = w.arena.props[e.prop]!;
           this.propShake.set(e.prop, now + 160);
           if (e.amount >= 20) this.vfx.dust(new THREE.Vector3(p.x, Math.min(p.height * 0.5, 1.5), p.z), 3);
+          const chips = applyWear(this.props[p.id]!, p, damageStage(p));
+          if (chips.length) this.vfx.chips(chips);
           break;
         }
         case "propBroken": {
           const p = w.arena.props[e.prop]!;
-          this.props[p.id]!.visible = false;
-          this.vfx.debris(new THREE.Vector3(p.x, Math.max(0.4, p.height * 0.6), p.z), p.kind.color);
+          const obj = this.props[p.id]!;
+          obj.visible = false;
+          // Big props burst into more and bigger pieces, spread over their volume.
+          const vol = p.halfW * p.halfD * p.height * 4;
+          this.vfx.debris(
+            new THREE.Vector3(p.x, Math.max(0.4, p.height * 0.5), p.z),
+            propColor(obj),
+            Math.round(THREE.MathUtils.clamp(6 + vol / 4, 8, 30)),
+            THREE.MathUtils.clamp(Math.cbrt(vol) * 0.12, 0.18, 0.5),
+            Math.min(Math.max(p.halfW, p.halfD), p.height / 2),
+          );
           break;
         }
         case "dodge":
@@ -444,6 +457,8 @@ export class ArenaView {
         return;
       }
       if (!p.alive) return;
+      const lean = wearLean(obj);
+      if (lean) obj.rotation.copy(lean);
       const shakeUntil = this.propShake.get(i);
       if (shakeUntil !== undefined) {
         const k = Math.max(0, (shakeUntil - performance.now()) / 160);
@@ -458,7 +473,7 @@ export class ArenaView {
         return;
       }
       const hides = blocking.has(i);
-      const damage = p.kind.hp !== null ? 0.5 + 0.5 * Math.max(0, p.hp / p.kind.hp) : 1;
+      const damage = p.kind.hp !== null && Number.isFinite(p.hp) ? 0.7 + 0.3 * Math.max(0, p.hp / p.kind.hp) : 1;
       obj.traverse((o) => {
         if (!(o instanceof THREE.Mesh)) return;
         const m = o.material as THREE.MeshToonMaterial;

@@ -162,10 +162,11 @@ export class Vfx {
   }
 
   /** Chunks of a broken prop, cel-shaded and outlined like the prop itself. */
-  debris(pos: THREE.Vector3, color: THREE.ColorRepresentation): void {
-    for (let i = 0; i < 10; i++) {
-      const m = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.22, 0.22), toon(color));
-      m.position.copy(pos);
+  debris(pos: THREE.Vector3, color: THREE.ColorRepresentation, count = 10, size = 0.22, spread = 0): void {
+    for (let i = 0; i < count; i++) {
+      const s = size * (0.6 + Math.random() * 0.8);
+      const m = new THREE.Mesh(new THREE.BoxGeometry(s, s * (0.5 + Math.random() * 0.5), s), toon(color));
+      m.position.copy(pos).add(new THREE.Vector3((Math.random() - 0.5) * spread, (Math.random() - 0.5) * spread, (Math.random() - 0.5) * spread));
       m.castShadow = true;
       const a = Math.random() * Math.PI * 2;
       const v = new THREE.Vector3(Math.cos(a) * (2 + Math.random() * 3), 4 + Math.random() * 4, Math.sin(a) * (2 + Math.random() * 3));
@@ -173,8 +174,8 @@ export class Vfx {
       this.add(m, 1.1, (k, dt) => {
         v.y -= 25 * dt;
         m.position.addScaledVector(v, dt);
-        if (m.position.y < 0.11) {
-          m.position.y = 0.11;
+        if (m.position.y < s / 2) {
+          m.position.y = s / 2;
           v.set(v.x * 0.5, -v.y * 0.25, v.z * 0.5);
         }
         m.rotation.x += spin.x * dt;
@@ -183,6 +184,31 @@ export class Vfx {
       });
     }
     this.dust(pos, 6);
+  }
+
+  /** Parts falling off a damaged prop: each drops from where it was, with a puff of dust. */
+  chips(list: { pos: THREE.Vector3; color: THREE.Color; size: number }[]): void {
+    for (const c of list) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(c.size, c.size * 0.7, c.size), toon(c.color));
+      m.position.copy(c.pos);
+      m.castShadow = true;
+      const a = Math.random() * Math.PI * 2;
+      const v = new THREE.Vector3(Math.cos(a) * 1.5, 1 + Math.random() * 2, Math.sin(a) * 1.5);
+      const spin = new THREE.Vector3(Math.random(), Math.random(), Math.random()).multiplyScalar(6);
+      this.add(m, 1.6, (k, dt) => {
+        v.y -= 25 * dt;
+        m.position.addScaledVector(v, dt);
+        if (m.position.y < c.size * 0.35) {
+          m.position.y = c.size * 0.35;
+          v.set(v.x * 0.4, -v.y * 0.2, v.z * 0.4);
+          spin.multiplyScalar(0.5);
+        }
+        m.rotation.x += spin.x * dt;
+        m.rotation.z += spin.z * dt;
+        m.scale.setScalar(k > 0.85 ? (1 - k) / 0.15 : 1);
+      });
+    }
+    if (list.length) this.dust(list[0]!.pos, 4);
   }
 
   update(dt: number): void {
