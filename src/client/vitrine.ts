@@ -71,6 +71,10 @@ function play(name: string, t?: number): void {
   state,
   play,
   clips: () => [...clips.keys()],
+  info: (name: string) => {
+    const c = clips.get(name);
+    return c ? { duration: c.duration, naturalSpeed: c.userData.naturalSpeed } : null;
+  },
   ready: false,
 };
 

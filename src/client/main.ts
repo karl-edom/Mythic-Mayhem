@@ -241,13 +241,14 @@ function frame(now: number): void {
     acc += dt * GAME_SPEED * g.view.timeScale();
     while (acc >= tick && !g.world.over) {
       acc -= tick;
+      g.view.capture();
       const me = input.command(0, g.view.forward());
       step(g.world, [me, botCommand(g.world, g.world.fighters[1]!, g.bot)]);
     }
     g.hud.update(g.names);
     if (g.world.over) showEnd(g);
   }
-  if (g) g.view.render(dt * (g.paused ? 0 : GAME_SPEED * g.view.timeScale()));
+  if (g) g.view.render(dt * (g.paused ? 0 : GAME_SPEED * g.view.timeScale()), g.paused ? 1 : acc / (1 / g.world.config.tickRate));
   else if (showcase) showcase.showcase(dt);
   else renderer.clear();
   requestAnimationFrame(frame);

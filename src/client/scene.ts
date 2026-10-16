@@ -80,6 +80,9 @@ export class ArenaView {
   /** Real-time moment until which the match plays in slow motion (after a K.-O.). */
   slowUntil = 0;
   private frame = 0;
+  /** Positions before the last simulation step, for in-between frames. */
+  private prevPos = new WeakMap<object, { x: number; y: number; z: number }>();
+  private alpha = 1;
 
   private renderer: THREE.WebGLRenderer;
   private world: BrawlWorld;
@@ -312,7 +315,32 @@ export class ArenaView {
     this.lastEvent = w.events.length;
   }
 
-  render(dt: number): void {
+  /**
+   * Remembers where everything stands before a simulation step, so that frames drawn
+   * between two steps can show the exact in-between position (see `drawn`).
+   */
+  capture(): void {
+    for (const f of this.world.fighters) this.prevPos.set(f, { ...f.pos });
+    for (const p of this.world.projectiles) this.prevPos.set(p, { ...p.pos });
+  }
+
+  /**
+   * Where to draw a moving thing this frame: between its previous and current
+   * simulation positions. Without it, on screens faster than 60 Hz (or when frames and
+   * steps drift apart) bodies advance by uneven jumps and look doubled, see-through.
+   */
+  private drawn(o: { pos: { x: number; y: number; z: number } }): THREE.Vector3 {
+    const c = o.pos;
+    const a = this.prevPos.get(o);
+    const v = new THREE.Vector3(c.x, c.y, c.z);
+    // A teleport (respawn) is not interpolated.
+    if (!a || Math.hypot(c.x - a.x, c.y - a.y, c.z - a.z) > 3) return v;
+    return v.set(a.x + (c.x - a.x) * this.alpha, a.y + (c.y - a.y) * this.alpha, a.z + (c.z - a.z) * this.alpha);
+  }
+
+  /** `alpha`: share of a simulation step elapsed since the last one (0 to 1). */
+  render(dt: number, alpha = 1): void {
+    this.alpha = Math.max(0, Math.min(1, alpha));
     this.frame++;
     this.onEvents();
     const frozen = performance.now() < this.freezeUntil;
@@ -333,17 +361,18 @@ export class ArenaView {
     const shown = f.alive || v.model !== null;
     v.root.visible = shown;
     v.shadow.visible = f.alive;
-    v.root.position.set(f.pos.x, f.pos.y, f.pos.z);
+    const drawnAt = this.drawn(f);
+    v.root.position.copy(drawnAt);
     // Turning is smoothed (the simulation snaps): a fast but visible pivot.
     const yaw = Math.atan2(f.facing.x, f.facing.z);
     let dy = yaw - v.root.rotation.y;
     dy = Math.atan2(Math.sin(dy), Math.cos(dy));
     v.root.rotation.y += v.frame > 0 && dt > 0 ? dy * (1 - Math.exp(-dt * 20)) : dy;
-    v.shadow.position.set(f.pos.x, f.floor + 0.02, f.pos.z);
-    v.shadow.scale.setScalar(Math.max(0.4, 1 - (f.pos.y - f.floor) * 0.15));
+    v.shadow.position.set(drawnAt.x, f.floor + 0.02, drawnAt.z);
+    v.shadow.scale.setScalar(Math.max(0.4, 1 - (drawnAt.y - f.floor) * 0.15));
     // Hitlag freezes the pose of both bodies at the moment of contact.
     const lagged = f.hitlagUntil > w.time;
-    v.animator?.update(w, f, dt, frozen || lagged);
+    v.animator?.update(w, f, dt, frozen || lagged, drawnAt);
     // A hitlag shudder: the struck body trembles in place.
     if (lagged && f.action && (f.action.kind === "hitstun" || f.action.kind === "knockdown"))
       v.root.position.x += Math.sin(performance.now() * 0.25) * 0.05;
@@ -544,7 +573,7 @@ export class ArenaView {
         this.scene.add(g);
         this.projectiles.set(p, g);
       }
-      g.position.set(p.pos.x, p.pos.y, p.pos.z);
+      g.position.copy(this.drawn(p));
       if (this.frame % 2 === 0) this.vfx.speedLines(g.position.clone(), new THREE.Vector3(p.dir.x, p.dir.y, p.dir.z), this.characters[p.owner]!.colors.secondary);
     }
     for (const [p, g] of this.projectiles)
@@ -600,11 +629,11 @@ export class ArenaView {
   private syncCamera(dt: number): void {
     const me = this.world.fighters[this.focus]!;
     const foe = lockTarget(this.world, me);
-    const p = new THREE.Vector3(me.pos.x, me.pos.y, me.pos.z);
+    const p = this.drawn(me);
     let wantPos: THREE.Vector3;
     let wantLook: THREE.Vector3;
     if (foe && me.alive) {
-      const o = new THREE.Vector3(foe.pos.x, foe.pos.y, foe.pos.z);
+      const o = this.drawn(foe);
       const dir = o.clone().sub(p).setY(0);
       if (dir.lengthSq() < 1e-6) dir.set(0, 0, -1);
       dir.normalize();

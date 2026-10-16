@@ -232,9 +232,14 @@ export function clenchFists(root: THREE.Object3D, angle = 1.25): void {
  * (their last frame equals the first, which is left unchanged). Angles are capped
  * below a half turn so that nothing flips over.
  */
-export function amplifyClip(clip: THREE.AnimationClip, k: number, about: "first" | "mean" = "first"): THREE.AnimationClip {
-  if (k === 1) return clip;
-  if (about === "mean") return scaleAboutMean(clip, k);
+export function amplifyClip(
+  clip: THREE.AnimationClip,
+  k: number,
+  about: "first" | "mean" = "first",
+  legs?: number,
+): THREE.AnimationClip {
+  if (k === 1 && legs === undefined) return clip;
+  if (about === "mean") return scaleAboutMean(clip, (track) => (legs !== undefined && LEG_TRACK.test(track) ? legs : k));
   const ref = new THREE.Quaternion();
   const q = new THREE.Quaternion();
   const axis = new THREE.Vector3();
@@ -265,10 +270,11 @@ export function amplifyClip(clip: THREE.AnimationClip, k: number, about: "first"
  * Scales every joint's swing around its average pose: k < 1 tones a cycle down (shorter
  * strides, smaller bounce) without changing the posture it swings around.
  */
-function scaleAboutMean(clip: THREE.AnimationClip, k: number): THREE.AnimationClip {
+function scaleAboutMean(clip: THREE.AnimationClip, kOf: (track: string) => number): THREE.AnimationClip {
   const q = new THREE.Quaternion();
   const axis = new THREE.Vector3();
   const tracks = clip.tracks.map((t) => {
+    const k = kOf(t.name);
     const out = t.clone();
     const v = out.values;
     if (t instanceof THREE.QuaternionKeyframeTrack) {
@@ -304,6 +310,15 @@ function scaleAboutMean(clip: THREE.AnimationClip, k: number): THREE.AnimationCl
   });
   return new THREE.AnimationClip(clip.name, clip.duration, tracks);
 }
+
+/** Leg rotation tracks (thighs, shins, feet), which set the length of a stride. */
+const LEG_TRACK = /(UpperLeg|LowerLeg|Foot|Toes)\.quaternion$/;
+
+/**
+ * Locomotion cycles: the upper body is toned down around its average pose; the legs
+ * swing wider (longer strides), so the cycle covers the ground at a natural cadence.
+ */
+export const LOCOMOTION_LEGS = 1.12;
 
 /** Locomotion cycles: toned down around their average pose on long anime legs. */
 export const LOCOMOTION = /^(Running_A|Running_B|Running_Strafe_Left|Running_Strafe_Right|Walking_Backwards)$/;

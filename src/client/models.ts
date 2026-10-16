@@ -11,7 +11,7 @@ import { ANIME_MODELS, MODELS, isAnime, type Look, type ModelId } from "../brawl
 import { turtlePoses } from "./poses.ts";
 import { TURTLE_HEIGHT, animateTurtle, buildTurtleRig, paintTurtle } from "./turtle.ts";
 import type { Archetype } from "../brawl/kit.ts";
-import { KAYKIT_TO_HUMANOID, LOCOMOTION, Retargeter, amplifyClip, amplitudeFor, clenchFists } from "./retarget.ts";
+import { KAYKIT_TO_HUMANOID, LOCOMOTION, LOCOMOTION_LEGS, Retargeter, amplifyClip, amplitudeFor, clenchFists } from "./retarget.ts";
 import { noOutline, outlineOf, toToon } from "./toon.ts";
 import { buildWeapon } from "./weapons.ts";
 
@@ -147,7 +147,8 @@ function animeClips(lib: ModelLibrary, t: AnimeTemplate): Map<string, THREE.Anim
     t.clips = new Map(
       [...lib.clips].map(([name, clip]) => {
         const loco = LOCOMOTION.test(name);
-        const out = amplifyClip(r.retarget(clip, 30, loco ? 0.3 : 0.6), amplitudeFor(name), loco ? "mean" : "first");
+        let out = amplifyClip(r.retarget(clip, 30, loco ? 0.3 : 0.6), amplitudeFor(name), loco ? "mean" : "first", loco ? LOCOMOTION_LEGS : undefined);
+        if (loco) out = groundClip(t, out);
         if (loco) out.userData.naturalSpeed = naturalSpeed(t, out) * (ANIME_HEIGHT / t.height);
         return [name, out] as const;
       }),
@@ -155,11 +156,45 @@ function animeClips(lib: ModelLibrary, t: AnimeTemplate): Map<string, THREE.Anim
     if (t.poses)
       for (const [name, clip] of t.poses()) {
         // Hand-keyed cycles get their stride speed measured like the retargeted ones.
-        if (LOCOMOTION.test(name)) clip.userData.naturalSpeed = naturalSpeed(t, clip) * (ANIME_HEIGHT / t.height);
-        t.clips.set(name, clip);
+        if (LOCOMOTION.test(name)) {
+          const grounded = groundClip(t, clip);
+          grounded.userData.naturalSpeed = naturalSpeed(t, grounded) * (ANIME_HEIGHT / t.height);
+          t.clips.set(name, grounded);
+        } else t.clips.set(name, clip);
       }
   }
   return t.clips;
+}
+
+/**
+ * Keeps a locomotion cycle on the ground: at each frame the hips go down (or up) by
+ * how far the lower foot is from its rest height, so the supporting foot touches the
+ * floor instead of the whole body floating above it on bent legs.
+ */
+function groundClip(t: AnimeTemplate, clip: THREE.AnimationClip): THREE.AnimationClip {
+  const track = clip.tracks.find((k) => k.name === "hips.position") as THREE.VectorKeyframeTrack | undefined;
+  if (!track) return clip;
+  const rig = SkeletonUtils.clone(t.rig);
+  rig.updateMatrixWorld(true);
+  const feet = ["leftFoot", "rightFoot"].map((n) => rig.getObjectByName(n)).filter((o): o is THREE.Object3D => !!o);
+  const hips = rig.getObjectByName("hips");
+  if (feet.length < 2 || !hips) return clip;
+  const p = new THREE.Vector3();
+  const restY = Math.min(...feet.map((f) => f.getWorldPosition(p).y));
+  // Rig units per hips-parent unit, vertically.
+  const scale = hips.parent!.getWorldScale(new THREE.Vector3()).y;
+  const mixer = new THREE.AnimationMixer(rig);
+  const action = mixer.clipAction(clip);
+  action.play();
+  const out = track.clone();
+  for (let i = 0; i < out.times.length; i++) {
+    mixer.setTime(Math.min(out.times[i]!, clip.duration * 0.999));
+    rig.updateMatrixWorld(true);
+    const low = Math.min(...feet.map((f) => f.getWorldPosition(p).y));
+    out.values[i * 3 + 1]! -= (low - restY) / scale;
+  }
+  mixer.stopAllAction();
+  return new THREE.AnimationClip(clip.name, clip.duration, clip.tracks.map((k) => (k === track ? out : k)));
 }
 
 /**

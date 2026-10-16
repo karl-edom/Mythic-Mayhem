@@ -49,3 +49,17 @@ Rendu seulement :
 - Les animations restent celles de KayKit, reciblées. Le moteur est plus fluide, mais certaines poses (coups aériens, réception) gagneraient à des animations dédiées.
 - Pas encore de sprint ni de demi-tour animé : la course est à vitesse fixe.
 - Les écrans de test en logiciel (sans carte graphique) ne permettent pas de juger le ressenti en mouvement : **c'est à juger manette en main**. Les chiffres sont des réglages dans `BRAWL_CONFIG`.
+
+## Correctif : personnages « transparents » en mouvement (2026-10-16)
+
+> « Quand on se déplace, les personnages semblent devenir un peu transparents… le mouvement est si rapide qu'il devient plus transparent. »
+
+Trois causes, toutes corrigées (rendu seulement, la simulation ne change pas) :
+
+1. **Pas d'interpolation entre deux pas de simulation.** La simulation avance par pas de 1/60 s, et l'image montrait la position du dernier pas. Sur un écran à plus de 60 Hz, ou dès que les images et les pas se décalent, le corps avance par sauts inégaux. L'œil voit alors deux silhouettes superposées.
+   → Chaque image dessine maintenant la position intermédiaire exacte entre le pas précédent et le suivant : combattants, projectiles et caméra.
+2. **L'animation basculait entre course et repos.** L'animateur mesurait la vitesse d'une image à l'autre. Une image sans pas de simulation donnait une vitesse nulle, donc le repos, puis la course repartait du début.
+   → La vitesse est maintenant mesurée sur la position dessinée, et lissée.
+3. **Les jambes moulinaient.** La course reciblée a de petites foulées : elle était jouée jusqu'à 2,2 fois sa vitesse, soit 5,5 pas par seconde.
+   → Les foulées sont plus amples : jambes × 1,12, alors que le buste reste sobre. La cadence est plafonnée à **4 pas par seconde** (un léger glissement des pieds vaut mieux qu'un flou).
+   → Le cycle est **recalé au sol** : à chaque image, le bassin descend pour que le pied d'appui touche le sol. Avant, le corps flottait sur des jambes pliées.

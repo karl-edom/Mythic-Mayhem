@@ -6,6 +6,9 @@ import * as THREE from "three";
 import { dodgeLength, type BrawlWorld, type Fighter } from "../brawl/world.ts";
 import type { WeaponStyle } from "./models.ts";
 
+/** Running cadence ceiling, steps per second (a sprinter makes 4 to 5, a jog 3). */
+const MAX_STEPS = 4;
+
 /** Fraction of an attack clip where the blow connects. */
 const IMPACT = 0.42;
 
@@ -77,7 +80,10 @@ export class Animator {
    */
   private pace(name: string, speed: number, fallback: number, min: number): number {
     const natural = (this.clips.get(name)?.userData.naturalSpeed as number | undefined) ?? fallback;
-    return Math.min(2.2, Math.max(min, speed / Math.max(0.5, natural)));
+    // Never more than MAX_STEPS steps a second (two per cycle): past that the legs blur
+    // into a see-through flicker. A little foot sliding is the lesser evil.
+    const cap = (this.len(name) * MAX_STEPS) / 2;
+    return Math.min(cap, Math.max(min, speed / Math.max(0.5, natural)));
   }
 
   private len(name: string): number {
@@ -205,10 +211,15 @@ export class Animator {
   }
 
   /** `frozen`: hit-stop, the pose holds for a few frames on impact. */
-  update(w: BrawlWorld, f: Fighter, dt: number, frozen: boolean): void {
+  update(w: BrawlWorld, f: Fighter, dt: number, frozen: boolean, drawn: { x: number; y: number; z: number } = f.pos): void {
     if (dt > 0) {
-      this.velocity.set((f.pos.x - this.lastPos.x) / dt, 0, (f.pos.z - this.lastPos.z) / dt);
-      this.lastPos.set(f.pos.x, f.pos.y, f.pos.z);
+      // Measured on the drawn (interpolated) position, and smoothed: a frame without a
+      // simulation step must not read as « stopped » and flip the run back to idle.
+      const vx = (drawn.x - this.lastPos.x) / dt;
+      const vz = (drawn.z - this.lastPos.z) / dt;
+      const k = 1 - Math.exp(-dt * 20);
+      this.velocity.set(this.velocity.x + (vx - this.velocity.x) * k, 0, this.velocity.z + (vz - this.velocity.z) * k);
+      this.lastPos.set(drawn.x, drawn.y, drawn.z);
     }
     const want = this.want(w, f);
     const next = this.action(want.clip);
