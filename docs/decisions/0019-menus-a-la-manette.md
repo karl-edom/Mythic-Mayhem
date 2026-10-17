@@ -39,3 +39,14 @@ Avec une manette simulée dans le navigateur, à chaque étape :
 
 - La grille et les options sont celles de l'écran actuel : pas encore d'écran de réglages séparé (vibration, sensibilité, affectation des boutons).
 - Le clavier ne navigue pas dans les menus (la souris suffit à côté).
+
+## Ajustements après le premier essai (2026-10-17)
+
+> « Je n'avais juste pas sélectionné le menu manette » ; « par défaut le bloc qui affiche les commandes doit être masqué et pas besoin de bouton pour les afficher (on garde le peu de boutons pour le combat). Ça va dans l'aide commande. »
+
+- **La première manette qui appuie sur A devient J1**, à la place du clavier : jouer seul à la manette est le cas courant. Les suivantes rejoignent comme J2, J3… Le clavier peut reprendre une place avec le bouton de contrôleur de la case.
+- **Tant qu'aucune manette n'a rejoint**, un bandeau bien visible s'affiche : « Manette détectée : appuie sur A pour jouer ».
+- **Ligne de diagnostic** sur l'écran de sélection. Elle donne les manettes vues par le jeu (nom, disposition standard ou non), ou la raison pour laquelle le navigateur les refuse (fenêtre intégrée, navigateur sans prise en charge).
+- **Manettes à n'importe quel numéro** : les manettes virtuelles de Steam ont des numéros élevés ; elles prennent les places 1 à 4 dans l'ordre d'arrivée.
+- **Menu au clavier** : flèches, Entrée (A), Retour (B), X (donner à un bot), T (équipe). Une manette transformée en clavier par un pilote marche donc aussi.
+- **Aide des commandes masquée par défaut**, et plus aucune touche ni aucun bouton pour l'afficher en combat : elle est dans le **menu pause** (« Aide (commandes) ») et se referme quand on reprend. Select et H ne servent plus.

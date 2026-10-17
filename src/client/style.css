@@ -115,6 +115,12 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 @keyframes cursor-bob { from { transform: translate(-50%, 0); } to { transform: translate(-50%, -4px); } }
 .card.hovered { transform: translateY(-3px); }
 .pad-focus { outline: 4px solid var(--focus, var(--gold)); outline-offset: 2px; }
+.pad-call {
+  justify-self: center; text-align: center; font-family: var(--display); font-size: 26px; letter-spacing: 0.05em; color: var(--ink);
+  background: var(--gold); padding: 4px 18px; transform: skewX(-10deg); animation: cursor-bob 0.7s ease-in-out infinite alternate;
+}
+.pad-status { font-size: 12px; opacity: 0.75; text-align: center; letter-spacing: 0.04em; }
+.pad-status.warn { opacity: 1; color: #ffd166; font-weight: 700; }
 .ready-tag { display: inline-block; margin-left: 8px; padding: 1px 8px; background: var(--hp, #4ade80); color: var(--ink); font-weight: 700; font-size: 12px; letter-spacing: 0.1em; transform: skewX(-10deg); }
 #menu.pause { display: grid; place-items: center; background: rgba(10, 8, 18, 0.55); }
 .pause-box { display: grid; gap: 10px; min-width: 280px; padding: 22px 26px; background: var(--ink-soft); border-left: 6px solid var(--gold); }

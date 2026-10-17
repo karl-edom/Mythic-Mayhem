@@ -80,10 +80,19 @@ function nextController(i: number): Controller {
  * A gamepad joins (A in the menu): it takes the first bot slot, adding a fighter if
  * all are taken and there is room. Smash-style: no menu to go through.
  */
+const ctrlOf = (pad: number): Controller => (pad < 0 ? "kb" : (`pad${pad}` as Controller));
+
 function joinPad(pad: number): number | null {
-  const ctrl = `pad${pad}` as Controller;
+  const ctrl = ctrlOf(pad);
   const mine = activeSlots().findIndex((sl) => sl.ctrl === ctrl);
   if (mine >= 0) return mine;
+  // The first gamepad takes over player 1 from the keyboard: picking up a pad to play
+  // alone is the common case (the keyboard can take a slot back with its chip).
+  const padJoined = activeSlots().some((sl) => sl.ctrl.startsWith("pad"));
+  if (pad >= 0 && !padJoined && choice.slots[0]!.ctrl === "kb") {
+    choice.slots[0]!.ctrl = ctrl;
+    return 0;
+  }
   let i = activeSlots().findIndex((sl, k) => k > 0 && sl.ctrl === "cpu");
   if (i < 0 && choice.count < 4) i = choice.count++;
   if (i < 0) return null;
@@ -257,6 +266,22 @@ function showMenu(): void {
         : " · Branche une manette et appuie sur A pour jouer avec"),
   );
   hint.setAttribute("role", "status");
+  // What the game sees of the gamepads: says plainly when they cannot be read here.
+  const st = input.padStatus();
+  const diag = h(
+    "div",
+    `pad-status${st.blocked ? " warn" : ""}`,
+    bottom,
+    st.blocked
+      ? `Manettes indisponibles : ${st.blocked}. Ouvre le jeu dans un onglet à part (ou un autre navigateur, Chrome ou Edge).`
+      : st.pads.length
+        ? "Manettes vues par le jeu : " +
+          st.pads.map((p) => `${p.slot + 1}. ${p.id.slice(0, 40)}${p.standard ? "" : " (disposition non standard)"}`).join(" · ")
+        : "Aucune manette vue par le jeu. Branche-la et appuie sur un bouton (A) dans cette page. Clavier : flèches, Entrée, Retour.",
+  );
+  diag.setAttribute("role", "status");
+  // A pad is there but nobody has joined with it: say how, big.
+  if (st.pads.length && !activeSlots().some((sl) => sl.ctrl.startsWith("pad"))) h("div", "pad-call", bottom, "🎮 Manette détectée : appuie sur A pour jouer");
   const grid = h("div", "roster", bottom);
   for (const r of playable) fighterCard(r, grid);
 
@@ -379,7 +404,11 @@ function togglePause(g: Game): void {
   if (g.paused) {
     pauseFocus = 0;
     showPause(g);
-  } else menuRoot.classList.add("hidden");
+  } else {
+    // Back to the fight: the command list goes away with the pause menu.
+    g.hud.showHelp(false);
+    menuRoot.classList.add("hidden");
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -447,7 +476,7 @@ function drawCursors(): void {
   const cards = [...document.querySelectorAll<HTMLElement>(".roster .card")];
   const buttons = optionButtons();
   for (const [pad, c] of cursors) {
-    const slot = activeSlots().findIndex((sl) => sl.ctrl === `pad${pad}`);
+    const slot = activeSlots().findIndex((sl) => sl.ctrl === ctrlOf(pad));
     if (slot < 0) continue;
     const color = colorOf(slot);
     if (c.zone === "grid") {
@@ -466,7 +495,7 @@ function drawCursors(): void {
 }
 
 function padSelect(pad: number, button: MenuButton): boolean {
-  const ctrl = `pad${pad}` as Controller;
+  const ctrl = ctrlOf(pad);
   let mine = activeSlots().findIndex((sl) => sl.ctrl === ctrl);
   let c = cursors.get(pad);
   if (button === "start") {
@@ -551,8 +580,17 @@ function quitMatch(): void {
 }
 
 /** Gamepad buttons outside the fight: select screen, pause menu, end screen. */
+let padSignature = "";
+
 function padMenus(): void {
   const g = game;
+  // A gamepad plugged in or out: the select screen says so at once.
+  const st = input.padStatus();
+  const sig = st.blocked + st.pads.map((p) => p.slot + p.id).join("|");
+  if (sig !== padSignature) {
+    padSignature = sig;
+    if (!g && menuRoot.className.startsWith("select")) showMenu();
+  }
   const fighting = !!g && !g.world.over && !g.paused;
   const presses = input.menuPresses(fighting);
   let redraw = false;
@@ -561,7 +599,6 @@ function padMenus(): void {
     if (g && !g.world.over) {
       if (!g.paused) {
         if (button === "start") togglePause(g);
-        if (button === "help") g.hud.toggleHelp();
         continue;
       }
       // Paused: navigate the pause menu.
@@ -592,7 +629,6 @@ function padMenus(): void {
 input.onKey = (code) => {
   if (!game || game.world.over) return;
   if (code === "Escape") togglePause(game);
-  if (code === "KeyH") game.hud.toggleHelp();
 };
 
 window.addEventListener("resize", () => {

@@ -3,8 +3,11 @@ import { test } from "node:test";
 import { Input, readPad } from "../src/client/input.ts";
 
 /** A fake standard gamepad: pressed button indices and the left stick. */
-const pad = (pressed: number[], x = 0, y = 0) => ({
+const pad = (pressed: number[], x = 0, y = 0, index = 0) => ({
   connected: true,
+  index,
+  id: "fake",
+  mapping: "standard",
   buttons: Array.from({ length: 17 }, (_, i) => ({ pressed: pressed.includes(i), value: pressed.includes(i) ? 1 : 0 })),
   axes: [x, y, 0, 0],
 });
@@ -42,7 +45,7 @@ test("manette : B seul donne la spéciale 1, B avec le stick incliné la 2, LT l
 });
 
 test("manette : chaque manette pilote son propre combattant", () => {
-  const input = withPads([pad([0]), pad([], 1, 0)]);
+  const input = withPads([pad([0]), pad([], 1, 0, 1)]);
   input.poll();
   const a = input.command(0, "pad0", { x: 0, z: -1 });
   const b = input.command(1, "pad1", { x: 0, z: -1 });

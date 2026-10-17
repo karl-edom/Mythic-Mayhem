@@ -14,7 +14,7 @@ export const KEY_HELP: [string, string][] = [
   ["U / I / O", "spéciales 1 / 2 / 3"],
   ["F", "ramasser, puis lancer"],
   ["E (maintenir)", "recharger l'énergie"],
-  ["Échap / H", "pause / aide"],
+  ["Échap", "pause (l'aide des commandes est dans le menu pause)"],
 ];
 
 /** Gamepad layout, Smash-like (Xbox names; PlayStation: A = ✕, B = ○, X = □, Y = △). */
@@ -29,7 +29,7 @@ export const PAD_HELP: [string, string][] = [
   ["RT", "esquive ; sous les coups : dégagement"],
   ["LB", "ramasser, puis lancer"],
   ["Croix bas (maintenir)", "recharger l'énergie"],
-  ["Start / Select", "pause / aide"],
+  ["Start", "pause (l'aide des commandes est dans le menu pause)"],
 ];
 
 type Button = "jump" | "light" | "heavy" | "guard" | "dodge" | "charge" | "grab" | "s0" | "s1" | "s2" | "start" | "help" | "navL" | "navR" | "navU" | "navD";
@@ -53,6 +53,12 @@ const KEYS: Record<string, Button | "up" | "down" | "left" | "right"> = {
 export type Controller = "cpu" | "kb" | `pad${number}`;
 
 export const padIndex = (c: Controller): number | null => (c.startsWith("pad") ? Number(c.slice(3)) : null);
+
+/** Keys that act in the menus: arrows, Enter (A), Backspace (B), X (give), T (team). */
+const KEY_MENU: Record<string, MenuButton> = {
+  ArrowLeft: "left", ArrowRight: "right", ArrowUp: "up", ArrowDown: "down",
+  Enter: "a", NumpadEnter: "a", Backspace: "b", KeyX: "x", KeyT: "y",
+};
 
 export type MenuButton = "a" | "b" | "x" | "y" | "start" | "help" | "left" | "right" | "up" | "down";
 
@@ -99,6 +105,11 @@ interface PadState {
   pressed: Set<Button>;
   stick: { x: number; y: number };
   connected: boolean;
+  /** Browser's index of the device driving this slot (-1 = none yet). */
+  device: number;
+  /** Device name and button layout as reported by the browser, for the on-screen diagnosis. */
+  id: string;
+  standard: boolean;
   /** Direction pushed last frame (stick or d-pad), and when it repeats next, for menus. */
   nav: string;
   navRepeat: number;
@@ -107,7 +118,11 @@ interface PadState {
 export class Input {
   private keysHeld = new Set<string>();
   private keysPressed = new Set<string>();
-  private pads: PadState[] = [0, 1, 2, 3].map(() => ({ held: new Set(), pressed: new Set(), stick: { x: 0, y: 0 }, connected: false, nav: "", navRepeat: 0 }));
+  private pads: PadState[] = [0, 1, 2, 3].map(() => ({ held: new Set(), pressed: new Set(), stick: { x: 0, y: 0 }, connected: false, device: -1, id: "", standard: true, nav: "", navRepeat: 0 }));
+  /** Keyboard presses for the menus (arrows, Enter, Backspace, X, T), consumed by menuPresses. */
+  private keyMenu: MenuButton[] = [];
+  /** Why gamepads cannot be read here, if they cannot (for the diagnosis). */
+  blocked = "";
   onKey: ((code: string) => void) | null = null;
 
   constructor(target: Window) {
@@ -119,6 +134,8 @@ export class Input {
         this.keysPressed.add(k);
         e.preventDefault();
       }
+      const menu = KEY_MENU[e.code];
+      if (menu) this.keyMenu.push(menu);
       this.onKey?.(e.code);
     });
     target.addEventListener("keyup", (e) => {
@@ -128,18 +145,45 @@ export class Input {
     target.addEventListener("blur", () => this.keysHeld.clear());
   }
 
-  /** Called once per animation frame, before simulation ticks: reads every gamepad. */
+  /**
+   * Called once per animation frame, before simulation ticks: reads every gamepad.
+   * Devices are given our slots 0-3 in the order they appear, whatever their browser
+   * index (Steam and other drivers create virtual pads with high indices).
+   */
   poll(): void {
-    const list = navigator.getGamepads?.() ?? [];
-    for (let i = 0; i < this.pads.length; i++) {
-      const pad = list[i];
-      const s = this.pads[i]!;
-      if (!pad || !pad.connected) {
+    let list: readonly (Gamepad | null)[] = [];
+    try {
+      list = navigator.getGamepads?.() ?? [];
+      const policy = (globalThis.document as (Document & { featurePolicy?: { allowsFeature?: (f: string) => boolean } }) | undefined)?.featurePolicy;
+      this.blocked =
+        typeof navigator.getGamepads !== "function"
+          ? "ce navigateur ne gère pas les manettes"
+          : policy?.allowsFeature?.("gamepad") === false
+            ? "le navigateur refuse l'accès aux manettes dans cette fenêtre intégrée"
+            : "";
+    } catch (e) {
+      // A page embedded in another one may be refused the gamepads (permissions policy).
+      this.blocked = "le navigateur refuse l'accès aux manettes dans cette fenêtre";
+      list = [];
+    }
+    const live = list.filter((p): p is Gamepad => !!p && p.connected);
+    // Free the slots of devices that went away, then seat newcomers.
+    for (const s of this.pads) if (s.device >= 0 && !live.some((p) => p.index === s.device)) Object.assign(s, { device: -1, connected: false, held: new Set() });
+    for (const p of live) {
+      if (this.pads.some((s) => s.device === p.index)) continue;
+      const free = this.pads.find((s) => s.device < 0);
+      if (free) free.device = p.index;
+    }
+    for (const s of this.pads) {
+      const pad = live.find((p) => p.index === s.device);
+      if (!pad) {
         s.connected = false;
         s.held.clear();
         continue;
       }
       s.connected = true;
+      s.id = pad.id;
+      s.standard = pad.mapping === "standard";
       const r = readPad(
         pad.buttons.map((b) => b.pressed || b.value > 0.5),
         pad.axes,
@@ -162,6 +206,14 @@ export class Input {
     }
   }
 
+  /** What the game sees of the gamepads, for the on-screen diagnosis. */
+  padStatus(): { blocked: string; pads: { slot: number; id: string; standard: boolean }[] } {
+    return {
+      blocked: this.blocked,
+      pads: this.pads.flatMap((p, i) => (p.connected ? [{ slot: i, id: p.id, standard: p.standard }] : [])),
+    };
+  }
+
   /** Indices of the gamepads plugged in. */
   connectedPads(): number[] {
     return this.pads.flatMap((p, i) => (p.connected ? [i] : []));
@@ -173,6 +225,10 @@ export class Input {
    */
   menuPresses(inMatch: boolean): { pad: number; button: MenuButton }[] {
     const out: { pad: number; button: MenuButton }[] = [];
+    // The keyboard navigates the menus too (pad -1): useful when a gamepad driver turns
+    // the pad into arrow keys and Enter, as Steam's desktop mode does.
+    if (!inMatch) for (const b of this.keyMenu) out.push({ pad: -1, button: b });
+    this.keyMenu = [];
     this.pads.forEach((p, i) => {
       const take = (b: Button, name: MenuButton) => {
         if (p.pressed.has(b)) {
@@ -253,7 +309,8 @@ export class Input {
   rumble(controller: Controller, strength: number, ms: number): void {
     const pi = padIndex(controller);
     if (pi === null) return;
-    const pad = navigator.getGamepads?.()[pi];
+    const device = this.pads[pi]?.device ?? -1;
+    const pad = device >= 0 ? navigator.getGamepads?.()[device] : null;
     const act = (pad as (Gamepad & { vibrationActuator?: { playEffect?: (t: string, p: object) => Promise<unknown> } }) | null)?.vibrationActuator;
     act?.playEffect?.("dual-rumble", { duration: ms, strongMagnitude: strength, weakMagnitude: Math.min(1, strength * 1.4) })?.catch(() => {});
   }

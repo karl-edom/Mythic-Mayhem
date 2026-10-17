@@ -114,7 +114,8 @@ export class Hud {
     this.banner = el("div", "hud-banner", root);
     this.prompt = el("div", "hud-prompt", root);
     this.combo = el("div", "hud-combo", root);
-    this.help = el("div", "hud-help", root);
+    // Hidden by default: the command list lives in the pause menu (« Aide »), not on screen.
+    this.help = el("div", "hud-help hidden", root);
     // Help: the gamepad layout when a pad is plugged in, the keyboard one otherwise.
     const rows = opts.pads ? PAD_HELP : KEY_HELP;
     el("div", "help-title", this.help, opts.pads ? "Manette" : "Clavier");
@@ -132,6 +133,11 @@ export class Hud {
     el("div", "hud-timer", c);
     el("div", "pips right", c);
     return c;
+  }
+
+  /** Shows or hides the command list (from the pause menu). */
+  showHelp(on: boolean): void {
+    this.help.classList.toggle("hidden", !on);
   }
 
   toggleHelp(): void {
