@@ -481,3 +481,81 @@ test("v4 : une attaque avance vers la cible, sans la traverser", () => {
   run(w2, 0.15);
   assert.ok(w2.fighters[1]!.pos.x - w2.fighters[0]!.pos.x >= 0.85 - 1e-6, "pas d'avancée quand la cible est déjà à portée");
 });
+
+// Combats à plusieurs (décision 0017).
+
+test("multi : un match à 4 en chacun pour soi se termine, chaque équipe a son score", async () => {
+  const { createMatch } = await import("../src/brawl/world.ts");
+  const { botCommand, createBot } = await import("../src/brawl/bot.ts");
+  const { rng } = await import("../src/sim/math.ts");
+  const kits = loadAllPacks().filter((p) => p.dir.startsWith("data/") && p.result.ok).map((p) => (p.result.ok ? p.result.kit : (undefined as never)));
+  const w = createMatch(kits.slice(0, 4).map((kit, i) => ({ kit, team: i })), { ...BRAWL_CONFIG, rule: "stock", stocks: 2 });
+  assert.equal(w.score.length, 4);
+  const r = rng(3);
+  const bots = w.fighters.map(() => createBot(r));
+  while (!w.over) step(w, w.fighters.map((f) => botCommand(w, f, bots[f.id]!)));
+  if (w.winner !== null) {
+    // Vies : seul le vainqueur a encore des combattants en lice (ou le temps a tranché).
+    const standing = new Set(w.fighters.filter((f) => f.alive || f.stocks > 0).map((f) => f.team));
+    assert.ok(standing.has(w.winner) || w.time >= w.config.timeLimit);
+  }
+});
+
+test("multi : règle des vies, un combattant sans vie est éliminé et ne revient pas", async () => {
+  const { createMatch } = await import("../src/brawl/world.ts");
+  const w = createMatch([{ kit: fighter(), team: 0 }, { kit: fighter(), team: 1 }, { kit: fighter(), team: 1 }], { ...BRAWL_CONFIG, rule: "stock", stocks: 1 });
+  const [a, b, c] = w.fighters as [BrawlWorld["fighters"][0], BrawlWorld["fighters"][0], BrawlWorld["fighters"][0]];
+  // b tombe : plus de vie, il ne réapparaît pas, mais son équipe tient encore (c).
+  b.hp = 1;
+  b.pos = { x: a.pos.x + 1.2, y: 0, z: a.pos.z };
+  a.facing = { x: 1, y: 0, z: 0 };
+  a.target = b.id;
+  step(w, [{ unit: 0, light: true }]);
+  run(w, 0.3);
+  assert.equal(b.alive, false);
+  assert.equal(b.stocks, 0);
+  assert.equal(w.over, false, "l'équipe de b a encore c");
+  run(w, w.config.respawnDelay + 0.5);
+  assert.equal(b.alive, false, "éliminé : pas de retour");
+  // c tombe aussi : l'équipe 0 gagne.
+  c.hp = 1;
+  c.pos = { x: a.pos.x + 1.2, y: 0, z: a.pos.z };
+  a.target = c.id;
+  step(w, [{ unit: 0, light: true }]);
+  run(w, 0.3);
+  assert.equal(w.over, true);
+  assert.equal(w.winner, 0);
+});
+
+test("multi : règle des K.-O. au temps, le plus de K.-O. gagne ; pas de coups entre équipiers", async () => {
+  const { createMatch } = await import("../src/brawl/world.ts");
+  const w = createMatch([{ kit: fighter(), team: 0 }, { kit: fighter(), team: 0 }, { kit: fighter(), team: 1 }], { ...BRAWL_CONFIG, rule: "kills", koToWin: 0, timeLimit: 5 });
+  const [a, ally, foe] = w.fighters as [BrawlWorld["fighters"][0], BrawlWorld["fighters"][0], BrawlWorld["fighters"][0]];
+  ally.pos = { x: a.pos.x + 1.1, y: 0, z: a.pos.z };
+  foe.pos = { x: a.pos.x + 9, y: 0, z: a.pos.z + 9 };
+  a.facing = { x: 1, y: 0, z: 0 };
+  step(w, [{ unit: 0, light: true }]);
+  run(w, 0.3);
+  assert.equal(ally.hp, ally.kit.stats.hp, "un équipier n'est pas touché");
+  foe.hp = 1;
+  foe.pos = { x: a.pos.x + 1.2, y: 0, z: a.pos.z };
+  run(w, 0.5);
+  step(w, [{ unit: 0, light: true }]);
+  run(w, 0.3);
+  assert.equal(w.score[0], 1);
+  run(w, 6);
+  assert.equal(w.over, true);
+  assert.equal(w.winner, 0, "au temps, l'équipe qui a le plus de K.-O.");
+});
+
+test("multi : les bots se répartissent les cibles au lieu de tous viser le même", async () => {
+  const { createMatch } = await import("../src/brawl/world.ts");
+  const { botCommand, createBot } = await import("../src/brawl/bot.ts");
+  const { rng } = await import("../src/sim/math.ts");
+  const w = createMatch([0, 1, 2, 3].map((team) => ({ kit: fighter(), team })));
+  const r = rng(9);
+  const bots = w.fighters.map(() => createBot(r));
+  run(w, 3, () => w.fighters.map((f) => botCommand(w, f, bots[f.id]!)));
+  const targets = w.fighters.map((f) => f.target).filter((t) => t !== null);
+  assert.ok(new Set(targets).size >= 2, `cibles : ${targets.join(",")}`);
+});

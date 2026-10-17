@@ -48,13 +48,15 @@ export interface BrawlBot {
   lastAction: string | null;
   /** The jump being taken off is a full one (else a short hop). */
   fullHop: boolean;
+  /** When to reconsider which enemy to focus (matches of 3 or more). */
+  retargetAt: number;
 }
 
 export function createBot(random: () => number, params: BrawlBotParams = BOT_LEVELS.normal): BrawlBot {
   return {
     params, random, nextThinkAt: 0, guardUntil: 0, chargeHeavyUntil: 0, strafe: random() < 0.5 ? 1 : -1,
     lastSeen: null, lastSeenAt: -Infinity, wander: null, prevPos: { x: 0, z: 0 }, stuckTicks: 0, detourUntil: 0, fetch: null, route: null,
-    backoffUntil: 0, lastAction: null, fullHop: true,
+    backoffUntil: 0, lastAction: null, fullHop: true, retargetAt: 0,
   };
 }
 
@@ -164,9 +166,34 @@ function threatened(w: BrawlWorld, me: Fighter, foe: Fighter): "heavy" | "specia
   return null;
 }
 
+/**
+ * In a match of three or more, which enemy to go for: the nearest, but not one that
+ * others are already on (so that bots do not all pile on the same fighter), and a
+ * wounded one a little more readily. Decided every second or so, not every tick.
+ */
+function pickTarget(w: BrawlWorld, me: Fighter, bot: BrawlBot): number | undefined {
+  const enemies = w.fighters.filter((o) => o.alive && o.team !== me.team);
+  if (enemies.length < 2) return undefined;
+  const current = me.target !== null ? w.fighters[me.target] : undefined;
+  if (w.time < bot.retargetAt && current?.alive) return undefined;
+  bot.retargetAt = w.time + 0.9 + bot.random() * 0.8;
+  let best: Fighter | undefined;
+  let bestCost = Infinity;
+  for (const o of enemies) {
+    const busy = w.fighters.filter((x) => x !== me && x.alive && x.target === o.id && x.team !== o.team).length;
+    const cost = hdist(me.pos, o.pos) + 5 * busy - 3 * (1 - o.hp / o.kit.stats.hp) + bot.random() * 2;
+    if (cost < bestCost) [best, bestCost] = [o, cost];
+  }
+  return best?.id;
+}
+
 export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
   const cmd: Command = { unit: me.id };
-  const foe = lockTarget(w, me);
+  const chosen = me.alive ? pickTarget(w, me, bot) : undefined;
+  if (chosen !== undefined) cmd.target = chosen;
+  // The command takes effect this tick; plan with the new target from now (the world
+  // itself only changes through the command).
+  const foe = chosen !== undefined ? w.fighters[chosen] : lockTarget(w, me);
   if (!me.alive || !foe) return cmd;
   const seen = canSee(w, me, foe);
   if (seen) {

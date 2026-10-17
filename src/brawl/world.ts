@@ -18,9 +18,18 @@ export interface V3 {
 export interface BrawlConfig {
   tickRate: number;
   gravity: number;
-  /** K.-O. needed to fill a team's victory gauge. */
+  /**
+   * Victory rule (multi-fighter matches, decision 0017):
+   * - "kills": K.-O. scored by each team; the first to koToWin wins (0 = no cap), at the
+   *   time limit the most K.-O. wins, then the remaining HP ratio;
+   * - "stock": every fighter has `stocks` lives; out of lives, out of the match; the last
+   *   team standing wins; at the time limit, the most lives left, then the HP ratio.
+   */
+  rule: "kills" | "stock";
+  stocks: number;
+  /** K.-O. needed to fill a team's victory gauge ("kills" rule; 0 = play to the time limit). */
   koToWin: number;
-  /** Seconds; at the end, most K.-O. wins, then remaining HP ratio. */
+  /** Seconds; at the end, see `rule`. */
   timeLimit: number;
   respawnDelay: number;
   respawnInvulnerable: number;
@@ -141,6 +150,8 @@ export interface BrawlConfig {
 export const BRAWL_CONFIG: BrawlConfig = {
   tickRate: 60,
   gravity: 18,
+  rule: "kills",
+  stocks: 3,
   koToWin: 3,
   timeLimit: 240,
   respawnDelay: 3,
@@ -270,6 +281,10 @@ export interface Fighter {
   lastDodgeAt: number;
   /** When the shield went up (a parry needs it held a few frames first). */
   guardSince: number;
+  /** Lives left ("stock" rule), counting the current one; 0 = eliminated. */
+  stocks: number;
+  /** Enemy this fighter chose to focus (from its commands), or null: the nearest one. */
+  target: number | null;
   /** Own horizontal speed in the air (momentum), m/s; zero on the ground. */
   drift: V3;
   /** Frozen by hitlag until then: no action, no movement. */
@@ -332,6 +347,8 @@ export interface Command {
   light?: boolean;
   dodge?: boolean;
   special?: number;
+  /** Enemy to focus (index in fighters); -1 = back to the nearest one. Bots use it to spread out. */
+  target?: number;
   /** Pick up a nearby throwable prop, or throw the one carried. */
   grab?: boolean;
   /** Held buttons. */
@@ -401,10 +418,12 @@ export function createBrawl(
       guardSince: 0,
       drift: { x: 0, y: 0, z: 0 },
       hitlagUntil: -Infinity,
+      stocks: config.stocks,
+      target: null,
     })),
     projectiles: [],
     zones: [],
-    score: [0, 0],
+    score: Array.from({ length: Math.max(2, ...spawns.map((s) => s.team + 1)) }, () => 0),
     winner: null,
     over: false,
     events: [],
@@ -421,6 +440,25 @@ export function createDuel(a: FighterKit, b: FighterKit, config: BrawlConfig = B
       { kit: a, team: 0, pos: { x: s0!.x, y: 0, z: s0!.z } },
       { kit: b, team: 1, pos: { x: s1!.x, y: 0, z: s1!.z } },
     ],
+    config,
+    ar,
+  );
+}
+
+/**
+ * A match of 2 to 4 fighters on an arena: each takes the next spawn point; past the
+ * arena's own points, extra ones are made by turning the first ones about the centre.
+ */
+export function createMatch(entries: { kit: FighterKit; team: number }[], config: BrawlConfig = BRAWL_CONFIG, arena?: Arena): BrawlWorld {
+  const ar = arena ?? buildArena(OPEN_ARENA, {});
+  const spawns = ar.def.spawns;
+  const at = (i: number) => {
+    if (i < spawns.length) return spawns[i]!;
+    const s = spawns[i % spawns.length]!;
+    return { x: -s.z * (ar.halfW / Math.max(1, ar.halfD)), z: s.x * (ar.halfD / Math.max(1, ar.halfW)) };
+  };
+  return createBrawl(
+    entries.map((e, i) => ({ kit: e.kit, team: e.team, pos: { x: at(i).x, y: 0, z: at(i).z } })),
     config,
     ar,
   );
@@ -479,6 +517,8 @@ function breaker(w: BrawlWorld, f: Fighter): void {
 
 /** The fighter a unit is locked on to: nearest living enemy. */
 export function lockTarget(w: BrawlWorld, f: Fighter): Fighter | undefined {
+  const chosen = f.target !== null ? w.fighters[f.target] : undefined;
+  if (chosen && chosen.alive && chosen.team !== f.team) return chosen;
   let best: Fighter | undefined;
   for (const o of w.fighters)
     if (o.alive && o.team !== f.team && (!best || hdist(f.pos, o.pos) < hdist(f.pos, best.pos))) best = o;
@@ -681,11 +721,23 @@ function damage(w: BrawlWorld, src: Fighter, target: Fighter, amount: number): v
   target.alive = false;
   target.action = null;
   target.respawnAt = w.time + w.config.respawnDelay;
+  if (w.config.rule === "stock") {
+    target.stocks = Math.max(0, target.stocks - 1);
+    if (target.stocks === 0) target.respawnAt = Infinity; // out of the match
+  }
   w.projectiles = w.projectiles.filter((p) => p.owner !== target.id);
   w.zones = w.zones.filter((z) => z.owner !== target.id);
-  w.score[src.team] = (w.score[src.team] ?? 0) + 1;
+  if (src.team !== target.team) w.score[src.team] = (w.score[src.team] ?? 0) + 1;
   w.events.push({ t: w.time, type: "ko", target: target.id, killer: src.id });
-  if ((w.score[src.team] ?? 0) >= w.config.koToWin) end(w, src.team);
+  if (w.config.rule === "stock") {
+    const standing = teamsStanding(w);
+    if (standing.length <= 1) end(w, standing[0] ?? null);
+  } else if (w.config.koToWin > 0 && (w.score[src.team] ?? 0) >= w.config.koToWin) end(w, src.team);
+}
+
+/** Teams that still have a fighter in the match (alive, or with a life left to respawn). */
+export function teamsStanding(w: BrawlWorld): number[] {
+  return [...new Set(w.fighters.filter((f) => f.alive || f.stocks > 0).map((f) => f.team))];
 }
 
 function end(w: BrawlWorld, winner: number | null): void {
@@ -1260,6 +1312,7 @@ export function step(w: BrawlWorld, commands: Command[]): void {
     }
     const cmd = byUnit.get(f.id);
     f.moving = false;
+    if (cmd?.target !== undefined) f.target = cmd.target >= 0 ? cmd.target : null;
     if (cmd?.light) f.bufferedLightUntil = w.time + c.inputBuffer;
     const lightWanted = f.bufferedLightUntil >= w.time;
     const heavyPressed = !!cmd?.heavy && !f.heavyHeld;
@@ -1286,13 +1339,19 @@ export function step(w: BrawlWorld, commands: Command[]): void {
   if (!w.over && w.time >= c.timeLimit) end(w, timeWinner(w));
 }
 
-/** At time-out: most K.-O., then the higher total remaining HP ratio; null on a perfect tie. */
+/**
+ * At time-out: the most K.-O. ("kills") or the most lives left ("stock"), then the higher
+ * total remaining HP ratio; null on a tie at the top.
+ */
 function timeWinner(w: BrawlWorld): number | null {
-  const [a = 0, b = 0] = w.score;
-  if (a !== b) return a > b ? 0 : 1;
-  const ratio = (team: number) =>
+  const teams = [...new Set(w.fighters.map((f) => f.team))];
+  const hp = (team: number) =>
     w.fighters.filter((f) => f.team === team).reduce((s, f) => s + (f.alive ? f.hp / f.kit.stats.hp : 0), 0);
-  const ra = ratio(0);
-  const rb = ratio(1);
-  return ra === rb ? null : ra > rb ? 0 : 1;
+  const lives = (team: number) => w.fighters.filter((f) => f.team === team).reduce((s, f) => s + f.stocks, 0);
+  const key = (team: number): [number, number] => [w.config.rule === "stock" ? lives(team) : (w.score[team] ?? 0), hp(team)];
+  const ranked = teams.map((t) => ({ t, k: key(t) })).sort((a, b) => b.k[0] - a.k[0] || b.k[1] - a.k[1]);
+  const [first, second] = ranked;
+  if (!first) return null;
+  if (second && second.k[0] === first.k[0] && second.k[1] === first.k[1]) return null;
+  return first.t;
 }

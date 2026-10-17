@@ -5,7 +5,7 @@
 import { rng } from "../sim/math.ts";
 import { BOT_LEVELS, botCommand, createBot, type BrawlBot } from "../brawl/bot.ts";
 import { buildArena, type ArenaDef } from "../brawl/arena.ts";
-import { createBrawl, createDuel, step, type BrawlWorld } from "../brawl/world.ts";
+import { BRAWL_CONFIG, createBrawl, createMatch, step, type BrawlConfig, type BrawlWorld } from "../brawl/world.ts";
 import { Hud } from "./hud.ts";
 import { Input } from "./input.ts";
 import { loadModels, type ModelLibrary } from "./models.ts";
@@ -24,25 +24,54 @@ let library: ModelLibrary | null = null;
 
 type Level = keyof typeof BOT_LEVELS;
 const LEVEL_NAMES: Record<Level, string> = { facile: "Facile", normal: "Normal", difficile: "Difficile" };
+
+/** Colours of the slots (each for oneself) and of the two teams, as in Smash. */
+export const SLOT_COLORS = ["#ff4d4d", "#3d8bff", "#ffc93c", "#38c96b"];
+export const TEAM_COLORS = ["#ff4d4d", "#3d8bff"];
+const TEAM_NAMES = ["Rouge", "Bleue"];
+
+type Mode = "ffa" | "teams";
+type Rule = "stock" | "kills";
+
+interface Slot {
+  entry: RosterEntry | undefined;
+  /** Team when playing in teams (0 or 1). */
+  team: number;
+}
+
 const choice = {
-  p1: playable[0],
-  p2: playable[1] ?? playable[0],
+  /** Slot 0 is the player, the others are bots. Up to four. */
+  slots: [
+    { entry: playable[0], team: 0 },
+    { entry: playable[1] ?? playable[0], team: 1 },
+    { entry: playable[2] ?? playable[0], team: 1 },
+    { entry: playable[3] ?? playable[0], team: 0 },
+  ] as Slot[],
+  count: 2,
+  mode: "ffa" as Mode,
+  rule: "stock" as Rule,
   level: "normal" as Level,
   arena: arenas[0] as ArenaDef | undefined,
   /** Which slot the next card click fills. */
-  slot: "p1" as "p1" | "p2",
+  active: 0,
 };
+
+const activeSlots = () => choice.slots.slice(0, choice.count);
+/** Team of a slot in the match: its own in « each for oneself », the chosen one in teams. */
+const teamOf = (i: number) => (choice.mode === "ffa" ? i : choice.slots[i]!.team);
+const colorOf = (i: number) => (choice.mode === "ffa" ? SLOT_COLORS[i]! : TEAM_COLORS[choice.slots[i]!.team]!);
+const slotLabel = (i: number) => (i === 0 ? "JOUEUR 1" : `CPU ${i + 1}`);
 
 interface Game {
   world: BrawlWorld;
   view: ArenaView;
   hud: Hud;
-  bot: BrawlBot;
+  bots: (BrawlBot | null)[];
   paused: boolean;
   names: string[];
 }
 let game: Game | null = null;
-/** Menu backdrop: the two chosen fighters idling in the chosen arena. */
+/** Menu backdrop: the chosen fighters idling in the chosen arena. */
 let showcase: ArenaView | null = null;
 
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent: HTMLElement, text?: string): HTMLElementTagNameMap[K] {
@@ -56,61 +85,103 @@ function h<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent: H
 function buildShowcase(): void {
   showcase?.dispose();
   showcase = null;
-  if (!choice.p1?.kit || !choice.p2?.kit) return;
+  const slots = activeSlots();
+  if (slots.some((sl) => !sl.entry?.kit)) return;
   const arena = choice.arena ? buildArena(choice.arena, propCatalog) : undefined;
   const s = arena?.def.spawns[0] ?? { x: 0, z: 7 };
   // Side by side on the first spawn point, facing the middle of the arena (the camera).
   const len = Math.hypot(s.x, s.z) || 1;
   const d = { x: -s.x / len, z: -s.z / len };
   const side = { x: -d.z, z: d.x };
+  const n = slots.length;
   const world = createBrawl(
-    [
-      // Player 1 on the screen's left (the camera faces the fighters, so that is +side).
-      { kit: choice.p1.kit, team: 0, pos: { x: s.x + side.x * 1.3, y: 0, z: s.z + side.z * 1.3 } },
-      { kit: choice.p2.kit, team: 1, pos: { x: s.x - side.x * 1.3, y: 0, z: s.z - side.z * 1.3 } },
-    ],
+    // Player 1 on the screen's left (the camera faces the fighters, so that is +side).
+    slots.map((sl, i) => {
+      const o = (n - 1) / 2 - i;
+      return { kit: sl.entry!.kit!, team: teamOf(i), pos: { x: s.x + side.x * 1.3 * o * (n > 2 ? 1.25 : 2), y: 0, z: s.z + side.z * 1.3 * o * (n > 2 ? 1.25 : 2) } };
+    }),
     undefined,
     arena,
   );
   for (const f of world.fighters) f.facing = { x: d.x, y: 0, z: d.z };
-  showcase = new ArenaView(renderer, world, [choice.p1.character, choice.p2.character], 0, library);
-  showcase.showcaseAt({ x: s.x, z: s.z }, d);
+  showcase = new ArenaView(renderer, world, slots.map((sl) => sl.entry!.character), 0, library, slots.map((_, i) => colorOf(i)));
+  showcase.showcaseAt({ x: s.x, z: s.z }, d, n);
   if (import.meta.env.DEV) (window as unknown as { __showcase: ArenaView }).__showcase = showcase;
 }
 
 function fighterCard(r: RosterEntry, parent: HTMLElement): void {
-  const tags = [choice.p1 === r ? "p1" : "", choice.p2 === r ? "p2" : ""].filter(Boolean);
-  const card = h("button", `card ${tags.join(" ")}`, parent);
+  const tags = activeSlots()
+    .map((sl, i) => (sl.entry === r ? i : -1))
+    .filter((i) => i >= 0);
+  const card = h("button", `card${tags.length ? " picked" : ""}`, parent);
   card.style.setProperty("--primary", r.character.colors.primary);
   card.style.setProperty("--secondary", r.character.colors.secondary);
   const emblem = h("div", "emblem", card, r.character.name.slice(0, 1).toUpperCase());
   emblem.setAttribute("aria-hidden", "true");
   h("div", "card-name", card, r.character.name);
   h("div", "card-universe", card, r.character.universe + (r.local ? " · pack local" : ""));
-  for (const t of tags) h("span", `slot-tag ${t}`, card, t === "p1" ? "J1" : "CPU");
+  const tagBox = h("div", "slot-tags", card);
+  for (const i of tags) {
+    const t = h("span", "slot-tag", tagBox, i === 0 ? "J1" : `CPU${i + 1}`);
+    t.style.background = colorOf(i);
+  }
   card.addEventListener("click", () => {
-    choice[choice.slot] = r;
-    choice.slot = choice.slot === "p1" ? "p2" : "p1";
+    choice.slots[choice.active]!.entry = r;
+    choice.active = (choice.active + 1) % choice.count;
     buildShowcase();
     showMenu();
   });
 }
 
-function plate(r: RosterEntry | undefined, side: "left" | "right", label: string, active: boolean): HTMLElement {
-  const p = document.createElement("button");
-  p.className = `plate ${side}${active ? " active" : ""}`;
+function plate(i: number, many: boolean): HTMLElement {
+  const sl = choice.slots[i]!;
+  const r = sl.entry;
+  const p = document.createElement("div");
+  const side = many ? "compact" : i === 0 ? "left" : "right";
+  p.className = `plate ${side}${choice.active === i ? " active" : ""}`;
+  p.style.setProperty("--slot", colorOf(i));
   if (!r) return p;
   p.style.setProperty("--primary", r.character.colors.primary);
   p.style.setProperty("--secondary", r.character.colors.secondary);
-  h("div", "plate-label", p, label);
+  h("div", "plate-label", p, slotLabel(i));
   h("div", "plate-name", p, r.character.name);
-  h("div", "plate-desc", p, r.character.description);
-  if (r.kit) h("div", "plate-kit", p, `${r.kit.archetype} · ${r.kit.light.hits.length} coups · ${r.kit.specials.map((s) => s.id).join(" · ")}`);
+  if (!many) h("div", "plate-desc", p, r.character.description);
+  if (r.kit && !many) h("div", "plate-kit", p, `${r.kit.archetype} · ${r.kit.light.hits.length} coups · ${r.kit.specials.map((x) => x.id).join(" · ")}`);
+  if (choice.mode === "teams") {
+    const t = h("button", "team-chip", p, `Équipe ${TEAM_NAMES[sl.team]}`);
+    t.style.background = TEAM_COLORS[sl.team]!;
+    t.addEventListener("click", (e) => {
+      e.stopPropagation();
+      sl.team = 1 - sl.team;
+      buildShowcase();
+      showMenu();
+    });
+  }
   p.addEventListener("click", () => {
-    choice.slot = side === "left" ? "p1" : "p2";
+    choice.active = i;
     showMenu();
   });
   return p;
+}
+
+function chips<T extends string | number>(parent: HTMLElement, label: string, values: [T, string][], current: T, set: (v: T) => void, rebuild = false): void {
+  const g = h("div", "option-group", parent);
+  h("span", "option-label", g, label);
+  for (const [v, name] of values) {
+    const b = h("button", `chip${current === v ? " selected" : ""}`, g, name);
+    b.addEventListener("click", () => {
+      set(v);
+      if (rebuild) buildShowcase();
+      showMenu();
+    });
+  }
+}
+
+/** In teams, both sides must have someone. */
+function teamsValid(): boolean {
+  if (choice.mode === "ffa") return true;
+  const teams = new Set(activeSlots().map((sl) => sl.team));
+  return teams.size === 2;
 }
 
 function showMenu(): void {
@@ -120,41 +191,35 @@ function showMenu(): void {
   menuRoot.className = "select";
   const top = h("header", "select-top", menuRoot);
   h("div", "logo", top, "MYTHIC MAYHEM");
-  h("div", "logo-sub", top, "Choisis ton combattant");
+  h("div", "logo-sub", top, "Choisis tes combattants");
   if (playable.length === 0) {
     h("p", "error", menuRoot, "Aucun combattant valide trouvé.");
     return;
   }
-  const stage = h("div", "select-stage", menuRoot);
-  stage.append(plate(choice.p1, "left", "JOUEUR 1", choice.slot === "p1"), plate(choice.p2, "right", "ADVERSAIRE · CPU", choice.slot === "p2"));
+  const many = choice.count > 2;
+  const stage = h("div", `select-stage${many ? " many" : ""}`, menuRoot);
+  for (let i = 0; i < choice.count; i++) stage.append(plate(i, many));
 
   const bottom = h("div", "select-bottom", menuRoot);
-  const hint = h("div", "select-hint", bottom, choice.slot === "p1" ? "Clique un personnage pour le Joueur 1" : "Clique un personnage pour l'adversaire");
+  const hint = h("div", "select-hint", bottom, `Clique un personnage pour ${choice.active === 0 ? "le Joueur 1" : `le CPU ${choice.active + 1}`}`);
   hint.setAttribute("role", "status");
   const grid = h("div", "roster", bottom);
   for (const r of playable) fighterCard(r, grid);
 
   const options = h("div", "options", bottom);
-  const arenaGroup = h("div", "option-group", options);
-  h("span", "option-label", arenaGroup, "Arène");
-  for (const a of arenas) {
-    const b = h("button", `chip${choice.arena === a ? " selected" : ""}`, arenaGroup, a.name);
-    b.addEventListener("click", () => {
-      choice.arena = a;
-      buildShowcase();
-      showMenu();
-    });
-  }
-  const levelGroup = h("div", "option-group", options);
-  h("span", "option-label", levelGroup, "Bot");
-  for (const l of Object.keys(BOT_LEVELS) as Level[]) {
-    const b = h("button", `chip${choice.level === l ? " selected" : ""}`, levelGroup, LEVEL_NAMES[l]);
-    b.addEventListener("click", () => {
-      choice.level = l;
-      showMenu();
-    });
-  }
+  chips(options, "Combattants", [[2, "2"], [3, "3"], [4, "4"]], choice.count, (v) => {
+    choice.count = v;
+    choice.active = Math.min(choice.active, v - 1);
+  }, true);
+  chips(options, "Mode", [["ffa", "Chacun pour soi"], ["teams", "Équipes"]] as [Mode, string][], choice.mode, (v) => (choice.mode = v), true);
+  chips(options, "Victoire", [["stock", "3 vies"], ["kills", "K.-O. au temps"]] as [Rule, string][], choice.rule, (v) => (choice.rule = v));
+  chips(options, "Arène", arenas.map((a) => [a.id, a.name] as [string, string]), choice.arena?.id ?? "", (v) => (choice.arena = arenas.find((a) => a.id === v)), true);
+  chips(options, "Bots", (Object.keys(BOT_LEVELS) as Level[]).map((l) => [l, LEVEL_NAMES[l]] as [Level, string]), choice.level, (v) => (choice.level = v));
   const start = h("button", "start", options, "COMBATTRE");
+  if (!teamsValid()) {
+    start.disabled = true;
+    start.title = "Il faut au moins un combattant dans chaque équipe";
+  }
   start.addEventListener("click", startGame);
 
   const invalid = roster.filter((r) => !r.kit);
@@ -170,17 +235,32 @@ function showMenu(): void {
 }
 
 function startGame(): void {
-  if (!choice.p1?.kit || !choice.p2?.kit) return;
+  const slots = activeSlots();
+  if (slots.some((sl) => !sl.entry?.kit) || !teamsValid()) return;
   menuRoot.classList.add("hidden");
   showcase?.dispose();
   showcase = null;
   game?.view.dispose();
-  const world = createDuel(choice.p1.kit, choice.p2.kit, undefined, choice.arena && buildArena(choice.arena, propCatalog));
-  const characters = [choice.p1.character, choice.p2.character];
-  const view = new ArenaView(renderer, world, characters, 0, library);
-  const hud = new Hud(hudRoot, world, characters, 0);
-  const bot = createBot(rng((Math.random() * 2 ** 32) >>> 0), BOT_LEVELS[choice.level]);
-  game = { world, view, hud, bot, paused: false, names: characters.map((c) => c.name) };
+  const config: BrawlConfig = {
+    ...BRAWL_CONFIG,
+    rule: choice.rule,
+    stocks: 3,
+    // « K.-O. au temps »: no cap, the clock decides. In a duel, 3 K.-O. still end it early.
+    koToWin: choice.rule === "kills" && choice.count > 2 ? 0 : BRAWL_CONFIG.koToWin,
+    timeLimit: choice.rule === "kills" && choice.count > 2 ? 180 : BRAWL_CONFIG.timeLimit,
+  };
+  const world = createMatch(
+    slots.map((sl, i) => ({ kit: sl.entry!.kit!, team: teamOf(i) })),
+    config,
+    choice.arena && buildArena(choice.arena, propCatalog),
+  );
+  const characters = slots.map((sl) => sl.entry!.character);
+  const colors = slots.map((_, i) => colorOf(i));
+  const view = new ArenaView(renderer, world, characters, 0, library, colors);
+  const hud = new Hud(hudRoot, world, characters, 0, colors);
+  const seed = rng((Math.random() * 2 ** 32) >>> 0);
+  const bots = slots.map((_, i) => (i === 0 ? null : createBot(seed, BOT_LEVELS[choice.level])));
+  game = { world, view, hud, bots, paused: false, names: characters.map((c) => c.name) };
   // Development aid (absent from builds): lets automated checks reach the match state.
   if (import.meta.env.DEV) (window as unknown as { __game: Game }).__game = game;
   input.clear();
@@ -189,13 +269,24 @@ function startGame(): void {
 
 function showEnd(g: Game): void {
   const w = g.world;
-  const text = w.winner === null ? "ÉGALITÉ" : w.winner === 0 ? "VICTOIRE" : "DÉFAITE";
-  g.hud.flash(text, 9999);
+  const mine = w.fighters[0]!.team;
+  const text = w.winner === null ? "ÉGALITÉ" : w.winner === mine ? "VICTOIRE" : "DÉFAITE";
+  // Who won, named: a team colour, or the fighter.
+  const winners = w.fighters.filter((f) => f.team === w.winner).map((f) => g.names[f.id]);
+  const sub = w.winner === null ? "" : choice.mode === "teams" && choice.count > 2 ? `Équipe ${TEAM_NAMES[choice.slots[w.fighters.find((f) => f.team === w.winner)!.id]!.team]} : ${winners.join(", ")}` : `${winners.join(", ")} l'emporte`;
+  g.hud.flash(text, 9999, sub);
   menuRoot.replaceChildren();
   menuRoot.className = "end";
   menuRoot.classList.remove("hidden");
   const box = h("div", "end-box", menuRoot);
-  h("div", "end-score", box, `K.-O. ${w.score[0]} – ${w.score[1]} · ${Math.round(w.time)} s`);
+  const teams = [...new Set(w.fighters.map((f) => f.team))];
+  const line = teams
+    .map((t) => {
+      const who = w.fighters.filter((f) => f.team === t).map((f) => g.names[f.id]).join(" + ");
+      return `${who} : ${w.score[t] ?? 0} K.-O.`;
+    })
+    .join(" · ");
+  h("div", "end-score", box, `${line} · ${Math.round(w.time)} s`);
   const again = h("button", "start", box, "REVANCHE");
   again.addEventListener("click", startGame);
   const back = h("button", "chip", box, "Changer de combattants");
@@ -243,7 +334,8 @@ function frame(now: number): void {
       acc -= tick;
       g.view.capture();
       const me = input.command(0, g.view.forward());
-      step(g.world, [me, botCommand(g.world, g.world.fighters[1]!, g.bot)]);
+      const w = g.world;
+      step(w, [me, ...g.bots.flatMap((b, i) => (b ? [botCommand(w, w.fighters[i]!, b)] : []))]);
     }
     g.hud.update(g.names);
     if (g.world.over) showEnd(g);

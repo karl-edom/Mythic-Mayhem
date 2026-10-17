@@ -27,6 +27,9 @@ interface FighterView {
   /** Body materials (model or fallback capsule), for the hit flash. */
   materials: (THREE.MeshToonMaterial | THREE.MeshStandardMaterial)[];
   shadow: THREE.Mesh;
+  /** Player colour: a ring on the ground and a tag over the head (who is who, at 4). */
+  ring: THREE.Mesh;
+  tag: THREE.Sprite;
   guard: THREE.Mesh;
   aura: THREE.Mesh;
   stars: THREE.Group;
@@ -43,6 +46,31 @@ interface FighterView {
   /** Frames rendered for this fighter. */
   frame: number;
   wasAirborne: boolean;
+}
+
+/** Small coloured label (« J1 », « CPU3 ») drawn on a canvas, for the tag over a fighter's head. */
+function tagTexture(text: string, color: string): THREE.CanvasTexture {
+  const c = document.createElement("canvas");
+  c.width = 128;
+  c.height = 64;
+  const g = c.getContext("2d")!;
+  g.fillStyle = color;
+  g.beginPath();
+  g.roundRect(8, 6, 112, 40, 10);
+  g.fill();
+  g.beginPath();
+  g.moveTo(52, 46);
+  g.lineTo(64, 60);
+  g.lineTo(76, 46);
+  g.fill();
+  g.fillStyle = "#16121f";
+  g.font = "bold 30px sans-serif";
+  g.textAlign = "center";
+  g.textBaseline = "middle";
+  g.fillText(text, 64, 27);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
 }
 
 export function createRenderer(canvas: HTMLCanvasElement): THREE.WebGLRenderer {
@@ -80,6 +108,10 @@ export class ArenaView {
   /** Real-time moment until which the match plays in slow motion (after a K.-O.). */
   slowUntil = 0;
   private frame = 0;
+  private showcaseDistance = 4.4;
+  /** Shared camera: a scratch camera to test framings, and the last distance found. */
+  private fitCam = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
+  private fitDist = 16;
   /** Positions before the last simulation step, for in-between frames. */
   private prevPos = new WeakMap<object, { x: number; y: number; z: number }>();
   private alpha = 1;
@@ -90,7 +122,21 @@ export class ArenaView {
   private focus: number;
   private library: ModelLibrary | null;
 
-  constructor(renderer: THREE.WebGLRenderer, world: BrawlWorld, characters: Character[], focus: number, library: ModelLibrary | null) {
+  /** Player colours, one per fighter (slot or team colour). */
+  private colors: string[];
+  /** Three or more fighters: one camera framing everyone, as in Smash. */
+  private shared: boolean;
+
+  constructor(
+    renderer: THREE.WebGLRenderer,
+    world: BrawlWorld,
+    characters: Character[],
+    focus: number,
+    library: ModelLibrary | null,
+    colors: string[] = ["#ff4d4d", "#3d8bff", "#ffc93c", "#38c96b"],
+  ) {
+    this.colors = colors;
+    this.shared = world.fighters.length > 2;
     this.renderer = renderer;
     this.world = world;
     this.characters = characters;
@@ -133,6 +179,23 @@ export class ArenaView {
     );
     shadow.rotation.x = -Math.PI / 2;
     this.scene.add(shadow);
+
+    // Player colour: a ring round the feet and a tag over the head.
+    const color = this.colors[f.id] ?? "#ffffff";
+    const ring = new THREE.Mesh(
+      new THREE.RingGeometry(r * 1.35, r * 1.75, 40),
+      noOutline(new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, depthWrite: false })),
+    );
+    ring.rotation.x = -Math.PI / 2;
+    ring.renderOrder = 2;
+    this.scene.add(ring);
+    // Constant size on screen, however far the shared camera pulls back.
+    const tag = new THREE.Sprite(
+      noOutline(new THREE.SpriteMaterial({ map: tagTexture(f.id === this.focus ? "J1" : `CPU${f.id + 1}`, color), depthTest: false, transparent: true, sizeAttenuation: false })),
+    );
+    tag.scale.set(0.06, 0.03, 1);
+    tag.renderOrder = 20;
+    this.scene.add(tag);
 
     const guard = new THREE.Mesh(
       new THREE.SphereGeometry(FIGHTER_HEIGHT * 0.62, 24, 16),
@@ -186,7 +249,7 @@ export class ArenaView {
 
     this.scene.add(root);
     return {
-      root, model, animator, materials, shadow, guard, aura, stars, chargeOrb, lowHp, trail,
+      root, model, animator, materials, shadow, ring, tag, guard, aura, stars, chargeOrb, lowHp, trail,
       flashUntil: 0, slashKey: "", wasAirborne: false, windupKey: "", frame: 0,
     };
   }
@@ -361,6 +424,8 @@ export class ArenaView {
     const shown = f.alive || v.model !== null;
     v.root.visible = shown;
     v.shadow.visible = f.alive;
+    v.ring.visible = f.alive;
+    v.tag.visible = f.alive && (this.shared || f.id !== this.focus);
     const drawnAt = this.drawn(f);
     v.root.position.copy(drawnAt);
     // Turning is smoothed (the simulation snaps): a fast but visible pivot.
@@ -369,6 +434,8 @@ export class ArenaView {
     dy = Math.atan2(Math.sin(dy), Math.cos(dy));
     v.root.rotation.y += v.frame > 0 && dt > 0 ? dy * (1 - Math.exp(-dt * 20)) : dy;
     v.shadow.position.set(drawnAt.x, f.floor + 0.02, drawnAt.z);
+    v.ring.position.set(drawnAt.x, f.floor + 0.03, drawnAt.z);
+    v.tag.position.set(drawnAt.x, drawnAt.y + FIGHTER_HEIGHT + 0.45, drawnAt.z);
     v.shadow.scale.setScalar(Math.max(0.4, 1 - (drawnAt.y - f.floor) * 0.15));
     // Hitlag freezes the pose of both bodies at the moment of contact.
     const lagged = f.hitlagUntil > w.time;
@@ -486,9 +553,11 @@ export class ArenaView {
 
   /** Props between the camera and the player turn see-through, so the player is never lost behind a wall. */
   private syncProps(): void {
-    const me = this.world.fighters[this.focus]!;
     const cam = this.camera.position;
     const blocking = new Set<number>();
+    // Shared camera: nobody may be hidden; over the shoulder: only the player.
+    const watched = this.shared ? this.world.fighters.filter((f) => f.alive) : [this.world.fighters[this.focus]!];
+    for (const me of watched)
     for (const h of [0.6, FIGHTER_HEIGHT * 0.6, FIGHTER_HEIGHT]) {
       const target = new THREE.Vector3(me.pos.x, me.pos.y + h, me.pos.z);
       const dir = target.clone().sub(cam);
@@ -627,6 +696,10 @@ export class ArenaView {
 
   /** Lock-on camera: behind the player, looking towards the opponent, with a little shake on impacts. */
   private syncCamera(dt: number): void {
+    if (this.shared) {
+      this.sharedCamera(dt);
+      return;
+    }
     const me = this.world.fighters[this.focus]!;
     const foe = lockTarget(this.world, me);
     const p = this.drawn(me);
@@ -692,15 +765,67 @@ export class ArenaView {
 
   private showcaseFrame: { anchor: THREE.Vector3; dir: THREE.Vector3 } | null = null;
 
+  /**
+   * Shared camera (three or more fighters): seen from one side of the arena and from
+   * above, it frames every fighter in the match, closing in when they bunch up and
+   * pulling back when they scatter. Movement stays relative to it, as in Smash.
+   */
+  private sharedCamera(dt: number): void {
+    const live = this.world.fighters.filter((f) => f.alive);
+    const bodies = (live.length ? live : this.world.fighters).map((f) => this.drawn(f));
+    // Feet and the top of the tag over the head must both be on screen.
+    const pts = bodies.flatMap((p) => [p, p.clone().add(new THREE.Vector3(0, FIGHTER_HEIGHT + 0.7, 0))]);
+    // Free part of the screen (normalised coordinates): above the panels, below the clock.
+    const box = { x0: -0.82, x1: 0.82, y0: -0.42, y1: 0.78 };
+    const cam = this.fitCam;
+    cam.fov = this.camera.fov;
+    cam.aspect = this.camera.aspect;
+    cam.updateProjectionMatrix();
+    const back = new THREE.Vector3(0, 0.68, 0.74).normalize(); // from the target toward the camera
+    const target = new THREE.Box3().setFromPoints(bodies).getCenter(new THREE.Vector3());
+    let dist = this.fitDist;
+    const ndc = new THREE.Vector3();
+    const right = new THREE.Vector3();
+    const upGround = new THREE.Vector3();
+    for (let it = 0; it < 4; it++) {
+      cam.position.copy(target).addScaledVector(back, dist);
+      cam.lookAt(target);
+      cam.updateMatrixWorld();
+      let [x0, x1, y0, y1] = [Infinity, -Infinity, Infinity, -Infinity];
+      for (const p of pts) {
+        ndc.copy(p).project(cam);
+        [x0, x1, y0, y1] = [Math.min(x0, ndc.x), Math.max(x1, ndc.x), Math.min(y0, ndc.y), Math.max(y1, ndc.y)];
+      }
+      // Re-centre the points in the free box, then scale the distance to fit them in it.
+      const half = Math.tan(THREE.MathUtils.degToRad(cam.fov / 2)) * dist;
+      right.set(1, 0, 0);
+      upGround.set(0, 0, -1);
+      const dx = ((x0 + x1) / 2 - (box.x0 + box.x1) / 2) * half * cam.aspect;
+      const dy = ((y0 + y1) / 2 - (box.y0 + box.y1) / 2) * half * 1.4;
+      target.addScaledVector(right, dx).addScaledVector(upGround, dy);
+      const need = Math.max((x1 - x0) / (box.x1 - box.x0), (y1 - y0) / (box.y1 - box.y0));
+      dist = THREE.MathUtils.clamp(dist * THREE.MathUtils.clamp(need, 0.7, 1.4), 8, 28);
+    }
+    this.fitDist = dist;
+    const wantPos = target.clone().addScaledVector(back, dist);
+    const k = 1 - Math.exp(-dt * 3.5);
+    this.camPos.lerp(wantPos, k);
+    this.camLook.lerp(target, k);
+    const shake = this.vfx.shake;
+    this.camera.position.copy(this.camPos).add(new THREE.Vector3((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake, 0));
+    this.camera.lookAt(this.camLook);
+  }
+
   /** Menu backdrop framing: fighters at `anchor`, facing `dir`, camera in front of them. */
-  showcaseAt(anchor: { x: number; z: number }, dir: { x: number; z: number }): void {
+  showcaseAt(anchor: { x: number; z: number }, dir: { x: number; z: number }, count = 2): void {
     this.showcaseFrame = { anchor: new THREE.Vector3(anchor.x, 0, anchor.z), dir: new THREE.Vector3(dir.x, 0, dir.z).normalize() };
+    this.showcaseDistance = 4.4 + Math.max(0, count - 2) * 1.6;
     // Scenery between the camera and the fighters (or around the camera) is hidden.
     const d = this.showcaseFrame.dir;
     const cam = { x: anchor.x + d.x * 6.4, z: anchor.z + d.z * 6.4 };
     const side = { x: -d.z, z: d.x };
     this.world.arena.props.forEach((p, i) => {
-      const lanes = [-1.2, 0, 1.2].map((o) => segmentInterval(p, { x: anchor.x + side.x * o, z: anchor.z + side.z * o }, cam));
+      const lanes = [-2.6, -1.2, 0, 1.2, 2.6].map((o) => segmentInterval(p, { x: anchor.x + side.x * o, z: anchor.z + side.z * o }, cam));
       if (lanes.some(Boolean) || distToProp(p, cam.x, cam.z) < 1) this.props[i]!.visible = false;
     });
   }
@@ -714,7 +839,7 @@ export class ArenaView {
     const side = new THREE.Vector3(-f.dir.z, 0, f.dir.x);
     this.camera.position
       .copy(f.anchor)
-      .addScaledVector(f.dir, 4.4)
+      .addScaledVector(f.dir, this.showcaseDistance)
       .addScaledVector(side, Math.sin(t * 0.35) * 0.8)
       .add(new THREE.Vector3(0, 1.55 + Math.sin(t * 0.5) * 0.08, 0));
     this.camera.lookAt(f.anchor.clone().add(new THREE.Vector3(0, 1.15, 0)));

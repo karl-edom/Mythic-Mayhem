@@ -183,7 +183,42 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 .hud-help .row { display: flex; gap: 10px; }
 .hud-help b { min-width: 130px; color: var(--gold); }
 
+/* ---------- Matches of 3 or 4 (decision 0017) ---------- */
+.plate { border-top: 4px solid var(--slot, transparent); }
+.select-stage.many { justify-content: center; align-items: flex-end; }
+.plate.compact { width: min(230px, 23vw); padding: 10px 14px 12px; clip-path: polygon(0 0, 100% 0, 95% 100%, 0 100%); }
+.plate.compact .plate-name { font-size: clamp(20px, 2.4vw, 30px); }
+.team-chip { margin-top: 8px; border: 2px solid var(--ink); color: white; font-weight: 700; font-size: 12px; letter-spacing: 0.08em; padding: 3px 10px; cursor: pointer; transform: skewX(-10deg); }
+.slot-tags { position: absolute; top: 8px; right: 8px; display: flex; flex-direction: column; gap: 3px; }
+.slot-tags .slot-tag { position: static; color: var(--ink); }
+.card.picked { box-shadow: 0 0 0 2px var(--gold) inset; }
+.start:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.hud-top.many { grid-template-columns: 1fr; justify-items: center; }
+.hud-bottom {
+  position: absolute; left: 0; right: 0; bottom: max(12px, env(safe-area-inset-bottom)); display: flex; justify-content: center; gap: 12px;
+  padding: 0 max(12px, env(safe-area-inset-left));
+}
+.hud-panel.compact {
+  width: min(240px, 23vw); padding: 6px 10px 8px; background: rgba(21, 18, 31, 0.62); border-top: 5px solid var(--slot, var(--primary));
+  backdrop-filter: blur(4px);
+}
+.hud-panel.compact .hud-name { font-size: clamp(16px, 1.7vw, 22px); }
+.hud-panel.compact .hud-universe { display: none; }
+.hud-panel.compact .bar.hp { height: 14px; }
+.hud-panel.compact .bar.energy { height: 6px; }
+.hud-panel.compact .hud-specials { font-size: 10px; gap: 3px; margin-top: 4px; }
+.hud-panel.compact .special { padding: 1px 5px; }
+.hud-panel.compact .special.breaker, .hud-panel.compact .special.dodge-wear { display: none; }
+.hud-panel.compact .pips { margin-top: 6px; }
+.hud-panel.compact .pip { width: 11px; height: 11px; border-width: 2px; }
+.hud-panel.out { opacity: 0.35; filter: grayscale(1); }
+.pip.life.on { background: var(--slot, var(--gold)); box-shadow: 0 0 8px var(--slot, var(--gold)); }
+.ko-count { font-family: var(--display); font-size: 18px; letter-spacing: 0.04em; text-shadow: 0 2px 0 var(--ink); }
+
 @media (max-width: 760px) {
+  .plate.compact, .hud-panel.compact { width: 100%; }
+  .hud-bottom { flex-wrap: wrap; }
   .select-stage { flex-direction: column; justify-content: flex-start; }
   .plate { width: 100%; }
   .hud-top { grid-template-columns: 1fr 1fr; }

@@ -2,7 +2,7 @@
 // Built with textContent only: names from fan packs are never parsed as HTML.
 
 import type { Character } from "../brawl/character.ts";
-import { canSee, dodgeStaleNow, grabbable, type BrawlWorld } from "../brawl/world.ts";
+import { canSee, dodgeStaleNow, grabbable, lockTarget, type BrawlWorld } from "../brawl/world.ts";
 import { KEY_HELP } from "./input.ts";
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?: HTMLElement, text?: string): HTMLElementTagNameMap[K] {
@@ -18,7 +18,13 @@ interface Side {
   hpLag: HTMLDivElement;
   energy: HTMLDivElement;
   specials: HTMLDivElement[];
+  breaker: HTMLDivElement | null;
+  dodge: HTMLDivElement | null;
   pips: HTMLDivElement[];
+  /** K.-O. count, when there are no pips to fill (« K.-O. au temps » with no cap). */
+  count: HTMLDivElement | null;
+  panel: HTMLDivElement;
+  pipBox: HTMLDivElement | null;
 }
 
 const SPECIAL_KEYS = ["U", "I", "O"];
@@ -39,19 +45,25 @@ export class Hud {
 
   private world: BrawlWorld;
 
-  constructor(root: HTMLElement, world: BrawlWorld, characters: Character[], player: number) {
+  constructor(root: HTMLElement, world: BrawlWorld, characters: Character[], player: number, colors: string[] = []) {
     this.world = world;
     this.player = player;
     root.replaceChildren();
-    const top = el("div", "hud-top", root);
+    const many = world.fighters.length > 2;
+    const top = el("div", `hud-top${many ? " many" : ""}`, root);
+    // Three or more: a row of compact panels along the bottom, as in Smash.
+    const bottom = many ? el("div", "hud-bottom", root) : null;
+    if (many) top.appendChild(this.center());
     world.fighters.forEach((f, i) => {
       const ch = characters[i]!;
-      const panel = el("div", `hud-panel ${i === 0 ? "left" : "right"}`, top);
+      const panel = el("div", `hud-panel ${many ? "compact" : i === 0 ? "left" : "right"}`, bottom ?? top);
+      if (colors[i]) panel.style.setProperty("--slot", colors[i]!);
       panel.style.setProperty("--primary", ch.colors.primary);
       panel.style.setProperty("--secondary", ch.colors.secondary);
       const title = el("div", "hud-name", panel, ch.name);
-      el("span", "hud-tag", title, i === player ? "Toi" : "Bot");
-      if (i === player) this.hidden = el("span", "hud-tag hidden-tag", title, "Hors de vue");
+      el("span", "hud-tag", title, i === player ? "Toi" : many ? `CPU${i + 1}` : "Bot");
+      // « Out of sight » makes sense in a duel; with everyone on screen, it would only clutter.
+      if (i === player && !many) this.hidden = el("span", "hud-tag hidden-tag", title, "Hors de vue");
       el("div", "hud-universe", panel, ch.universe);
       const hpBar = el("div", "bar hp", panel);
       const hpLag = el("div", "fill lag", hpBar);
@@ -62,22 +74,29 @@ export class Hud {
         const mark = el("div", "cost-mark", enBar);
         mark.style[i === 0 ? "left" : "right"] = `${sp.energyCost}%`;
       }
-      const specials = el("div", "hud-specials", panel);
-      const specialEls = f.kit.specials.map((sp, s) =>
-        el("div", "special", specials, `${i === player ? SPECIAL_KEYS[s] + " · " : ""}${sp.id} (${sp.energyCost})`),
-      );
+      // Compact panels (3 or more fighters) keep only the player's own specials.
+      const detailed = !many || i === player;
+      const specials = detailed ? el("div", "hud-specials", panel) : null;
+      const specialEls = specials
+        ? f.kit.specials.map((sp, s) => el("div", "special", specials, `${i === player ? SPECIAL_KEYS[s] + " · " : ""}${sp.id} (${sp.energyCost})`))
+        : [];
       // The breaker is everyone's escape: shown with the specials, lit when affordable.
-      specialEls.push(el("div", "special breaker", specials, `${i === player ? "Maj · " : ""}dégagement (${world.config.breakerCost})`));
+      const breaker = specials ? el("div", "special breaker", specials, `${i === player ? "Maj · " : ""}dégagement (${world.config.breakerCost})`) : null;
       // Dodge staling, shown as filled pips: the more, the slower and less safe the next dodge.
-      const dodge = el("div", "special dodge-wear ready", specials);
-      dodge.title = "Usure des esquives";
-      if (i === 0) top.appendChild(this.center());
-      this.sides.push({ hp, hpLag, energy, specials: specialEls, pips: [] });
+      const dodge = specials ? el("div", "special dodge-wear ready", specials) : null;
+      if (dodge) dodge.title = "Usure des esquives";
+      if (!many && i === 0) top.appendChild(this.center());
+      const pipBox = many ? el("div", "pips", panel) : null;
+      this.sides.push({ hp, hpLag, energy, specials: specialEls, breaker, dodge, pips: [], count: null, panel, pipBox });
     });
     this.timer = root.querySelector(".hud-timer")!;
+    // Victory gauge: lives left (« 3 vies »), or K.-O. scored toward the cap, or a plain count.
+    const c = this.world.config;
+    const pipCount = c.rule === "stock" ? c.stocks : c.koToWin;
     this.sides.forEach((s, i) => {
-      const box = root.querySelectorAll<HTMLDivElement>(".pips")[i]!;
-      for (let k = 0; k < this.world.config.koToWin; k++) s.pips.push(el("div", "pip", box));
+      const box = s.pipBox ?? root.querySelectorAll<HTMLDivElement>(".hud-center .pips")[i]!;
+      if (pipCount > 0) for (let k = 0; k < pipCount; k++) s.pips.push(el("div", `pip${c.rule === "stock" ? " life" : ""}`, box));
+      else s.count = el("div", "ko-count", box, "0 K.-O.");
     });
     this.banner = el("div", "hud-banner", root);
     this.prompt = el("div", "hud-prompt", root);
@@ -122,18 +141,22 @@ export class Hud {
       const lag = parseFloat(s.hpLag.style.width || "100");
       s.hpLag.style.width = `${Math.max(hp, lag - 0.6)}%`;
       s.energy.style.width = `${(100 * f.energy) / w.config.energyMax}%`;
-      f.kit.specials.forEach((sp, k) => s.specials[k]!.classList.toggle("ready", f.alive && f.energy >= sp.energyCost));
-      s.specials.at(-2)!.classList.toggle("ready", f.alive && f.energy >= w.config.breakerCost);
-      const wear = Math.ceil(dodgeStaleNow(w, f) - 1e-6);
-      const pips = "●".repeat(wear) + "○".repeat(w.config.dodgeStaleMax - wear);
-      const chip = s.specials.at(-1)!;
-      if (chip.textContent !== `esquive ${pips}`) chip.textContent = `esquive ${pips}`;
-      chip.classList.toggle("ready", wear <= 1);
-      s.pips.forEach((p, k) => p.classList.toggle("on", k < (w.score[i] ?? 0)));
+      s.specials.forEach((el, k) => el.classList.toggle("ready", f.alive && f.energy >= f.kit.specials[k]!.energyCost));
+      s.breaker?.classList.toggle("ready", f.alive && f.energy >= w.config.breakerCost);
+      if (s.dodge) {
+        const wear = Math.ceil(dodgeStaleNow(w, f) - 1e-6);
+        const pips = "●".repeat(wear) + "○".repeat(w.config.dodgeStaleMax - wear);
+        if (s.dodge.textContent !== `esquive ${pips}`) s.dodge.textContent = `esquive ${pips}`;
+        s.dodge.classList.toggle("ready", wear <= 1);
+      }
+      const gauge = w.config.rule === "stock" ? f.stocks : (w.score[f.team] ?? 0);
+      s.pips.forEach((p, k) => p.classList.toggle("on", k < gauge));
+      if (s.count) s.count.textContent = `${w.score[f.team] ?? 0} K.-O.`;
+      s.panel.classList.toggle("out", w.config.rule === "stock" && f.stocks === 0 && !f.alive);
     });
     // Readability cue for hiding: the player knows when the opponent cannot see them.
     const me = w.fighters[this.player]!;
-    const foe = w.fighters.find((f) => f.team !== me.team);
+    const foe = lockTarget(w, me) ?? w.fighters.find((f) => f.team !== me.team);
     this.hidden?.classList.toggle("on", !!foe && me.alive && foe.alive && !canSee(w, me, foe));
     // Contextual prompt: what the grab button does right now.
     const prompt = !me.alive ? "" : me.carrying !== null ? "F · lancer" : grabbable(w, me) && !me.action ? "F · ramasser" : "";
