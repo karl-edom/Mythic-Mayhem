@@ -18,7 +18,8 @@ const menuRoot = document.querySelector<HTMLDivElement>("#menu")!;
 const renderer = createRenderer(canvas);
 const input = new Input(window);
 const roster = loadRoster();
-const playable = roster.filter((r) => r.kit);
+// The owner's own fighters (local packs) come first, and the player starts on one.
+const playable = roster.filter((r) => r.kit).sort((a, b) => Number(b.local) - Number(a.local));
 const arenas = loadArenaDefs();
 let library: ModelLibrary | null = null;
 

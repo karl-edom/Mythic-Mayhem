@@ -61,3 +61,17 @@ La tortue est une création du porteur de projet, pour un usage personnel. Le d�
 - Les pièces sont rigides, sans peau déformable : les jointures sont couvertes par des boules (épaules, coudes). De près, on voit encore des raccords.
 - Le rendu est physique (laque, acier, peau), pas cel-shadé comme les avatars anime, avec un trait d'encre fin pour rester lisible en combat.
 - Prochain modèle : le **samouraï en armure**, sur le même principe : kabuto à cimier, menpō, dō laqué et lacé, sode, kusazuri, hakama.
+
+## Finesse des coups et réactions propres (2026-10-17)
+
+> « Il faut encore un peu plus de finesse dans les mouvements (un peu comme pour les jambes mais sur les bras et le reste lors des attaques). »
+
+Rendu seulement : la simulation, les durées des coups et le moment de l'impact ne changent pas.
+
+- **Les articulations partent l'une après l'autre** (`CHAIN` dans `poses.ts`) : les hanches et les jambes ouvrent le mouvement environ 45 ms avant, puis viennent le buste, l'épaule et l'avant-bras ; la main et son saï arrivent en dernier, comme un fouet. La tête suit avec un léger retard et reste tournée vers la cible. L'avant-bras garde le moment exact de l'impact.
+- **Chaque coup a la même forme** : mise en tension, départ explosif qui arrive **à pleine vitesse** sur l'impact (au lieu de freiner dessus), poursuite au-delà de la cible, retour souple en garde. Les anciennes poses figées entre l'impact et le retour disparaissent.
+- **La main libre se retire à la hanche** pendant qu'un saï frappe (*hikite* du karaté) ; dans la mise en tension, elle mesure la distance.
+- Coup lourd : la tortue se cambre, saïs au-dessus de la tête, pendant la charge.
+- Échantillonnage à 60 images/s au lieu de 30, pour des départs nets.
+- **Réactions propres à la tortue**, à la place de celles de KayKit reciblées : recul sous un coup (la tête part d'abord, les bras s'ouvrent), garde repoussée, appel du saut et réception amortie, **roulades dans la carapace** pour les esquives avant et arrière, pas de côté penchés.
+- Le menu met en tête les personnages des packs locaux : J1 commence sur la tortue.
