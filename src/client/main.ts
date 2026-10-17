@@ -7,7 +7,7 @@ import { BOT_LEVELS, botCommand, createBot, type BrawlBot } from "../brawl/bot.t
 import { buildArena, type ArenaDef } from "../brawl/arena.ts";
 import { BRAWL_CONFIG, createBrawl, createMatch, step, type BrawlConfig, type BrawlWorld } from "../brawl/world.ts";
 import { Hud } from "./hud.ts";
-import { Input, padIndex, type Controller } from "./input.ts";
+import { Input, padIndex, type Controller, type MenuButton } from "./input.ts";
 import { loadModels, type ModelLibrary } from "./models.ts";
 import { loadArenaDefs, loadRoster, propCatalog, type RosterEntry } from "./roster.ts";
 import { ArenaView, createRenderer } from "./scene.ts";
@@ -180,6 +180,7 @@ function plate(i: number, many: boolean): HTMLElement {
   p.style.setProperty("--primary", r.character.colors.primary);
   p.style.setProperty("--secondary", r.character.colors.secondary);
   h("div", "plate-label", p, slotLabel(i));
+  if (ready.has(i) && isHuman(i)) h("span", "ready-tag", p, "PRÊT");
   h("div", "plate-name", p, r.character.name);
   if (!many) h("div", "plate-desc", p, r.character.description);
   if (r.kit && !many) h("div", "plate-kit", p, `${r.kit.archetype} · ${r.kit.light.hits.length} coups · ${r.kit.specials.map((x) => x.id).join(" · ")}`);
@@ -251,7 +252,9 @@ function showMenu(): void {
     "select-hint",
     bottom,
     `Clique un personnage pour ${isHuman(choice.active) ? `le Joueur ${choice.active + 1}` : `le CPU ${choice.active + 1}`}` +
-      (pads ? ` · Manette : A pour rejoindre, stick ←/→ pour changer de personnage, Start pour combattre` : " · Branche une manette et appuie sur A pour jouer avec"),
+      (pads
+        ? " · Manette : A rejoindre / choisir · X donner à un bot · Y équipe · B annuler · ↓ options · Start combattre"
+        : " · Branche une manette et appuie sur A pour jouer avec"),
   );
   hint.setAttribute("role", "status");
   const grid = h("div", "roster", bottom);
@@ -273,6 +276,8 @@ function showMenu(): void {
   }
   start.addEventListener("click", startGame);
 
+  drawCursors();
+
   const invalid = roster.filter((r) => !r.kit);
   if (invalid.length > 0) {
     const d = h("details", "invalid", bottom);
@@ -286,6 +291,7 @@ function showMenu(): void {
 }
 
 function startGame(): void {
+  ready.clear();
   const slots = activeSlots();
   if (slots.some((sl) => !sl.entry?.kit) || !teamsValid()) return;
   menuRoot.classList.add("hidden");
@@ -349,12 +355,8 @@ function showEnd(g: Game): void {
   const again = h("button", "start", box, "REVANCHE");
   again.addEventListener("click", startGame);
   const back = h("button", "chip", box, "Changer de combattants");
-  back.addEventListener("click", () => {
-    game?.view.dispose();
-    game = null;
-    buildShowcase();
-    showMenu();
-  });
+  back.addEventListener("click", quitMatch);
+  h("div", "pause-hint", box, "Manette : A revanche · B changer de combattants");
 }
 
 /** Gamepads rumble on hits: hard for the one hit, lighter for the one hitting. */
@@ -374,46 +376,217 @@ function rumbles(g: Game): void {
 function togglePause(g: Game): void {
   if (g.world.over) return;
   g.paused = !g.paused;
-  g.hud.flash(g.paused ? "PAUSE" : "", g.paused ? 9999 : 0);
+  if (g.paused) {
+    pauseFocus = 0;
+    showPause(g);
+  } else menuRoot.classList.add("hidden");
 }
 
-/** Gamepad buttons outside the fight: join, pick, start, pause, rematch. */
+// ---------------------------------------------------------------------------
+// Gamepads in the menus, Smash-style: on the select screen each gamepad moves its own
+// token over the fighters (A picks, X gives the fighter to a bot, Y changes team) and
+// can go down into the options (one highlighted button, A presses it). Start launches.
+
+interface Cursor {
+  zone: "grid" | "options";
+  i: number;
+}
+const cursors = new Map<number, Cursor>();
+/** Slots whose player has picked (« PRÊT »). */
+const ready = new Set<number>();
+/** Next bot slot to receive a fighter given with X. */
+let giveTo = 0;
+
+function gridColumns(): number {
+  const cards = [...document.querySelectorAll<HTMLElement>(".roster .card")];
+  if (!cards.length) return 1;
+  const top = cards[0]!.offsetTop;
+  return Math.max(1, cards.filter((c) => c.offsetTop === top).length);
+}
+const optionButtons = () => [...document.querySelectorAll<HTMLButtonElement>(".options button")];
+/** Row of each option button (its option group, or the start button on its own). */
+function optionRows(): HTMLButtonElement[][] {
+  const rows: HTMLButtonElement[][] = [];
+  for (const el of document.querySelectorAll<HTMLElement>(".options > *")) {
+    const btns = el.matches("button") ? [el as HTMLButtonElement] : [...el.querySelectorAll<HTMLButtonElement>("button")];
+    if (btns.length) rows.push(btns);
+  }
+  return rows;
+}
+
+function moveCursor(c: Cursor, dir: "left" | "right" | "up" | "down"): void {
+  if (c.zone === "grid") {
+    const cols = gridColumns();
+    const n = playable.length;
+    if (dir === "left") c.i = (c.i - 1 + n) % n;
+    if (dir === "right") c.i = (c.i + 1) % n;
+    if (dir === "up") c.i = Math.max(0, c.i - cols);
+    if (dir === "down") {
+      if (c.i + cols < n) c.i += cols;
+      else if (Math.floor(c.i / cols) === Math.floor((n - 1) / cols)) [c.zone, c.i] = ["options", 0]; // past the last row: options
+      else c.i = n - 1;
+    }
+    return;
+  }
+  const rows = optionRows();
+  const all = optionButtons();
+  const btn = all[c.i];
+  const r = Math.max(0, rows.findIndex((row) => btn && row.includes(btn)));
+  const at = btn ? rows[r]!.indexOf(btn) : 0;
+  if (dir === "left") c.i = Math.max(0, c.i - 1);
+  if (dir === "right") c.i = Math.min(all.length - 1, c.i + 1);
+  if (dir === "down" && r + 1 < rows.length) c.i = all.indexOf(rows[r + 1]![Math.min(at, rows[r + 1]!.length - 1)]!);
+  if (dir === "up") {
+    if (r === 0) [c.zone, c.i] = ["grid", Math.max(0, playable.length - 1)];
+    else c.i = all.indexOf(rows[r - 1]![Math.min(at, rows[r - 1]!.length - 1)]!);
+  }
+}
+
+/** Draws the gamepad tokens on the cards and the highlighted option buttons (after showMenu). */
+function drawCursors(): void {
+  const cards = [...document.querySelectorAll<HTMLElement>(".roster .card")];
+  const buttons = optionButtons();
+  for (const [pad, c] of cursors) {
+    const slot = activeSlots().findIndex((sl) => sl.ctrl === `pad${pad}`);
+    if (slot < 0) continue;
+    const color = colorOf(slot);
+    if (c.zone === "grid") {
+      const card = cards[c.i];
+      if (!card) continue;
+      const t = h("span", "pad-cursor", card, shortLabel(slot));
+      t.style.background = color;
+      card.classList.add("hovered");
+    } else {
+      const b = buttons[c.i];
+      if (!b) continue;
+      b.classList.add("pad-focus");
+      b.style.setProperty("--focus", color);
+    }
+  }
+}
+
+function padSelect(pad: number, button: MenuButton): boolean {
+  const ctrl = `pad${pad}` as Controller;
+  let mine = activeSlots().findIndex((sl) => sl.ctrl === ctrl);
+  let c = cursors.get(pad);
+  if (button === "start") {
+    startGame();
+    return false;
+  }
+  if (mine < 0 || !c) {
+    // Not playing yet: A joins, with the token on the fighter of the slot taken.
+    if (button !== "a") return false;
+    mine = joinPad(pad) ?? -1;
+    if (mine < 0) return false;
+    const entry = choice.slots[mine]!.entry;
+    cursors.set(pad, { zone: "grid", i: Math.max(0, entry ? playable.indexOf(entry) : 0) });
+    return true;
+  }
+  const sl = choice.slots[mine]!;
+  switch (button) {
+    case "left":
+    case "right":
+    case "up":
+    case "down":
+      moveCursor(c, button);
+      return false;
+    case "a":
+      if (c.zone === "options") {
+        optionButtons()[c.i]?.click();
+        return false;
+      }
+      sl.entry = playable[c.i];
+      ready.add(mine);
+      return true;
+    case "x": {
+      // Give the fighter under the token to a bot (in turn).
+      const bots = activeSlots().flatMap((s2, k) => (s2.ctrl === "cpu" ? [k] : []));
+      if (c.zone !== "grid" || !bots.length) return false;
+      const k = bots[giveTo++ % bots.length]!;
+      choice.slots[k]!.entry = playable[c.i];
+      return true;
+    }
+    case "y":
+      if (choice.mode !== "teams") return false;
+      sl.team = 1 - sl.team;
+      return true;
+    case "b":
+      if (ready.has(mine)) ready.delete(mine);
+      else {
+        // Leave: the slot goes back to a bot (or to the keyboard for player 1).
+        sl.ctrl = mine === 0 ? "kb" : "cpu";
+        cursors.delete(pad);
+      }
+      return true;
+    default:
+      return false;
+  }
+}
+
+/** Pause menu: resume, help, quit — mouse, keyboard or gamepad. */
+let pauseFocus = 0;
+function showPause(g: Game): void {
+  menuRoot.replaceChildren();
+  menuRoot.className = "pause";
+  menuRoot.classList.remove("hidden");
+  const box = h("div", "pause-box", menuRoot);
+  h("div", "pause-title", box, "PAUSE");
+  const items: [string, () => void][] = [
+    ["Reprendre", () => togglePause(g)],
+    ["Aide (commandes)", () => g.hud.toggleHelp()],
+    ["Quitter le combat", () => quitMatch()],
+  ];
+  items.forEach(([label, act], i) => {
+    const b = h("button", `pause-item${i === pauseFocus ? " pad-focus" : ""}`, box, label);
+    b.addEventListener("click", act);
+  });
+  h("div", "pause-hint", box, "Manette : ↑/↓ puis A · B ou Start pour reprendre");
+}
+
+function quitMatch(): void {
+  game?.view.dispose();
+  game = null;
+  buildShowcase();
+  showMenu();
+}
+
+/** Gamepad buttons outside the fight: select screen, pause menu, end screen. */
 function padMenus(): void {
   const g = game;
-  const presses = input.menuPresses(!!g && !g.world.over);
+  const fighting = !!g && !g.world.over && !g.paused;
+  const presses = input.menuPresses(fighting);
+  let redraw = false;
+  let reshow = false;
   for (const { pad, button } of presses) {
     if (g && !g.world.over) {
-      if (button === "start") togglePause(g);
-      if (button === "help") g.hud.toggleHelp();
+      if (!g.paused) {
+        if (button === "start") togglePause(g);
+        if (button === "help") g.hud.toggleHelp();
+        continue;
+      }
+      // Paused: navigate the pause menu.
+      if (button === "start" || button === "b") togglePause(g);
+      else if (button === "up" || button === "down") {
+        pauseFocus = (pauseFocus + (button === "down" ? 1 : 2)) % 3;
+        showPause(g);
+      } else if (button === "a") (document.querySelectorAll<HTMLButtonElement>(".pause-item")[pauseFocus])?.click();
       continue;
     }
     if (g && g.world.over) {
       // End screen: A or Start for a rematch, B back to the select screen.
       if (button === "a" || button === "start") startGame();
-      else if (button === "b") {
-        g.view.dispose();
-        game = null;
-        buildShowcase();
-        showMenu();
-      }
+      else if (button === "b") quitMatch();
       return;
     }
-    // Select screen.
-    const ctrl = `pad${pad}` as Controller;
-    const mine = activeSlots().findIndex((sl) => sl.ctrl === ctrl);
-    if (button === "a") joinPad(pad);
-    else if (button === "b" && mine > 0) choice.slots[mine]!.ctrl = "cpu";
-    else if ((button === "left" || button === "right") && mine >= 0) {
-      const sl = choice.slots[mine]!;
-      const at = sl.entry ? playable.indexOf(sl.entry) : 0;
-      sl.entry = playable[(at + (button === "right" ? 1 : -1) + playable.length) % playable.length];
-    } else if (button === "start") {
-      startGame();
-      return;
-    } else continue;
-    buildShowcase();
-    showMenu();
+    if (!game && menuRoot.className.startsWith("select")) {
+      const picked = padSelect(pad, button);
+      if (game) return; // Start launched the match
+      reshow = true;
+      redraw ||= picked;
+    }
   }
+  if (redraw) buildShowcase();
+  if (reshow) showMenu();
 }
 
 input.onKey = (code) => {

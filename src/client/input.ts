@@ -32,7 +32,7 @@ export const PAD_HELP: [string, string][] = [
   ["Start / Select", "pause / aide"],
 ];
 
-type Button = "jump" | "light" | "heavy" | "guard" | "dodge" | "charge" | "grab" | "s0" | "s1" | "s2" | "start" | "help" | "navL" | "navR";
+type Button = "jump" | "light" | "heavy" | "guard" | "dodge" | "charge" | "grab" | "s0" | "s1" | "s2" | "start" | "help" | "navL" | "navR" | "navU" | "navD";
 
 const KEYS: Record<string, Button | "up" | "down" | "left" | "right"> = {
   KeyW: "up", ArrowUp: "up",
@@ -54,7 +54,7 @@ export type Controller = "cpu" | "kb" | `pad${number}`;
 
 export const padIndex = (c: Controller): number | null => (c.startsWith("pad") ? Number(c.slice(3)) : null);
 
-export type MenuButton = "a" | "b" | "start" | "help" | "left" | "right";
+export type MenuButton = "a" | "b" | "x" | "y" | "start" | "help" | "left" | "right" | "up" | "down";
 
 /** Stick dead zone (radial) and the tilt from which B gives the second special. */
 const DEAD = 0.18;
@@ -99,14 +99,15 @@ interface PadState {
   pressed: Set<Button>;
   stick: { x: number; y: number };
   connected: boolean;
-  /** Stick pushed left (-1) or right (+1) last frame, for menu navigation edges. */
-  nav: number;
+  /** Direction pushed last frame (stick or d-pad), and when it repeats next, for menus. */
+  nav: string;
+  navRepeat: number;
 }
 
 export class Input {
   private keysHeld = new Set<string>();
   private keysPressed = new Set<string>();
-  private pads: PadState[] = [0, 1, 2, 3].map(() => ({ held: new Set(), pressed: new Set(), stick: { x: 0, y: 0 }, connected: false, nav: 0 }));
+  private pads: PadState[] = [0, 1, 2, 3].map(() => ({ held: new Set(), pressed: new Set(), stick: { x: 0, y: 0 }, connected: false, nav: "", navRepeat: 0 }));
   onKey: ((code: string) => void) | null = null;
 
   constructor(target: Window) {
@@ -146,8 +147,17 @@ export class Input {
       for (const k of r.held) if (!s.held.has(k)) s.pressed.add(k);
       s.held = r.held;
       s.stick = r.stick;
-      const nav = r.stick.x > 0.6 ? 1 : r.stick.x < -0.6 ? -1 : 0;
-      if (nav !== 0 && nav !== s.nav) s.pressed.add(nav > 0 ? "navR" : "navL");
+      // Menu navigation: stick or d-pad, one step per push, repeating while held.
+      const bt = (i: number) => !!pad.buttons[i]?.pressed;
+      const ax = pad.axes[0] ?? 0;
+      const ay = pad.axes[1] ?? 0;
+      const nav =
+        ax > 0.6 || bt(15) ? "navR" : ax < -0.6 || bt(14) ? "navL" : ay < -0.6 || bt(12) ? "navU" : ay > 0.6 || bt(13) ? "navD" : "";
+      const now = performance.now();
+      if (nav && (nav !== s.nav || now >= s.navRepeat)) {
+        s.pressed.add(nav as Button);
+        s.navRepeat = now + (nav !== s.nav ? 380 : 140);
+      }
       s.nav = nav;
     }
   }
@@ -172,11 +182,17 @@ export class Input {
       };
       take("start", "start");
       take("help", "help");
+      // During a fight, menu directions are not wanted: drop them so they do not pile up.
+      if (inMatch) for (const b of ["navL", "navR", "navU", "navD"] as const) p.pressed.delete(b);
       if (!inMatch) {
         take("light", "a");
         take("s0", "b");
+        take("jump", "y");
+        take("heavy", "x");
         take("navL", "left");
         take("navR", "right");
+        take("navU", "up");
+        take("navD", "down");
       }
     });
     return out;
