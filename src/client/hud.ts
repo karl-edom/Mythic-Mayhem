@@ -3,7 +3,7 @@
 
 import type { Character } from "../brawl/character.ts";
 import { canSee, dodgeStaleNow, grabbable, lockTarget, type BrawlWorld } from "../brawl/world.ts";
-import { KEY_HELP } from "./input.ts";
+import { KEY_HELP, PAD_HELP } from "./input.ts";
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?: HTMLElement, text?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -28,6 +28,7 @@ interface Side {
 }
 
 const SPECIAL_KEYS = ["U", "I", "O"];
+const PAD_SPECIALS = ["B", "B+stick", "LT"];
 
 export class Hud {
   private sides: Side[] = [];
@@ -45,9 +46,21 @@ export class Hud {
 
   private world: BrawlWorld;
 
-  constructor(root: HTMLElement, world: BrawlWorld, characters: Character[], player: number, colors: string[] = []) {
+  constructor(
+    root: HTMLElement,
+    world: BrawlWorld,
+    characters: Character[],
+    player: number,
+    colors: string[] = [],
+    opts: { labels?: string[]; humans?: number[]; keyboard?: boolean[]; pads?: boolean } = {},
+  ) {
     this.world = world;
     this.player = player;
+    const humans = opts.humans ?? [player];
+    const human = (i: number) => humans.includes(i);
+    /** Button hints for a special, by who plays: keys on the keyboard, buttons on a pad. */
+    const hint = (i: number, s: number) => (!human(i) ? "" : opts.keyboard && !opts.keyboard[i] ? PAD_SPECIALS[s]! : SPECIAL_KEYS[s]!);
+    const breakerHint = (i: number) => (!human(i) ? "" : opts.keyboard && !opts.keyboard[i] ? "RT" : "Maj");
     root.replaceChildren();
     const many = world.fighters.length > 2;
     const top = el("div", `hud-top${many ? " many" : ""}`, root);
@@ -61,9 +74,9 @@ export class Hud {
       panel.style.setProperty("--primary", ch.colors.primary);
       panel.style.setProperty("--secondary", ch.colors.secondary);
       const title = el("div", "hud-name", panel, ch.name);
-      el("span", "hud-tag", title, i === player ? "Toi" : many ? `CPU${i + 1}` : "Bot");
+      el("span", "hud-tag", title, opts.labels && (many || humans.length > 1) ? opts.labels[i]! : i === player ? "Toi" : many ? `CPU${i + 1}` : "Bot");
       // « Out of sight » makes sense in a duel; with everyone on screen, it would only clutter.
-      if (i === player && !many) this.hidden = el("span", "hud-tag hidden-tag", title, "Hors de vue");
+      if (i === player && !many && humans.length === 1) this.hidden = el("span", "hud-tag hidden-tag", title, "Hors de vue");
       el("div", "hud-universe", panel, ch.universe);
       const hpBar = el("div", "bar hp", panel);
       const hpLag = el("div", "fill lag", hpBar);
@@ -75,13 +88,13 @@ export class Hud {
         mark.style[i === 0 ? "left" : "right"] = `${sp.energyCost}%`;
       }
       // Compact panels (3 or more fighters) keep only the player's own specials.
-      const detailed = !many || i === player;
+      const detailed = !many || human(i);
       const specials = detailed ? el("div", "hud-specials", panel) : null;
       const specialEls = specials
-        ? f.kit.specials.map((sp, s) => el("div", "special", specials, `${i === player ? SPECIAL_KEYS[s] + " · " : ""}${sp.id} (${sp.energyCost})`))
+        ? f.kit.specials.map((sp, s) => el("div", "special", specials, `${hint(i, s) ? hint(i, s) + " · " : ""}${sp.id} (${sp.energyCost})`))
         : [];
       // The breaker is everyone's escape: shown with the specials, lit when affordable.
-      const breaker = specials ? el("div", "special breaker", specials, `${i === player ? "Maj · " : ""}dégagement (${world.config.breakerCost})`) : null;
+      const breaker = specials ? el("div", "special breaker", specials, `${breakerHint(i) ? breakerHint(i) + " · " : ""}dégagement (${world.config.breakerCost})`) : null;
       // Dodge staling, shown as filled pips: the more, the slower and less safe the next dodge.
       const dodge = specials ? el("div", "special dodge-wear ready", specials) : null;
       if (dodge) dodge.title = "Usure des esquives";
@@ -102,7 +115,10 @@ export class Hud {
     this.prompt = el("div", "hud-prompt", root);
     this.combo = el("div", "hud-combo", root);
     this.help = el("div", "hud-help", root);
-    for (const [k, v] of KEY_HELP) {
+    // Help: the gamepad layout when a pad is plugged in, the keyboard one otherwise.
+    const rows = opts.pads ? PAD_HELP : KEY_HELP;
+    el("div", "help-title", this.help, opts.pads ? "Manette" : "Clavier");
+    for (const [k, v] of rows) {
       const row = el("div", "row", this.help);
       el("b", "", row, k);
       el("span", "", row, v);

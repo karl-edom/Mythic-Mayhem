@@ -7,7 +7,7 @@ import { BOT_LEVELS, botCommand, createBot, type BrawlBot } from "../brawl/bot.t
 import { buildArena, type ArenaDef } from "../brawl/arena.ts";
 import { BRAWL_CONFIG, createBrawl, createMatch, step, type BrawlConfig, type BrawlWorld } from "../brawl/world.ts";
 import { Hud } from "./hud.ts";
-import { Input } from "./input.ts";
+import { Input, padIndex, type Controller } from "./input.ts";
 import { loadModels, type ModelLibrary } from "./models.ts";
 import { loadArenaDefs, loadRoster, propCatalog, type RosterEntry } from "./roster.ts";
 import { ArenaView, createRenderer } from "./scene.ts";
@@ -37,15 +37,17 @@ interface Slot {
   entry: RosterEntry | undefined;
   /** Team when playing in teams (0 or 1). */
   team: number;
+  /** Who plays it: the keyboard, a gamepad, or a bot. */
+  ctrl: Controller;
 }
 
 const choice = {
   /** Slot 0 is the player, the others are bots. Up to four. */
   slots: [
-    { entry: playable[0], team: 0 },
-    { entry: playable[1] ?? playable[0], team: 1 },
-    { entry: playable[2] ?? playable[0], team: 1 },
-    { entry: playable[3] ?? playable[0], team: 0 },
+    { entry: playable[0], team: 0, ctrl: "kb" },
+    { entry: playable[1] ?? playable[0], team: 1, ctrl: "cpu" },
+    { entry: playable[2] ?? playable[0], team: 1, ctrl: "cpu" },
+    { entry: playable[3] ?? playable[0], team: 0, ctrl: "cpu" },
   ] as Slot[],
   count: 2,
   mode: "ffa" as Mode,
@@ -60,13 +62,44 @@ const activeSlots = () => choice.slots.slice(0, choice.count);
 /** Team of a slot in the match: its own in « each for oneself », the chosen one in teams. */
 const teamOf = (i: number) => (choice.mode === "ffa" ? i : choice.slots[i]!.team);
 const colorOf = (i: number) => (choice.mode === "ffa" ? SLOT_COLORS[i]! : TEAM_COLORS[choice.slots[i]!.team]!);
-const slotLabel = (i: number) => (i === 0 ? "JOUEUR 1" : `CPU ${i + 1}`);
+const isHuman = (i: number) => choice.slots[i]!.ctrl !== "cpu";
+const shortLabel = (i: number) => (isHuman(i) ? `J${i + 1}` : `CPU${i + 1}`);
+const CTRL_NAMES = (c: Controller) => (c === "kb" ? "Clavier" : c === "cpu" ? "Bot" : `Manette ${padIndex(c)! + 1}`);
+const slotLabel = (i: number) => `${isHuman(i) ? `JOUEUR ${i + 1}` : `CPU ${i + 1}`} · ${CTRL_NAMES(choice.slots[i]!.ctrl)}`;
+
+/** Controllers a slot can switch to: free ones (not used by another slot), and the bot. */
+function nextController(i: number): Controller {
+  const used = new Set<string>(activeSlots().flatMap((sl, k) => (k === i || sl.ctrl === "cpu" ? [] : [sl.ctrl])));
+  const all: Controller[] = ["kb", ...input.connectedPads().map((p) => `pad${p}` as Controller), "cpu"];
+  const options = all.filter((c) => c === "cpu" || !used.has(c));
+  const at = options.indexOf(choice.slots[i]!.ctrl);
+  return options[(at + 1) % options.length]!;
+}
+
+/**
+ * A gamepad joins (A in the menu): it takes the first bot slot, adding a fighter if
+ * all are taken and there is room. Smash-style: no menu to go through.
+ */
+function joinPad(pad: number): number | null {
+  const ctrl = `pad${pad}` as Controller;
+  const mine = activeSlots().findIndex((sl) => sl.ctrl === ctrl);
+  if (mine >= 0) return mine;
+  let i = activeSlots().findIndex((sl, k) => k > 0 && sl.ctrl === "cpu");
+  if (i < 0 && choice.count < 4) i = choice.count++;
+  if (i < 0) return null;
+  choice.slots[i]!.ctrl = ctrl;
+  return i;
+}
 
 interface Game {
   world: BrawlWorld;
   view: ArenaView;
   hud: Hud;
   bots: (BrawlBot | null)[];
+  /** Controller of each fighter. */
+  ctrls: Controller[];
+  /** Events already turned into rumbles. */
+  rumbleAt: number;
   paused: boolean;
   names: string[];
 }
@@ -104,7 +137,10 @@ function buildShowcase(): void {
     arena,
   );
   for (const f of world.fighters) f.facing = { x: d.x, y: 0, z: d.z };
-  showcase = new ArenaView(renderer, world, slots.map((sl) => sl.entry!.character), 0, library, slots.map((_, i) => colorOf(i)));
+  showcase = new ArenaView(renderer, world, slots.map((sl) => sl.entry!.character), 0, library, {
+    colors: slots.map((_, i) => colorOf(i)),
+    labels: slots.map((_, i) => shortLabel(i)),
+  });
   showcase.showcaseAt({ x: s.x, z: s.z }, d, n);
   if (import.meta.env.DEV) (window as unknown as { __showcase: ArenaView }).__showcase = showcase;
 }
@@ -122,7 +158,7 @@ function fighterCard(r: RosterEntry, parent: HTMLElement): void {
   h("div", "card-universe", card, r.character.universe + (r.local ? " · pack local" : ""));
   const tagBox = h("div", "slot-tags", card);
   for (const i of tags) {
-    const t = h("span", "slot-tag", tagBox, i === 0 ? "J1" : `CPU${i + 1}`);
+    const t = h("span", "slot-tag", tagBox, shortLabel(i));
     t.style.background = colorOf(i);
   }
   card.addEventListener("click", () => {
@@ -147,6 +183,14 @@ function plate(i: number, many: boolean): HTMLElement {
   h("div", "plate-name", p, r.character.name);
   if (!many) h("div", "plate-desc", p, r.character.description);
   if (r.kit && !many) h("div", "plate-kit", p, `${r.kit.archetype} · ${r.kit.light.hits.length} coups · ${r.kit.specials.map((x) => x.id).join(" · ")}`);
+  const c = h("button", "ctrl-chip", p, CTRL_NAMES(sl.ctrl));
+  c.title = "Qui joue ce combattant (clic pour changer)";
+  c.addEventListener("click", (e) => {
+    e.stopPropagation();
+    sl.ctrl = nextController(i);
+    buildShowcase();
+    showMenu();
+  });
   if (choice.mode === "teams") {
     const t = h("button", "team-chip", p, `Équipe ${TEAM_NAMES[sl.team]}`);
     t.style.background = TEAM_COLORS[sl.team]!;
@@ -201,7 +245,14 @@ function showMenu(): void {
   for (let i = 0; i < choice.count; i++) stage.append(plate(i, many));
 
   const bottom = h("div", "select-bottom", menuRoot);
-  const hint = h("div", "select-hint", bottom, `Clique un personnage pour ${choice.active === 0 ? "le Joueur 1" : `le CPU ${choice.active + 1}`}`);
+  const pads = input.connectedPads().length;
+  const hint = h(
+    "div",
+    "select-hint",
+    bottom,
+    `Clique un personnage pour ${isHuman(choice.active) ? `le Joueur ${choice.active + 1}` : `le CPU ${choice.active + 1}`}` +
+      (pads ? ` · Manette : A pour rejoindre, stick ←/→ pour changer de personnage, Start pour combattre` : " · Branche une manette et appuie sur A pour jouer avec"),
+  );
   hint.setAttribute("role", "status");
   const grid = h("div", "roster", bottom);
   for (const r of playable) fighterCard(r, grid);
@@ -256,11 +307,17 @@ function startGame(): void {
   );
   const characters = slots.map((sl) => sl.entry!.character);
   const colors = slots.map((_, i) => colorOf(i));
-  const view = new ArenaView(renderer, world, characters, 0, library, colors);
-  const hud = new Hud(hudRoot, world, characters, 0, colors);
+  const labels = slots.map((_, i) => shortLabel(i));
+  const ctrls = slots.map((sl) => sl.ctrl);
+  const humans = ctrls.flatMap((c, i) => (c !== "cpu" ? [i] : []));
+  const focus = humans[0] ?? 0;
+  // Several players on one screen, or more than two fighters: one shared camera.
+  const shared = slots.length > 2 || humans.length > 1;
+  const view = new ArenaView(renderer, world, characters, focus, library, { colors, labels, shared });
+  const hud = new Hud(hudRoot, world, characters, focus, colors, { labels, humans, keyboard: ctrls.map((c) => c === "kb"), pads: input.connectedPads().length > 0 });
   const seed = rng((Math.random() * 2 ** 32) >>> 0);
-  const bots = slots.map((_, i) => (i === 0 ? null : createBot(seed, BOT_LEVELS[choice.level])));
-  game = { world, view, hud, bots, paused: false, names: characters.map((c) => c.name) };
+  const bots = ctrls.map((c) => (c === "cpu" ? createBot(seed, BOT_LEVELS[choice.level]) : null));
+  game = { world, view, hud, bots, ctrls, rumbleAt: 0, paused: false, names: characters.map((c) => c.name) };
   // Development aid (absent from builds): lets automated checks reach the match state.
   if (import.meta.env.DEV) (window as unknown as { __game: Game }).__game = game;
   input.clear();
@@ -269,8 +326,10 @@ function startGame(): void {
 
 function showEnd(g: Game): void {
   const w = g.world;
-  const mine = w.fighters[0]!.team;
-  const text = w.winner === null ? "ÉGALITÉ" : w.winner === mine ? "VICTOIRE" : "DÉFAITE";
+  const mine = w.fighters[g.ctrls.findIndex((c) => c !== "cpu")]?.team ?? -1;
+  const humans = g.ctrls.filter((c) => c !== "cpu").length;
+  // Several players: no « defeat » for whoever lost, just who won.
+  const text = w.winner === null ? "ÉGALITÉ" : humans > 1 ? "VICTOIRE" : w.winner === mine ? "VICTOIRE" : "DÉFAITE";
   // Who won, named: a team colour, or the fighter.
   const winners = w.fighters.filter((f) => f.team === w.winner).map((f) => g.names[f.id]);
   const sub = w.winner === null ? "" : choice.mode === "teams" && choice.count > 2 ? `Équipe ${TEAM_NAMES[choice.slots[w.fighters.find((f) => f.team === w.winner)!.id]!.team]} : ${winners.join(", ")}` : `${winners.join(", ")} l'emporte`;
@@ -298,12 +357,68 @@ function showEnd(g: Game): void {
   });
 }
 
+/** Gamepads rumble on hits: hard for the one hit, lighter for the one hitting. */
+function rumbles(g: Game): void {
+  const w = g.world;
+  for (const e of w.events.slice(g.rumbleAt)) {
+    if (e.type === "hit" || e.type === "block" || e.type === "guardBreak") {
+      const big = e.type === "guardBreak" || (e.type === "hit" && (e.knockdown || e.by === "heavy" || e.by === "special"));
+      input.rumble(g.ctrls[e.target]!, big ? 0.9 : 0.5, big ? 220 : 110);
+      if (e.type === "hit") input.rumble(g.ctrls[e.source]!, 0.3, 70);
+    }
+    if (e.type === "ko") input.rumble(g.ctrls[e.target]!, 1, 450);
+  }
+  g.rumbleAt = w.events.length;
+}
+
+function togglePause(g: Game): void {
+  if (g.world.over) return;
+  g.paused = !g.paused;
+  g.hud.flash(g.paused ? "PAUSE" : "", g.paused ? 9999 : 0);
+}
+
+/** Gamepad buttons outside the fight: join, pick, start, pause, rematch. */
+function padMenus(): void {
+  const g = game;
+  const presses = input.menuPresses(!!g && !g.world.over);
+  for (const { pad, button } of presses) {
+    if (g && !g.world.over) {
+      if (button === "start") togglePause(g);
+      if (button === "help") g.hud.toggleHelp();
+      continue;
+    }
+    if (g && g.world.over) {
+      // End screen: A or Start for a rematch, B back to the select screen.
+      if (button === "a" || button === "start") startGame();
+      else if (button === "b") {
+        g.view.dispose();
+        game = null;
+        buildShowcase();
+        showMenu();
+      }
+      return;
+    }
+    // Select screen.
+    const ctrl = `pad${pad}` as Controller;
+    const mine = activeSlots().findIndex((sl) => sl.ctrl === ctrl);
+    if (button === "a") joinPad(pad);
+    else if (button === "b" && mine > 0) choice.slots[mine]!.ctrl = "cpu";
+    else if ((button === "left" || button === "right") && mine >= 0) {
+      const sl = choice.slots[mine]!;
+      const at = sl.entry ? playable.indexOf(sl.entry) : 0;
+      sl.entry = playable[(at + (button === "right" ? 1 : -1) + playable.length) % playable.length];
+    } else if (button === "start") {
+      startGame();
+      return;
+    } else continue;
+    buildShowcase();
+    showMenu();
+  }
+}
+
 input.onKey = (code) => {
   if (!game || game.world.over) return;
-  if (code === "Escape") {
-    game.paused = !game.paused;
-    game.hud.flash(game.paused ? "PAUSE" : "", game.paused ? 9999 : 0);
-  }
+  if (code === "Escape") togglePause(game);
   if (code === "KeyH") game.hud.toggleHelp();
 };
 
@@ -325,6 +440,7 @@ function frame(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   input.poll();
+  padMenus();
   const g = game;
   if (g && !g.paused && !g.world.over) {
     const tick = 1 / g.world.config.tickRate;
@@ -333,10 +449,17 @@ function frame(now: number): void {
     while (acc >= tick && !g.world.over) {
       acc -= tick;
       g.view.capture();
-      const me = input.command(0, g.view.forward());
       const w = g.world;
-      step(w, [me, ...g.bots.flatMap((b, i) => (b ? [botCommand(w, w.fighters[i]!, b)] : []))]);
+      const fwd = g.view.forward();
+      step(
+        w,
+        w.fighters.map((f, i) => {
+          const bot = g.bots[i];
+          return bot ? botCommand(w, f, bot) : input.command(i, g.ctrls[i]!, fwd);
+        }),
+      );
     }
+    rumbles(g);
     g.hud.update(g.names);
     if (g.world.over) showEnd(g);
   }

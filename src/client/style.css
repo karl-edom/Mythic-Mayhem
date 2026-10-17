@@ -188,6 +188,8 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 .select-stage.many { justify-content: center; align-items: flex-end; }
 .plate.compact { width: min(230px, 23vw); padding: 10px 14px 12px; clip-path: polygon(0 0, 100% 0, 95% 100%, 0 100%); }
 .plate.compact .plate-name { font-size: clamp(20px, 2.4vw, 30px); }
+.ctrl-chip { margin-top: 8px; margin-right: 6px; border: 2px solid var(--ink); background: var(--paper); color: var(--ink); font-weight: 700; font-size: 12px; letter-spacing: 0.06em; padding: 3px 10px; cursor: pointer; transform: skewX(-10deg); }
+.help-title { font-family: var(--display); font-size: 18px; letter-spacing: 0.06em; color: var(--gold); }
 .team-chip { margin-top: 8px; border: 2px solid var(--ink); color: white; font-weight: 700; font-size: 12px; letter-spacing: 0.08em; padding: 3px 10px; cursor: pointer; transform: skewX(-10deg); }
 .slot-tags { position: absolute; top: 8px; right: 8px; display: flex; flex-direction: column; gap: 3px; }
 .slot-tags .slot-tag { position: static; color: var(--ink); }

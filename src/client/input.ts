@@ -1,25 +1,38 @@
-// Keyboard and gamepad → Command. Uses physical key codes, so the same keys
-// work on AZERTY (Z Q S D) and QWERTY (W A S D) layouts.
+// Player input → Command. Several devices at once: the keyboard and up to four
+// gamepads, each driving its own fighter (local multiplayer). Keyboard keys use
+// physical codes, so the same keys work on AZERTY (Z Q S D) and QWERTY (W A S D).
 
 import type { Command } from "../brawl/world.ts";
 
 export const KEY_HELP: [string, string][] = [
-  ["Z Q S D / flèches", "se déplacer (relatif à la caméra)"],
-  ["Espace", "sauter : garde l'élan de la course (maintenu : saut complet ; tapé : petit saut ; en l'air : double saut, qui change de direction)"],
-  ["J", "attaque légère : avance vers l'adversaire ; enchaîne jusqu'à 3 coups si le précédent a touché ; en l'air : coup aérien"],
-  ["K (maintenir)", "attaque lourde, chargeable, use le bouclier deux fois plus"],
-  ["L (maintenir)", "bouclier : s'use quand on le tient, casse à zéro (étourdi 2 s)"],
-  ["L relâché juste avant l'impact", "parade : coup annulé, l'attaquant est ouvert"],
-  ["Maj", "esquive (invulnérable au début ; enchaînées, elles s'usent)"],
-  ["Maj sous les coups ou en garde", "dégagement : repousse l'adversaire (50 d'énergie)"],
+  ["Z Q S D / flèches", "se déplacer"],
+  ["Espace", "sauter : garde l'élan (maintenu : saut complet ; tapé : petit saut ; en l'air : double saut)"],
+  ["J", "attaque légère : avance ; enchaîne jusqu'à 3 coups si le précédent a touché ; en l'air : coup aérien"],
+  ["K (maintenir)", "attaque lourde, chargeable"],
+  ["L (maintenir)", "bouclier ; relâché juste avant l'impact : parade"],
+  ["Maj", "esquive ; sous les coups : dégagement (50 d'énergie)"],
   ["U / I / O", "spéciales 1 / 2 / 3"],
-  ["F", "ramasser une caisse ou un tonneau, puis lancer"],
+  ["F", "ramasser, puis lancer"],
   ["E (maintenir)", "recharger l'énergie"],
-  ["Échap", "pause"],
-  ["H", "afficher / masquer l'aide"],
+  ["Échap / H", "pause / aide"],
 ];
 
-type Button = "jump" | "light" | "heavy" | "guard" | "dodge" | "charge" | "grab" | "s0" | "s1" | "s2";
+/** Gamepad layout, Smash-like (Xbox names; PlayStation: A = ✕, B = ○, X = □, Y = △). */
+export const PAD_HELP: [string, string][] = [
+  ["Stick gauche", "se déplacer (plus ou moins vite selon l'inclinaison)"],
+  ["A", "attaque légère (combo si ça touche) ; en l'air : coup aérien"],
+  ["X (maintenir)", "attaque lourde, chargeable"],
+  ["B", "spéciale 1 ; B + stick incliné : spéciale 2"],
+  ["LT", "spéciale 3"],
+  ["Y", "sauter (maintenu : saut complet ; tapé : petit saut) ; en l'air : double saut"],
+  ["RB (maintenir)", "bouclier ; relâché juste avant l'impact : parade"],
+  ["RT", "esquive ; sous les coups : dégagement"],
+  ["LB", "ramasser, puis lancer"],
+  ["Croix bas (maintenir)", "recharger l'énergie"],
+  ["Start / Select", "pause / aide"],
+];
+
+type Button = "jump" | "light" | "heavy" | "guard" | "dodge" | "charge" | "grab" | "s0" | "s1" | "s2" | "start" | "help" | "navL" | "navR";
 
 const KEYS: Record<string, Button | "up" | "down" | "left" | "right"> = {
   KeyW: "up", ArrowUp: "up",
@@ -36,29 +49,64 @@ const KEYS: Record<string, Button | "up" | "down" | "left" | "right"> = {
   KeyU: "s0", KeyI: "s1", KeyO: "s2",
 };
 
-/** Standard gamepad mapping: A jump, X light, Y heavy, B dodge, RB guard, RT charge, LT grab/throw, LB + X/Y/B specials. */
-function readGamepad(): { held: Set<string>; stick: { x: number; y: number } } | null {
-  const pad = navigator.getGamepads?.().find((p) => p);
-  if (!pad) return null;
-  const b = (i: number) => !!pad.buttons[i]?.pressed;
-  const held = new Set<string>();
-  const shift = b(4);
-  if (b(0) && !shift) held.add("jump");
-  if (b(2)) held.add(shift ? "s0" : "light");
-  if (b(3)) held.add(shift ? "s1" : "heavy");
-  if (b(1)) held.add(shift ? "s2" : "dodge");
+/** Who drives a fighter: the keyboard, a gamepad (by index), or a bot. */
+export type Controller = "cpu" | "kb" | `pad${number}`;
+
+export const padIndex = (c: Controller): number | null => (c.startsWith("pad") ? Number(c.slice(3)) : null);
+
+export type MenuButton = "a" | "b" | "start" | "help" | "left" | "right";
+
+/** Stick dead zone (radial) and the tilt from which B gives the second special. */
+const DEAD = 0.18;
+const TILT = 0.5;
+
+/**
+ * Reads one standard-mapping gamepad: held buttons and the left stick (radial dead
+ * zone, rescaled so movement starts smoothly at its edge). Pure, for tests.
+ */
+export function readPad(buttons: readonly boolean[], axes: readonly number[]): { held: Set<Button>; stick: { x: number; y: number } } {
+  const b = (i: number) => !!buttons[i];
+  const held = new Set<Button>();
+  if (b(0)) held.add("light");
+  if (b(1)) held.add("s0"); // resolved to s0 / s1 by the stick when pressed
+  if (b(2)) held.add("heavy");
+  if (b(3)) held.add("jump");
+  if (b(4)) held.add("grab");
   if (b(5)) held.add("guard");
-  if (b(7)) held.add("charge");
-  if (b(6)) held.add("grab");
-  const dz = (v: number | undefined) => (v !== undefined && Math.abs(v) > 0.2 ? v : 0);
-  const stick = { x: dz(pad.axes[0]) || (b(15) ? 1 : b(14) ? -1 : 0), y: dz(pad.axes[1]) || (b(13) ? 1 : b(12) ? -1 : 0) };
-  return { held, stick };
+  if (b(6)) held.add("s2");
+  if (b(7)) held.add("dodge");
+  if (b(8)) held.add("help");
+  if (b(9)) held.add("start");
+  if (b(13)) held.add("charge");
+  let x = axes[0] ?? 0;
+  let y = axes[1] ?? 0;
+  const m = Math.hypot(x, y);
+  if (m < DEAD) [x, y] = [0, 0];
+  else {
+    const k = Math.min(1, (m - DEAD) / (1 - DEAD)) / m;
+    [x, y] = [x * k, y * k];
+  }
+  // The d-pad moves too (left/right/up), for pads whose stick drifts or is missing.
+  if (!x && !y) {
+    x = (b(15) ? 1 : 0) - (b(14) ? 1 : 0);
+    y = b(12) ? -1 : 0;
+  }
+  return { held, stick: { x, y } };
+}
+
+interface PadState {
+  held: Set<Button>;
+  pressed: Set<Button>;
+  stick: { x: number; y: number };
+  connected: boolean;
+  /** Stick pushed left (-1) or right (+1) last frame, for menu navigation edges. */
+  nav: number;
 }
 
 export class Input {
-  private held = new Set<string>();
-  private pressed = new Set<string>();
-  private padPrev = new Set<string>();
+  private keysHeld = new Set<string>();
+  private keysPressed = new Set<string>();
+  private pads: PadState[] = [0, 1, 2, 3].map(() => ({ held: new Set(), pressed: new Set(), stick: { x: 0, y: 0 }, connected: false, nav: 0 }));
   onKey: ((code: string) => void) | null = null;
 
   constructor(target: Window) {
@@ -66,43 +114,97 @@ export class Input {
       if (e.repeat) return;
       const k = KEYS[e.code];
       if (k) {
-        this.held.add(k);
-        this.pressed.add(k);
+        this.keysHeld.add(k);
+        this.keysPressed.add(k);
         e.preventDefault();
       }
       this.onKey?.(e.code);
     });
     target.addEventListener("keyup", (e) => {
       const k = KEYS[e.code];
-      if (k) this.held.delete(k);
+      if (k) this.keysHeld.delete(k);
     });
-    target.addEventListener("blur", () => this.held.clear());
+    target.addEventListener("blur", () => this.keysHeld.clear());
   }
 
-  /** Called once per animation frame, before simulation ticks. */
+  /** Called once per animation frame, before simulation ticks: reads every gamepad. */
   poll(): void {
-    const pad = readGamepad();
-    if (!pad) return;
-    for (const k of pad.held) if (!this.padPrev.has(k)) this.pressed.add(k);
-    this.padPrev = pad.held;
-    this.padStick = pad.stick;
+    const list = navigator.getGamepads?.() ?? [];
+    for (let i = 0; i < this.pads.length; i++) {
+      const pad = list[i];
+      const s = this.pads[i]!;
+      if (!pad || !pad.connected) {
+        s.connected = false;
+        s.held.clear();
+        continue;
+      }
+      s.connected = true;
+      const r = readPad(
+        pad.buttons.map((b) => b.pressed || b.value > 0.5),
+        pad.axes,
+      );
+      for (const k of r.held) if (!s.held.has(k)) s.pressed.add(k);
+      s.held = r.held;
+      s.stick = r.stick;
+      const nav = r.stick.x > 0.6 ? 1 : r.stick.x < -0.6 ? -1 : 0;
+      if (nav !== 0 && nav !== s.nav) s.pressed.add(nav > 0 ? "navR" : "navL");
+      s.nav = nav;
+    }
   }
 
-  private padStick = { x: 0, y: 0 };
+  /** Indices of the gamepads plugged in. */
+  connectedPads(): number[] {
+    return this.pads.flatMap((p, i) => (p.connected ? [i] : []));
+  }
 
   /**
-   * Builds the command for one tick. `forward` is the camera's forward
-   * direction on the floor; presses are consumed so they fire exactly once.
+   * Menu and pause buttons: presses of A, B, Start or Select on any gamepad since the
+   * last call (consumed). In a match, only Start and Select are taken.
    */
-  command(unit: number, forward: { x: number; z: number }): Command {
-    const has = (k: string) => this.held.has(k) || this.padPrev.has(k);
+  menuPresses(inMatch: boolean): { pad: number; button: MenuButton }[] {
+    const out: { pad: number; button: MenuButton }[] = [];
+    this.pads.forEach((p, i) => {
+      const take = (b: Button, name: MenuButton) => {
+        if (p.pressed.has(b)) {
+          p.pressed.delete(b);
+          out.push({ pad: i, button: name });
+        }
+      };
+      take("start", "start");
+      take("help", "help");
+      if (!inMatch) {
+        take("light", "a");
+        take("s0", "b");
+        take("navL", "left");
+        take("navR", "right");
+      }
+    });
+    return out;
+  }
+
+  /**
+   * Builds the command of one fighter for one tick, from its controller. `forward` is
+   * the camera's forward direction on the floor; presses are consumed so they fire once.
+   */
+  command(unit: number, controller: Controller, forward: { x: number; z: number }): Command {
+    const pi = padIndex(controller);
+    const pad = pi !== null ? this.pads[pi] : undefined;
+    const held = (k: string) => (pad ? pad.held.has(k as Button) : this.keysHeld.has(k));
     const take = (k: string) => {
-      const p = this.pressed.has(k);
-      this.pressed.delete(k);
+      const set = pad ? pad.pressed : this.keysPressed;
+      const p = set.has(k as Button);
+      set.delete(k as Button);
       return p;
     };
-    let fx = (has("up") ? 1 : 0) - (has("down") ? 1 : 0) - this.padStick.y;
-    let rx = (has("right") ? 1 : 0) - (has("left") ? 1 : 0) + this.padStick.x;
+    let fx: number;
+    let rx: number;
+    if (pad) {
+      fx = -pad.stick.y;
+      rx = pad.stick.x;
+    } else {
+      fx = (held("up") ? 1 : 0) - (held("down") ? 1 : 0);
+      rx = (held("right") ? 1 : 0) - (held("left") ? 1 : 0);
+    }
     const l = Math.hypot(fx, rx);
     if (l > 1) {
       fx /= l;
@@ -110,23 +212,38 @@ export class Input {
     }
     // Right of forward on the floor plane (y up): (-z, x)
     const move = { x: forward.x * fx - forward.z * rx, z: forward.z * fx + forward.x * rx };
-    const special = take("s0") ? 0 : take("s1") ? 1 : take("s2") ? 2 : undefined;
+    let special: number | undefined;
+    if (pad) {
+      // B alone: first special; B with the stick tilted: second; LT: third.
+      if (take("s0")) special = l > TILT ? 1 : 0;
+      else if (take("s2")) special = 2;
+    } else special = take("s0") ? 0 : take("s1") ? 1 : take("s2") ? 2 : undefined;
     return {
       unit,
       move,
       jump: take("jump"),
-      jumpHeld: has("jump"),
+      jumpHeld: held("jump"),
       grab: take("grab"),
       light: take("light"),
       dodge: take("dodge"),
       special,
-      heavy: has("heavy"),
-      guard: has("guard"),
-      charge: has("charge"),
+      heavy: held("heavy"),
+      guard: held("guard"),
+      charge: held("charge"),
     };
   }
 
+  /** A short rumble on a gamepad (hits given and taken), where the browser supports it. */
+  rumble(controller: Controller, strength: number, ms: number): void {
+    const pi = padIndex(controller);
+    if (pi === null) return;
+    const pad = navigator.getGamepads?.()[pi];
+    const act = (pad as (Gamepad & { vibrationActuator?: { playEffect?: (t: string, p: object) => Promise<unknown> } }) | null)?.vibrationActuator;
+    act?.playEffect?.("dual-rumble", { duration: ms, strongMagnitude: strength, weakMagnitude: Math.min(1, strength * 1.4) })?.catch(() => {});
+  }
+
   clear(): void {
-    this.pressed.clear();
+    this.keysPressed.clear();
+    for (const p of this.pads) p.pressed.clear();
   }
 }

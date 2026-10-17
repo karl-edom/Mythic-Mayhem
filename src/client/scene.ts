@@ -122,8 +122,9 @@ export class ArenaView {
   private focus: number;
   private library: ModelLibrary | null;
 
-  /** Player colours, one per fighter (slot or team colour). */
+  /** Player colours, one per fighter (slot or team colour), and their tags (« J1 », « CPU3 »). */
   private colors: string[];
+  private labels: string[];
   /** Three or more fighters: one camera framing everyone, as in Smash. */
   private shared: boolean;
 
@@ -133,10 +134,11 @@ export class ArenaView {
     characters: Character[],
     focus: number,
     library: ModelLibrary | null,
-    colors: string[] = ["#ff4d4d", "#3d8bff", "#ffc93c", "#38c96b"],
+    opts: { colors?: string[]; labels?: string[]; shared?: boolean } = {},
   ) {
-    this.colors = colors;
-    this.shared = world.fighters.length > 2;
+    this.colors = opts.colors ?? ["#ff4d4d", "#3d8bff", "#ffc93c", "#38c96b"];
+    this.labels = opts.labels ?? world.fighters.map((f) => (f.id === focus ? "J1" : `CPU${f.id + 1}`));
+    this.shared = opts.shared ?? world.fighters.length > 2;
     this.renderer = renderer;
     this.world = world;
     this.characters = characters;
@@ -191,7 +193,7 @@ export class ArenaView {
     this.scene.add(ring);
     // Constant size on screen, however far the shared camera pulls back.
     const tag = new THREE.Sprite(
-      noOutline(new THREE.SpriteMaterial({ map: tagTexture(f.id === this.focus ? "J1" : `CPU${f.id + 1}`, color), depthTest: false, transparent: true, sizeAttenuation: false })),
+      noOutline(new THREE.SpriteMaterial({ map: tagTexture(this.labels[f.id] ?? "", color), depthTest: false, transparent: true, sizeAttenuation: false })),
     );
     tag.scale.set(0.06, 0.03, 1);
     tag.renderOrder = 20;
