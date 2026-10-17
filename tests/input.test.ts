@@ -54,3 +54,16 @@ test("manette : chaque manette pilote son propre combattant", () => {
   assert.ok((b.move?.x ?? 0) > 0.9, "la 2e manette se déplace");
   assert.ok(Math.abs(a.move?.x ?? 0) < 1e-9, "la 1re ne bouge pas");
 });
+
+test("recharge à la manette : croix bas (bouton ou axe selon la manette) ou clic du stick gauche", () => {
+  const press = (i: number) => Object.assign([] as boolean[], { [i]: true });
+  assert.ok(readPad(press(13), [0, 0]).held.has("charge"), "croix bas, disposition standard");
+  assert.ok(readPad(press(10), [0, 0]).held.has("charge"), "clic du stick gauche");
+  // Non-standard pads: d-pad as a hat axis (down = 1/7) or as axes 6-7.
+  const hat = (v: number) => [0, 0, 0, 0, 0, 0, 0, 0, 0, v];
+  assert.ok(readPad([], hat(1 / 7), false).held.has("charge"), "chapeau vers le bas");
+  assert.ok(!readPad([], hat(1.2857), false).held.has("charge"), "chapeau relâché");
+  assert.equal(readPad([], hat(-1), false).stick.y, -1, "chapeau vers le haut : avance");
+  assert.ok(readPad([], [0, 0, 0, 0, 0, 0, 0, 1], false).held.has("charge"), "axes 6-7 vers le bas");
+  assert.ok(!readPad([], hat(1 / 7)).held.has("charge"), "une manette standard ignore les axes");
+});

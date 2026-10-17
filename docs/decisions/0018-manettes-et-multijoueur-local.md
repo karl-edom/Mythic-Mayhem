@@ -50,3 +50,12 @@ Vérifié aussi dans le navigateur avec une manette simulée : rejoindre avec A,
 - Le menu reste à la souris pour les réglages (nombre de combattants, mode, arène). Les manettes peuvent seulement rejoindre, choisir leur personnage et lancer.
 - La vibration n'existe pas dans tous les navigateurs (Firefox l'ignore).
 - Pas encore d'écran pour changer l'affectation des boutons.
+
+## Correctif : recharge à la manette (2026-10-17)
+
+> « Il semblerait que la touche pour recharger l'énergie ne fonctionne pas. »
+
+- Au clavier (E maintenu) comme avec une manette standard (croix bas maintenue), la recharge marchait dans nos essais.
+- Mais beaucoup de manettes non standard (Bluetooth, PlayStation dans certains navigateurs) donnent la croix directionnelle comme un **axe** et non comme des boutons. Leur « croix bas » n'était donc jamais lue. Le jeu lit maintenant la croix de ces manettes sous ses deux formes courantes : l'axe « chapeau » (n° 9), ou la paire d'axes 6 et 7. Cela vaut pour le combat comme pour les menus.
+- Seconde façon de recharger, valable sur toutes les manettes : **maintenir le clic du stick gauche**. On est immobile pendant la recharge, donc le pouce est libre.
+- Testé : `tests/input.test.ts`.

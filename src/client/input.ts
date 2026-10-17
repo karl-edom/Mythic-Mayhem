@@ -28,7 +28,7 @@ export const PAD_HELP: [string, string][] = [
   ["RB (maintenir)", "bouclier ; relâché juste avant l'impact : parade"],
   ["RT", "esquive ; sous les coups : dégagement"],
   ["LB", "ramasser, puis lancer"],
-  ["Croix bas (maintenir)", "recharger l'énergie"],
+  ["Croix bas ou clic du stick gauche (maintenir)", "recharger l'énergie"],
   ["Start", "pause (l'aide des commandes est dans le menu pause)"],
 ];
 
@@ -67,11 +67,39 @@ const DEAD = 0.18;
 const TILT = 0.5;
 
 /**
- * Reads one standard-mapping gamepad: held buttons and the left stick (radial dead
- * zone, rescaled so movement starts smoothly at its edge). Pure, for tests.
+ * The d-pad. Standard mapping: buttons 12-15. Other pads (many Bluetooth and
+ * PlayStation pads in some browsers) report it as axes instead: a « hat » axis (9),
+ * one value per direction and above 1 when released, or a pair of axes (6, 7) at -1/0/1.
  */
-export function readPad(buttons: readonly boolean[], axes: readonly number[]): { held: Set<Button>; stick: { x: number; y: number } } {
+export function readDpad(buttons: readonly boolean[], axes: readonly number[], standard: boolean): { up: boolean; down: boolean; left: boolean; right: boolean } {
   const b = (i: number) => !!buttons[i];
+  const out = { up: b(12), down: b(13), left: b(14), right: b(15) };
+  if (standard) return out;
+  const hat = axes[9];
+  if (hat !== undefined && hat >= -1.05 && hat <= 1.05) {
+    // Eight positions from up (-1) clockwise in steps of 2/7.
+    const k = Math.round((hat + 1) / (2 / 7)) % 8;
+    out.up ||= k === 7 || k === 0 || k === 1;
+    out.right ||= k >= 1 && k <= 3;
+    out.down ||= k >= 3 && k <= 5;
+    out.left ||= k >= 5 && k <= 7;
+  } else if (axes.length >= 8) {
+    const [x, y] = [axes[6] ?? 0, axes[7] ?? 0];
+    out.left ||= x < -0.5;
+    out.right ||= x > 0.5;
+    out.up ||= y < -0.5;
+    out.down ||= y > 0.5;
+  }
+  return out;
+}
+
+/**
+ * Reads one gamepad: held buttons and the left stick (radial dead zone, rescaled so
+ * movement starts smoothly at its edge). Pure, for tests.
+ */
+export function readPad(buttons: readonly boolean[], axes: readonly number[], standard = true): { held: Set<Button>; stick: { x: number; y: number } } {
+  const b = (i: number) => !!buttons[i];
+  const pad = readDpad(buttons, axes, standard);
   const held = new Set<Button>();
   if (b(0)) held.add("light");
   if (b(1)) held.add("s0"); // resolved to s0 / s1 by the stick when pressed
@@ -83,7 +111,8 @@ export function readPad(buttons: readonly boolean[], axes: readonly number[]): {
   if (b(7)) held.add("dodge");
   if (b(8)) held.add("help");
   if (b(9)) held.add("start");
-  if (b(13)) held.add("charge");
+  // Recharge: d-pad down, or a click of the left stick (standing still anyway), held.
+  if (pad.down || b(10)) held.add("charge");
   let x = axes[0] ?? 0;
   let y = axes[1] ?? 0;
   const m = Math.hypot(x, y);
@@ -94,8 +123,8 @@ export function readPad(buttons: readonly boolean[], axes: readonly number[]): {
   }
   // The d-pad moves too (left/right/up), for pads whose stick drifts or is missing.
   if (!x && !y) {
-    x = (b(15) ? 1 : 0) - (b(14) ? 1 : 0);
-    y = b(12) ? -1 : 0;
+    x = (pad.right ? 1 : 0) - (pad.left ? 1 : 0);
+    y = pad.up ? -1 : 0;
   }
   return { held, stick: { x, y } };
 }
@@ -187,16 +216,16 @@ export class Input {
       const r = readPad(
         pad.buttons.map((b) => b.pressed || b.value > 0.5),
         pad.axes,
+        s.standard,
       );
       for (const k of r.held) if (!s.held.has(k)) s.pressed.add(k);
       s.held = r.held;
       s.stick = r.stick;
       // Menu navigation: stick or d-pad, one step per push, repeating while held.
-      const bt = (i: number) => !!pad.buttons[i]?.pressed;
+      const d = readDpad(pad.buttons.map((b) => b.pressed), pad.axes, s.standard);
       const ax = pad.axes[0] ?? 0;
       const ay = pad.axes[1] ?? 0;
-      const nav =
-        ax > 0.6 || bt(15) ? "navR" : ax < -0.6 || bt(14) ? "navL" : ay < -0.6 || bt(12) ? "navU" : ay > 0.6 || bt(13) ? "navD" : "";
+      const nav = ax > 0.6 || d.right ? "navR" : ax < -0.6 || d.left ? "navL" : ay < -0.6 || d.up ? "navU" : ay > 0.6 || d.down ? "navD" : "";
       const now = performance.now();
       if (nav && (nav !== s.nav || now >= s.navRepeat)) {
         s.pressed.add(nav as Button);
