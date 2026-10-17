@@ -16,6 +16,7 @@ const look: Look = {
   tint: "#ffffff",
   outfit: q.get("outfit") ?? "#d01c1c",
   ...(q.get("hair") ? { hair: q.get("hair")! } : {}),
+  ...(q.get("expression") ? { expression: q.get("expression") as Look["expression"] } : {}),
 };
 
 if (q.get("wrist")) setWrist(Number(q.get("wrist")));

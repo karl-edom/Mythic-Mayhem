@@ -9,7 +9,10 @@ import { SWORDSMAN_BONES } from "./swordsman.ts";
 
 type V = [number, number, number];
 
-const REST = new Map(SWORDSMAN_BONES.map(([name, parent, x, y, z]) => [name, { parent, pos: new THREE.Vector3(x, y, z) }]));
+type BoneTable = [string, string | null, number, number, number][];
+const restOf = (table: BoneTable) => new Map(table.map(([name, parent, x, y, z]) => [name, { parent, pos: new THREE.Vector3(x, y, z) }]));
+/** Rest skeleton the solver works on: set by each entry point for the model it poses. */
+let REST = restOf(SWORDSMAN_BONES);
 
 const euler = new THREE.Euler();
 /** Local rotation of a bone in a pose. */
@@ -110,6 +113,8 @@ interface Grip {
   edge?: V;
   /** Both hands on the grip (default), or the off hand left as the body pose has it. */
   two?: boolean;
+  /** Distance between the hands along the weapon (the off hand below the sword hand). */
+  gap?: number;
   /** Elbow directions (rig space), sword arm and off arm. */
   pole?: V;
   offPole?: V;
@@ -128,7 +133,7 @@ function armed(body: Pose, g: Grip): Pose {
   if (g.two !== false) {
     for (const b of ["leftUpperArm", "leftLowerArm", "leftHand"]) delete p.bones[b];
     // The off hand closes on the grip just below the sword hand.
-    const off = at.clone().addScaledVector(blade, -0.095);
+    const off = at.clone().addScaledVector(blade, -(g.gap ?? 0.095));
     Object.assign(p.q!, solveArm(body, 1, off, grip, new THREE.Vector3(...(g.offPole ?? [0.6, -1, -0.4]))));
   }
   return p;
@@ -136,8 +141,9 @@ function armed(body: Pose, g: Grip): Pose {
 
 const L = (lu: V, ll: V) => ({ leftUpperArm: lu, leftLowerArm: ll });
 
-export function swordsmanPoses(hipsRest: THREE.Vector3): Map<string, THREE.AnimationClip> {
-  // ---- Bodies (legs, trunk, head), from the sheet.
+/** Bodies (legs, trunk, head) shared by the weapon styles, from the swordsman's sheet. */
+function bodies() {
+
   /** Low, wide stance (sheet, third pose): knees out, weight forward, eyes on the foe. */
   const low: Pose = {
     hips: [0, -0.2, 0],
@@ -182,6 +188,14 @@ export function swordsmanPoses(hipsRest: THREE.Vector3): Map<string, THREE.Anima
   };
   const turn = (p: Pose, spine: number, hipsY = 0): Pose =>
     over(p, { spine: [p.bones.spine?.[0] ?? 0, spine, 0], chest: [p.bones.chest?.[0] ?? 0, spine * 0.5, 0], head: [p.bones.head?.[0] ?? 0, -spine * 1.2, 0], hips: [0, hipsY, 0] });
+  return { low, lunge, tucked, turn };
+}
+
+
+/** The sword style on a humanoid skeleton (the swordsman's by default, or the turtle's). */
+export function swordsmanPoses(hipsRest: THREE.Vector3, bones: BoneTable = SWORDSMAN_BONES): Map<string, THREE.AnimationClip> {
+  REST = restOf(bones);
+  const { low, lunge, tucked, turn } = bodies();
 
   // ---- Stances.
   const stance = armed(low, { at: [-0.03, 0.3, 0.33], blade: [0.25, 0.22, 1] });
@@ -340,6 +354,138 @@ export function swordsmanPoses(hipsRest: THREE.Vector3): Map<string, THREE.Anima
     ["@counter", poseClip("@counter", wait, waitB, 1.2, hipsRest)],
     ["@counter:strike", counterStrike],
     ["@counter:miss", counterMiss],
+    ["@special:rush", enterCharge],
+    ["@rush", rush],
+    ...reactionClips(hipsRest, stance, guard, air, ball),
+    ["Idle", poseClip("Idle", stance, stanceB, 2.4, hipsRest)],
+    ["Blocking", poseClip("Blocking", guard, { ...guard, hips: [0, -0.16, 0] }, 1.4, hipsRest)],
+    ["Jump_Idle", poseClip("Jump_Idle", air, airB, 0.8, hipsRest)],
+  ]);
+}
+
+/**
+ * The staff style (bō) on a humanoid skeleton: both hands on the staff, well apart, the
+ * long end toward the foe. Thrusts, sweeps, smashes from overhead, a whirl, a vault.
+ */
+export function staffPoses(hipsRest: THREE.Vector3, bones: BoneTable = SWORDSMAN_BONES): Map<string, THREE.AnimationClip> {
+  REST = restOf(bones);
+  const { low, lunge, tucked, turn } = bodies();
+  /** Both hands on the staff, 45 cm apart; `blade` points along its long end. */
+  const held = (body: Pose, at: V, end: V, extra: Partial<Grip> = {}) => armed(body, { at, blade: end, edge: [0, 1, 0], gap: 0.45, ...extra });
+
+  // Ready: across the body from the left hip, the long end forward and up toward the foe.
+  const stance = held(low, [0.04, 0.33, 0.36], [-0.3, 0.32, 1]);
+  const stanceB = held({ ...low, hips: [0, -0.22, 0] }, [0.04, 0.31, 0.37], [-0.3, 0.35, 1]);
+  // Guard: the staff held level, high, across the front.
+  const guard = held(over(low, { spine: [0.05, 0, 0] }, [0, -0.15, 0]), [-0.22, 0.6, 0.3], [-1, 0.06, 0.05]);
+  const air = held(tucked, [-0.22, 0.72, 0.1], [-1, 0.1, 0]);
+  const airB = held(over(tucked, { leftUpperLeg: [-1.3, 0, 0.2] }), [-0.22, 0.74, 0.08], [-1, 0.12, 0]);
+
+  // Run: held in the right hand at the balance, level, long end behind.
+  const runBody = (lead: 1 | -1, contact: boolean): Pose => {
+    const [a, b] = lead > 0 ? ["left", "right"] : ["right", "left"];
+    const legs: Pose["bones"] = contact
+      ? { [`${a}UpperLeg`]: [-1.05, 0, 0], [`${a}LowerLeg`]: [0.4, 0, 0], [`${a}Foot`]: [0.15, 0, 0], [`${b}UpperLeg`]: [0.55, 0, 0], [`${b}LowerLeg`]: [1.25, 0, 0], [`${b}Foot`]: [0.5, 0, 0] }
+      : { [`${a}UpperLeg`]: [-0.25, 0, 0], [`${a}LowerLeg`]: [0.5, 0, 0], [`${a}Foot`]: [-0.1, 0, 0], [`${b}UpperLeg`]: [-0.6, 0, 0], [`${b}LowerLeg`]: [1.9, 0, 0], [`${b}Foot`]: [0.3, 0, 0] };
+    const body: Pose = {
+      hips: contact ? [0, -0.1, 0] : [0, -0.03, 0],
+      bones: { ...legs, spine: [0.45, 0.12 * lead, 0], chest: [0.1, 0, 0], head: [-0.35, 0, 0], ...L([0, -0.4 + 0.5 * lead, -1.15], [0, -0.7, 0]) },
+    };
+    return held(body, [-0.3, 0.12, -0.05], [0.05, 0.05, -1], { two: false, pole: [-0.3, -0.3, -1] });
+  };
+  const run = keyClip("Running_A", [[0, runBody(1, true)], [0.25, runBody(1, false)], [0.5, runBody(-1, true)], [0.75, runBody(-1, false)], [1, runBody(1, true)]], 0.6, hipsRest, { loop: true });
+
+  const blow = (coil: Pose, hit: Pose, rest: Pose = stance, reach = 1.1): Key[] => [
+    [0, rest],
+    [0.3, coil],
+    [0.42, hit, "in"],
+    [0.54, mix(coil, hit, reach), "out"],
+    [0.72, mix(hit, rest, 0.3)],
+    [1, rest],
+  ];
+  const deep: Pose = over(lunge, { leftUpperLeg: [-1.15, -0.1, 0.3], leftLowerLeg: [1.25, 0, 0], rightUpperLeg: [0.6, 0.1, -0.3], rightLowerLeg: [0.3, 0, 0], spine: [0.45, 0, 0], head: [-0.35, 0, 0] }, [0, -0.3, 0.14]);
+  // Light 1: a straight thrust with the end.
+  const pull = held(turn(low, 0.25), [-0.02, 0.32, 0.1], [-0.15, 0.1, 1]);
+  const thrust = held(turn(lunge, -0.2), [0.02, 0.34, 0.58], [-0.05, 0.05, 1]);
+  const light0 = keyClip("@light0", blow(pull, thrust), 0.6, hipsRest, { impact: 0.42 });
+  // Light 2: a flat sweep from right to left.
+  const sweepCoil = held(turn(low, 0.5), [-0.3, 0.35, 0.1], [-0.9, 0.15, -0.35]);
+  const sweep = held(turn(lunge, -0.45), [0.12, 0.36, 0.4], [0.95, 0.1, 0.55]);
+  const light1 = keyClip("@light1", blow(sweepCoil, sweep), 0.6, hipsRest, { impact: 0.42 });
+  // Light 3 (finisher): overhead, brought straight down with a long step.
+  const raised = held(over(low, { spine: [-0.08, 0, 0] }, [0, -0.15, -0.03]), [-0.05, 0.78, 0.08], [0, 0.85, -0.5]);
+  const smash = held(deep, [0, 0.3, 0.5], [0, -0.3, 1]);
+  const light2 = keyClip("@light2", blow(raised, smash, stance, 1.08), 0.8, hipsRest, { impact: 0.42 });
+  // Heavy: wound up high on the right (held while charging), a full diagonal blow.
+  const wind = held(turn(over(low, { spine: [-0.05, 0, 0] }), 0.4), [-0.25, 0.7, 0.0], [-0.4, 0.8, -0.5]);
+  const windHigh = held(turn(over(low, { spine: [-0.12, 0, 0] }), 0.5), [-0.22, 0.8, -0.05], [-0.3, 0.75, -0.65]);
+  const crash = held(turn(deep, -0.35), [0.15, 0.24, 0.48], [0.55, -0.45, 0.7]);
+  const heavy = keyClip(
+    "@heavy",
+    [[0, stance], [0.24, wind], [0.32, windHigh], [0.42, crash, "in"], [0.52, mix(windHigh, crash, 1.07), "out"], [0.72, mix(crash, stance, 0.3)], [1, stance]],
+    1.0,
+    hipsRest,
+    { impact: 0.42 },
+  );
+  // Aerial: a flat spinning sweep.
+  const airCoil = held(turn(tucked, 0.5), [-0.3, 0.38, 0.05], [-0.85, 0.05, -0.5]);
+  const airSweep = held(turn(over(tucked, { leftUpperLeg: [-0.9, 0, 0.3] }), -0.5), [0.12, 0.38, 0.42], [1, 0, 0.45]);
+  const aerial = keyClip("@aerial", blow(airCoil, airSweep, air, 1.12), 0.6, hipsRest, { impact: 0.42 });
+
+  // ---- Pole vault (leap): plant the long end ahead, swing up over it, come down smashing.
+  const plant = held(over(lunge, { spine: [0.4, 0, 0], head: [-0.3, 0, 0] }, [0, -0.28, 0.05]), [0, 0.55, 0.25], [0, -0.85, 0.55]);
+  const takeoff = keyClip("@special:leap", [[0, stance], [0.42, plant, "in"], [1, plant]], 0.5, hipsRest, { impact: 0.42 });
+  const vault = held({ hips: [0, 0, 0], bones: { spine: [-0.2, 0, 0], head: [0.1, 0, 0], leftUpperLeg: [-0.9, 0, 0.15], leftLowerLeg: [0.6, 0, 0], rightUpperLeg: [-0.7, 0, -0.15], rightLowerLeg: [0.5, 0, 0] } }, [0, 0.55, 0.08], [0, -1, 0.25]);
+  const top = held(over(tucked, { spine: [0.25, 0, 0], head: [-0.2, 0, 0] }), [0, 0.78, 0.0], [0, 0.6, -1]);
+  const dive = held(over(tucked, { spine: [0.5, 0, 0], head: [-0.4, 0, 0], leftUpperLeg: [-0.7, 0, 0.2], leftLowerLeg: [1.0, 0, 0], rightUpperLeg: [0.2, 0, -0.15], rightLowerLeg: [0.9, 0, 0] }), [0, 0.85, 0.12], [0, 0.8, -0.6]);
+  const leapClip = keyClip("@leap", [[0, plant], [0.3, vault, "out"], [0.6, top], [0.88, dive], [1, dive]], 1.0, hipsRest);
+  const kneel: Pose = over(deep, { rightUpperLeg: [0.2, 0.1, -0.25], rightLowerLeg: [1.7, 0, 0], rightFoot: [0.5, 0, 0], spine: [0.55, 0, 0] }, [0, -0.45, 0.12]);
+  const slam = held(kneel, [0, 0.16, 0.48], [0, -0.5, 1]);
+  const land = keyClip("@leap:land", [[0, dive], [0.15, slam, "in"], [0.45, slam], [1, stance]], 0.8, hipsRest, { impact: 0.15 });
+
+  // ---- Whirl (area): the staff spun level round the body, twice.
+  const spinAt = (yaw: number): Pose => held(over(low, { hips: [0, yaw, 0], spine: [0.15, 0, 0] }, [0, -0.2, 0]), [-0.18, 0.4, 0.18], [-1, 0.05, 0.25]);
+  const whirl = keyClip(
+    "@special:area",
+    [[0, stance], [0.2, spinAt(0)], [0.42, spinAt(Math.PI)], [0.64, spinAt(Math.PI * 2)], [0.86, spinAt(Math.PI * 3)], [1, spinAt(Math.PI * 4)]],
+    0.9,
+    hipsRest,
+    { impact: 0.42, linear: true },
+  );
+
+  // ---- Charge (rush): the staff levelled like a lance.
+  const lance = held(over(lunge, { spine: [0.35, 0, 0], head: [-0.3, 0, 0] }, [0, -0.3, 0]), [0.02, 0.3, 0.35], [-0.05, 0.02, 1]);
+  const enterCharge = keyClip("@special:rush", [[0, stance], [0.42, lance, "in"], [1, lance]], 0.5, hipsRest, { impact: 0.42 });
+  const dash = (lead: 1 | -1): Pose =>
+    held(
+      {
+        hips: [0, -0.18, 0],
+        bones: {
+          spine: [0.55, 0, 0], chest: [0.1, 0, 0], head: [-0.45, 0, 0],
+          leftUpperLeg: [lead > 0 ? -1.1 : 0.6, 0, 0.1], leftLowerLeg: [lead > 0 ? 0.5 : 1.4, 0, 0],
+          rightUpperLeg: [lead > 0 ? 0.6 : -1.1, 0, -0.1], rightLowerLeg: [lead > 0 ? 1.4 : 0.5, 0, 0],
+        },
+      },
+      [0.02, 0.3, 0.42], [-0.05, 0, 1],
+    );
+  const rush = keyClip("@rush", [[0, dash(1)], [0.5, dash(-1)], [1, dash(1)]], 0.3, hipsRest, { loop: true });
+
+  const ball: Pose = held(
+    { hips: [0, -0.42, 0], bones: { spine: [1.0, 0, 0], chest: [0.5, 0, 0], neck: [0.4, 0, 0], head: [0.3, 0, 0], leftUpperLeg: [-2.2, 0, 0.1], leftLowerLeg: [2.4, 0, 0], rightUpperLeg: [-2.2, 0, -0.1], rightLowerLeg: [2.4, 0, 0] } },
+    [-0.1, 0.25, 0.25], [0, -0.3, -1],
+  );
+
+  return new Map([
+    ["Running_A", run],
+    ["@light0", light0],
+    ["@light1", light1],
+    ["@light2", light2],
+    ["@heavy", heavy],
+    ["@aerial", aerial],
+    ["@special:leap", takeoff],
+    ["@leap", leapClip],
+    ["@leap:land", land],
+    ["@special:area", whirl],
     ["@special:rush", enterCharge],
     ["@rush", rush],
     ...reactionClips(hipsRest, stance, guard, air, ball),

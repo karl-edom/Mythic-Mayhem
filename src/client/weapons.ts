@@ -5,7 +5,7 @@
 import * as THREE from "three";
 import { noOutline, outlineOf, toon } from "./toon.ts";
 
-export const ANIME_WEAPONS = ["1H_Katana", "2H_Odachi", "Kunai", "Kunai_Offhand", "2H_Staff", "Sai", "Sai_Offhand", "Sakabato"] as const;
+export const ANIME_WEAPONS = ["1H_Katana", "2H_Odachi", "Kunai", "Kunai_Offhand", "2H_Staff", "Sai", "Sai_Offhand", "Sakabato", "Bo", "Nunchaku", "Nunchaku_Offhand"] as const;
 
 const STEEL = 0xe8eef6;
 
@@ -149,6 +149,116 @@ function sai(): THREE.Group {
   return g;
 }
 
+/**
+ * Bō: a long hardwood staff, slightly thicker in the middle, cloth wraps where the hands
+ * hold it and at both ends. Held by the right hand at the origin, the left a little
+ * lower; most of its length rises above the right hand.
+ */
+function bo(): THREE.Group {
+  const g = new THREE.Group();
+  const wood = new THREE.MeshStandardMaterial({ color: 0x8a5a2e, roughness: 0.55 });
+  const wrap = new THREE.MeshStandardMaterial({ color: 0x3b2a4a, roughness: 0.85 });
+  outlineOf(wood, 0.0025);
+  outlineOf(wrap, 0.0025);
+  const len = 1.75;
+  const shaft = new THREE.CylinderGeometry(0.018, 0.018, len, 12, 12);
+  const sp = shaft.attributes.position!;
+  for (let i = 0; i < sp.count; i++) {
+    const k = 1 + 0.18 * (1 - Math.abs(sp.getY(i) / (len / 2)) ** 2);
+    sp.setX(i, sp.getX(i) * k);
+    sp.setZ(i, sp.getZ(i) * k);
+  }
+  shaft.computeVertexNormals();
+  const m = new THREE.Mesh(shaft, wood);
+  m.position.y = 0.32;
+  m.castShadow = true;
+  g.add(m);
+  for (const [y, h] of [[0.0, 0.14], [-0.45, 0.14], [0.32 + len / 2 - 0.06, 0.1], [0.32 - len / 2 + 0.06, 0.1]] as const) {
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(0.0225, 0.0225, h, 12), wrap);
+    band.position.y = y;
+    g.add(band);
+  }
+  markTrail(g, 0.5, 0.32 + len / 2);
+  return g;
+}
+
+/**
+ * Nunchaku: the held stick, a short chain, and the free stick, which swings like a
+ * pendulum on the chain: it hangs, lags behind the hand and whips round at the end of
+ * a blow (simulated each frame, visual only).
+ */
+function nunchaku(): THREE.Group {
+  const g = new THREE.Group();
+  const wood = new THREE.MeshStandardMaterial({ color: 0x6b3f22, roughness: 0.45 });
+  const steel = new THREE.MeshStandardMaterial({ color: 0xc9ccd2, metalness: 1, roughness: 0.3 });
+  outlineOf(wood, 0.0025);
+  const stick = () => {
+    const geo = new THREE.CylinderGeometry(0.015, 0.016, 0.3, 8);
+    const mesh = new THREE.Mesh(geo, wood);
+    mesh.castShadow = true;
+    return mesh;
+  };
+  const held = stick();
+  held.position.y = 0.1;
+  g.add(held);
+  const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.017, 0.017, 0.012, 8), steel);
+  cap.position.y = 0.25;
+  g.add(cap);
+  // The free half hangs from the top of the held stick: chain (local −Y), then stick.
+  const swing = new THREE.Group();
+  swing.position.y = 0.255;
+  g.add(swing);
+  const chain = 0.09;
+  for (let i = 0; i < 5; i++) {
+    const link = new THREE.Mesh(new THREE.TorusGeometry(0.008, 0.0025, 4, 8), steel);
+    link.position.y = -(i + 0.5) * (chain / 5);
+    link.rotation.y = i % 2 ? Math.PI / 2 : 0;
+    swing.add(link);
+  }
+  const free = stick();
+  free.position.y = -chain - 0.15;
+  swing.add(free);
+  for (const [name, y] of [["trailBase", -chain], ["trailTip", -chain - 0.3]] as const) {
+    const o = new THREE.Object3D();
+    o.name = name;
+    o.position.y = y;
+    swing.add(o);
+  }
+  // Pendulum: the free end's world position is integrated (Verlet) and kept at the
+  // chain's length from the pivot; the free half is then turned toward it.
+  const reach = chain + 0.3;
+  const tip = new THREE.Vector3();
+  const prev = new THREE.Vector3();
+  const pivot = new THREE.Vector3();
+  const pq = new THREE.Quaternion();
+  let last = 0;
+  free.onBeforeRender = () => {
+    const now = performance.now() / 1000;
+    if (last && now - last < 0.004) return;
+    const dt = last ? Math.min(0.033, now - last) : 0;
+    last = now;
+    swing.parent!.updateWorldMatrix(true, false);
+    swing.getWorldPosition(pivot);
+    const scale = swing.parent!.getWorldScale(new THREE.Vector3()).y;
+    if (dt === 0 || tip.lengthSq() === 0) {
+      tip.copy(pivot).add(new THREE.Vector3(0, -reach * scale, 0));
+      prev.copy(tip);
+    } else {
+      const v = tip.clone().sub(prev).multiplyScalar(0.94);
+      prev.copy(tip);
+      tip.add(v).add(new THREE.Vector3(0, -9.8 * dt * dt, 0));
+    }
+    const d = tip.clone().sub(pivot);
+    if (d.lengthSq() < 1e-8) d.set(0, -1, 0);
+    d.setLength(reach * scale);
+    tip.copy(pivot).add(d);
+    swing.parent!.getWorldQuaternion(pq);
+    const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, -1, 0), d.clone().normalize());
+    swing.quaternion.copy(pq.invert().multiply(q));
+  };
+  return g;
+}
+
 /** Builds a weapon by name, or null for names that are not anime weapons. */
 export function buildWeapon(name: string): THREE.Group | null {
   switch (name) {
@@ -170,6 +280,11 @@ export function buildWeapon(name: string): THREE.Group | null {
     case "Sai":
     case "Sai_Offhand":
       return sai();
+    case "Bo":
+      return bo();
+    case "Nunchaku":
+    case "Nunchaku_Offhand":
+      return nunchaku();
     default:
       return null;
   }

@@ -9,9 +9,9 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { ANIME_MODELS, MODELS, isAnime, type Look, type ModelId } from "../brawl/character.ts";
 import { turtlePoses } from "./poses.ts";
-import { swordsmanPoses } from "./swordPoses.ts";
+import { staffPoses, swordsmanPoses } from "./swordPoses.ts";
 import { SWORDSMAN_HEIGHT, animateSwordsman, buildSwordsmanRig, paintSwordsman } from "./swordsman.ts";
-import { TURTLE_HEIGHT, animateTurtle, buildTurtleRig, paintTurtle } from "./turtle.ts";
+import { TURTLE_BONES, TURTLE_HEIGHT, animateTurtle, buildTurtleRig, paintTurtle } from "./turtle.ts";
 import type { Archetype } from "../brawl/kit.ts";
 import { KAYKIT_TO_HUMANOID, LOCOMOTION, LOCOMOTION_LEGS, Retargeter, amplifyClip, amplitudeFor, clenchFists } from "./retarget.ts";
 import { noOutline, outlineOf, toToon } from "./toon.ts";
@@ -29,11 +29,13 @@ interface AnimeTemplate {
   /** Faces +Z like the KayKit rig (VRM 0.x avatars face −Z). */
   rig: THREE.Group;
   height: number;
-  clips?: Map<string, THREE.AnimationClip>;
+  /** Retargeted shared clips, then the full set per fighting style (see `poseStyle`). */
+  base?: Map<string, THREE.AnimationClip>;
+  clips?: Map<PoseStyle, Map<string, THREE.AnimationClip>>;
   /** Built in code with physically based materials: kept as they are (not cel-shaded). */
   procedural?: boolean;
   /** Hand-keyed clips that replace the retargeted ones of the same name (stances from a reference sheet). */
-  poses?: () => Map<string, THREE.AnimationClip>;
+  poses?: (style: PoseStyle) => Map<string, THREE.AnimationClip>;
   /** Procedural models: colours, optional parts and secondary motion of an instance. */
   dress?: (rig: THREE.Object3D, look: Look) => void;
 }
@@ -136,16 +138,17 @@ export async function loadModels(base: string, onProgress?: (done: number, total
   const turtle = buildTurtleRig();
   const hipsRest = turtle.getObjectByName("hips")!.position.clone();
   anime.set("turtle", {
-    rig: turtle, height: TURTLE_HEIGHT, procedural: true, poses: () => turtlePoses(hipsRest),
+    rig: turtle, height: TURTLE_HEIGHT, procedural: true, poses: (style) =>
+      style === "sword" ? swordsmanPoses(hipsRest, TURTLE_BONES) : style === "staff" ? staffPoses(hipsRest, TURTLE_BONES) : turtlePoses(hipsRest),
     dress: (rig, look) => {
-      paintTurtle(rig, look.outfit);
+      paintTurtle(rig, look);
       animateTurtle(rig);
     },
   });
   const swordsman = buildSwordsmanRig();
   const swordsmanHips = swordsman.getObjectByName("hips")!.position.clone();
   anime.set("swordsman", {
-    rig: swordsman, height: SWORDSMAN_HEIGHT, procedural: true, poses: () => swordsmanPoses(swordsmanHips),
+    rig: swordsman, height: SWORDSMAN_HEIGHT, procedural: true, poses: (style) => (style === "staff" ? staffPoses(swordsmanHips) : swordsmanPoses(swordsmanHips)),
     dress: (rig, look) => {
       paintSwordsman(rig, look);
       animateSwordsman(rig);
@@ -159,11 +162,23 @@ export async function loadModels(base: string, onProgress?: (done: number, total
   };
 }
 
-/** The shared clips retargeted onto an anime avatar, computed on first use. */
-function animeClips(lib: ModelLibrary, t: AnimeTemplate): Map<string, THREE.AnimationClip> {
-  if (!t.clips) {
+/** How a fighter moves, from the weapons it carries: a sword, a staff, or a pair (or none). */
+export type PoseStyle = "dual" | "sword" | "staff";
+const SWORDS = ["1H_Katana", "2H_Odachi", "Sakabato"];
+const STAFFS = ["Bo", "2H_Staff"];
+export const poseStyle = (show: string[]): PoseStyle =>
+  show.some((w) => SWORDS.includes(w)) ? "sword" : show.some((w) => STAFFS.includes(w)) ? "staff" : "dual";
+
+/**
+ * The shared clips retargeted onto an anime avatar, then, for procedural models, the
+ * hand-keyed set of the fighting style replacing them. Computed on first use.
+ */
+function animeClips(lib: ModelLibrary, t: AnimeTemplate, style: PoseStyle): Map<string, THREE.AnimationClip> {
+  const done = t.clips?.get(style);
+  if (done) return done;
+  if (!t.base) {
     const r = new Retargeter({ source: lib.rig, target: t.rig, map: KAYKIT_TO_HUMANOID, armDrop: 0.5 });
-    t.clips = new Map(
+    t.base = new Map(
       [...lib.clips].map(([name, clip]) => {
         const loco = LOCOMOTION.test(name);
         let out = amplifyClip(r.retarget(clip, 30, loco ? 0.3 : 0.6), amplitudeFor(name), loco ? "mean" : "first", loco ? LOCOMOTION_LEGS : undefined);
@@ -172,17 +187,19 @@ function animeClips(lib: ModelLibrary, t: AnimeTemplate): Map<string, THREE.Anim
         return [name, out] as const;
       }),
     );
-    if (t.poses)
-      for (const [name, clip] of t.poses()) {
-        // Hand-keyed cycles get their stride speed measured like the retargeted ones.
-        if (LOCOMOTION.test(name)) {
-          const grounded = groundClip(t, clip);
-          grounded.userData.naturalSpeed = naturalSpeed(t, grounded) * (ANIME_HEIGHT / t.height);
-          t.clips.set(name, grounded);
-        } else t.clips.set(name, clip);
-      }
   }
-  return t.clips;
+  const clips = new Map(t.base);
+  if (t.poses)
+    for (const [name, clip] of t.poses(style)) {
+      // Hand-keyed cycles get their stride speed measured like the retargeted ones.
+      if (LOCOMOTION.test(name)) {
+        const grounded = groundClip(t, clip);
+        grounded.userData.naturalSpeed = naturalSpeed(t, grounded) * (ANIME_HEIGHT / t.height);
+        clips.set(name, grounded);
+      } else clips.set(name, clip);
+    }
+  (t.clips ??= new Map()).set(style, clips);
+  return clips;
 }
 
 /**
@@ -395,5 +412,5 @@ function instantiateAnime(lib: ModelLibrary, look: Look): ModelInstance {
   const base = main?.getObjectByName("trailBase") ?? rig.getObjectByName("trailBase") ?? rig.getObjectByName("rightLowerArm");
   const tip = main?.getObjectByName("trailTip") ?? rig.getObjectByName("trailTip") ?? main;
   const trail = base && tip ? { base, tip } : null;
-  return { root, mixer: new THREE.AnimationMixer(rig), clips: animeClips(lib, t), materials, trail };
+  return { root, mixer: new THREE.AnimationMixer(rig), clips: animeClips(lib, t, poseStyle(look.show)), materials, trail };
 }

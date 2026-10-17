@@ -11,7 +11,7 @@ import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 
 /** Bone name, parent, rest position in the model (metres, T-pose, facing +Z). */
-const BONES: [string, string | null, number, number, number][] = [
+export const TURTLE_BONES: [string, string | null, number, number, number][] = [
   ["hips", null, 0, 0.92, 0],
   ["spine", "hips", 0, 1.04, 0],
   ["chest", "spine", 0, 1.2, 0],
@@ -418,7 +418,7 @@ export function buildTurtleRig(): THREE.Group {
   rig.name = "turtle";
   const world = new Map<string, THREE.Vector3>();
   const bones = new Map<string, THREE.Bone>();
-  for (const [name, parent, x, y, z] of BONES) {
+  for (const [name, parent, x, y, z] of TURTLE_BONES) {
     const b = new THREE.Bone();
     b.name = name;
     const w = new THREE.Vector3(x, y, z);
@@ -515,13 +515,73 @@ export function buildTurtleRig(): THREE.Group {
     // Skull and the broad, rounded snout.
     put("head", blob(0.13, 0.135, 0.14, 40).translate(0, 1.61, 0.03), M.skin, "skull");
     put("head", blob(0.112, 0.075, 0.11, 40).translate(0, 1.545, 0.085), M.skin, "snout");
-    // Mouth: a thin dark line with a confident half smile.
-    const smile = new THREE.TorusGeometry(0.085, 0.006, 6, 24, Math.PI * 0.75);
-    smile.rotateZ(Math.PI + Math.PI * 0.12);
-    smile.scale(1, 0.45, 1);
-    smile.translate(0.008, 1.548, 0.168);
+    // Mouth, one per expression (see paintTurtle), drawn on the snout's surface: a
+    // confident half smile (fierce), a small gentle smile (calm), a wide open grin with
+    // teeth (wild).
     const mouthMat = new THREE.MeshStandardMaterial({ color: "#1d2610", roughness: 0.8 });
-    put("head", smile, mouthMat);
+    {
+      const SC = V(0, 1.545, 0.085);
+      const SR = V(0.112, 0.075, 0.11);
+      /** The point of the snout's surface in front of (x, y), lifted by `lift`. */
+      const onSnout = (x: number, y: number, lift = 0.0015) => {
+        const k = Math.max(0, 1 - (x / SR.x) ** 2 - ((y - SC.y) / SR.y) ** 2);
+        const p = V(x, y, SC.z + SR.z * Math.sqrt(k));
+        const n = V((p.x - SC.x) / SR.x ** 2, (p.y - SC.y) / SR.y ** 2, (p.z - SC.z) / SR.z ** 2).normalize();
+        return p.addScaledVector(n, lift);
+      };
+      const line = (f: (u: number) => [number, number], r: number, name: string) => {
+        const pts = Array.from({ length: 17 }, (_, i) => onSnout(...f(i / 16)));
+        put("head", new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 32, r, 6), mouthMat, name);
+      };
+      // Fierce: lower on the left, the right corner pulled up in a smirk.
+      line((u) => {
+        const x = -0.07 + u * 0.145;
+        return [x, 1.528 + 0.004 * Math.sin(u * Math.PI) * -1 + 0.014 * u ** 3];
+      }, 0.0042, "expr:fierce");
+      // Calm: short, both corners gently up.
+      line((u) => {
+        const x = -0.05 + u * 0.1;
+        return [x, 1.53 + 0.008 * ((x / 0.05) ** 2)];
+      }, 0.0038, "expr:calm");
+      // Wild: an open grin, upper teeth showing, corners high.
+      {
+        const top = (x: number) => 1.548 + 0.01 * ((x / 0.07) ** 2);
+        const bot = (x: number) => 1.548 - 0.03 * (1 - (x / 0.07) ** 2) + 0.01 * ((x / 0.07) ** 2);
+        const grid = (y0: (x: number) => number, y1: (x: number) => number, lift: number) => {
+          const pos: number[] = [];
+          const idx: number[] = [];
+          const n = 20;
+          for (let i = 0; i <= n; i++)
+            for (let j = 0; j <= 4; j++) {
+              const x = -0.07 + (i / n) * 0.14;
+              const p = onSnout(x, y0(x) + (y1(x) - y0(x)) * (j / 4), lift);
+              pos.push(p.x, p.y, p.z);
+            }
+          for (let i = 0; i < n; i++)
+            for (let j = 0; j < 4; j++) {
+              const a0 = i * 5 + j;
+              idx.push(a0, a0 + 5, a0 + 1, a0 + 1, a0 + 5, a0 + 6);
+            }
+          const g = new THREE.BufferGeometry();
+          g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+          g.setIndex(idx);
+          g.computeVertexNormals();
+          return g;
+        };
+        const inside = new THREE.MeshStandardMaterial({ color: "#3a1512", roughness: 0.9, side: THREE.DoubleSide });
+        put("head", grid(top, bot, 0.0012), inside, "expr:wild");
+        const teethMat = new THREE.MeshPhysicalMaterial({ color: "#f4f1e6", roughness: 0.3, clearcoat: 0.6, side: THREE.DoubleSide });
+        put("head", grid(top, (x) => top(x) - 0.009 * (1 - (x / 0.075) ** 2), 0.0022), teethMat, "expr:wild");
+        line((u) => {
+          const x = -0.072 + u * 0.144;
+          return [x, top(x)];
+        }, 0.0035, "expr:wild");
+        line((u) => {
+          const x = -0.072 + u * 0.144;
+          return [x, bot(x)];
+        }, 0.0035, "expr:wild");
+      }
+    }
     // Nostrils.
     for (const s of [-1, 1]) put("head", blob(0.007, 0.005, 0.004).translate(s * 0.018, 1.585, 0.19), mouthMat);
     // Mask band: cloth hugging the skull (each vertex laid on the head's surface),
@@ -570,22 +630,31 @@ export function buildTurtleRig(): THREE.Group {
       const m = put("head", tail.translate(s * 0.018, 1.632, -0.13), M.mask, "maskTail");
       m.userData.tailSide = s;
     }
-    // Eyes: big, set in the mask, with a determined frown.
+    // Eyes, set in the mask, and the brows that give the expression:
+    // fierce: a determined frown; calm: level brows, softer, rounder eyes;
+    // wild: brows flung up, eyes wide open with small pupils looking slightly askew.
     const white = new THREE.MeshPhysicalMaterial({ color: "#f5f2ea", roughness: 0.25, clearcoat: 1 });
     const iris = new THREE.MeshPhysicalMaterial({ color: "#2a1a0e", roughness: 0.1, clearcoat: 1 });
-    for (const s of [-1, 1]) {
-      // Set into the mask's eye holes: they follow the curve of the face, barely proud of the cloth.
-      const eye = blob(0.036, 0.026, 0.013);
-      eye.rotateY(s * 0.35);
-      put("head", eye.translate(s * 0.054, 1.632, 0.172), white);
-      const pupil = blob(0.014, 0.017, 0.006);
-      pupil.rotateY(s * 0.35);
-      put("head", pupil.translate(s * 0.05, 1.628, 0.184), iris);
-      const brow = new RoundedBoxGeometry(0.075, 0.02, 0.03, 2, 0.009);
-      brow.rotateZ(s * 0.32);
-      brow.translate(s * 0.05, 1.655, 0.18);
-      put("head", brow, M.mask, "mask");
-    }
+    const looks = {
+      fierce: { eye: [0.036, 0.026], pupil: [0.014, 0.017, 0], brow: [0.32, 1.655, 0] },
+      calm: { eye: [0.037, 0.029], pupil: [0.016, 0.019, 0], brow: [0.06, 1.666, 0.004] },
+      wild: { eye: [0.04, 0.034], pupil: [0.011, 0.013, 0.008], brow: [-0.22, 1.678, 0.006] },
+    } as const;
+    for (const [mood, k] of Object.entries(looks))
+      for (const s of [-1, 1]) {
+        // Set into the mask's eye holes: they follow the curve of the face, barely proud of the cloth.
+        const eye = blob(k.eye[0], k.eye[1], 0.013);
+        eye.rotateY(s * 0.35);
+        put("head", eye.translate(s * 0.054, 1.632, 0.172), white, `expr:${mood}`);
+        const pupil = blob(k.pupil[0], k.pupil[1], 0.006);
+        pupil.rotateY(s * 0.35);
+        // Wild: the pupils wander a little apart.
+        put("head", pupil.translate(s * (0.05 + k.pupil[2]), 1.628 + k.pupil[2] * 0.5, 0.184), iris, `expr:${mood}`);
+        const brow = new RoundedBoxGeometry(0.075, 0.02, 0.03, 2, 0.009);
+        brow.rotateZ(s * k.brow[0]);
+        brow.translate(s * 0.05, k.brow[1], 0.18 + k.brow[2]);
+        put("head", brow, M.mask, `expr:${mood}`);
+      }
   }
 
   // --- Arms (along ±X in the T-pose): heavy shoulders, bulging biceps, thick forearms.
@@ -739,11 +808,15 @@ export function animateTurtle(root: THREE.Object3D): void {
   });
 }
 
-/** Recolours the mask of an instance (its materials are its own copies by then). */
-export function paintTurtle(root: THREE.Object3D, mask: string | undefined): void {
-  if (!mask) return;
-  const c = new THREE.Color(mask);
+/**
+ * Dresses an instance (its materials are its own copies by then): the mask colour, and
+ * the face of the chosen expression (fierce by default; calm, wild).
+ */
+export function paintTurtle(root: THREE.Object3D, look: { outfit?: string; expression?: string }): void {
+  const mood = look.expression ?? "fierce";
+  const c = look.outfit ? new THREE.Color(look.outfit) : null;
   root.traverse((o) => {
-    if (o instanceof THREE.Mesh && /^mask/.test((o.material as THREE.Material).name)) (o.material as THREE.MeshPhysicalMaterial).color.copy(c);
+    if (o.name.startsWith("expr:")) o.visible = o.name === `expr:${mood}`;
+    if (c && o instanceof THREE.Mesh && /^mask/.test((o.material as THREE.Material).name)) (o.material as THREE.MeshPhysicalMaterial).color.copy(c);
   });
 }

@@ -282,6 +282,8 @@ test("apparence : un look valide est lu, un look invalide est ignoré", async ()
   assert.equal(parseCharacter({ look: { model: "dragon" } }, "x").look, undefined);
   const anime = parseCharacter({ look: { model: "shino", show: ["Kunai"], tint: "#ffffff", hair: "#ff0000", outfit: "rouge" } }, "x");
   assert.deepEqual(anime.look, { model: "shino", show: ["Kunai"], tint: "#ffffff", hair: "#ff0000" });
+  assert.equal(parseCharacter({ look: { model: "turtle", show: ["Bo"], expression: "wild" } }, "x").look?.expression, "wild");
+  assert.equal(parseCharacter({ look: { model: "turtle", show: [], expression: "sad" } }, "x").look?.expression, undefined);
   // Technique presentation: letters only (any script), at most 8; slashes within 0–12.
   const moves = parseCharacter({ moves: { "coup-1": { callout: "龍<b>槌</b>閃", slashes: 40 }, "BAD ID": { callout: "x" } } }, "x").moves;
   assert.deepEqual(moves, { "coup-1": { callout: "龍b槌b閃", slashes: 12 } });

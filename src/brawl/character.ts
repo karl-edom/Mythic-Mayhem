@@ -23,6 +23,8 @@ export interface Look {
   /** Anime models: colour multiplied over the hair, and over the clothes. */
   hair?: string;
   outfit?: string;
+  /** Face of models that have several (turtle): "fierce" (default), "calm", "wild". */
+  expression?: "fierce" | "calm" | "wild";
 }
 
 export interface Character {
@@ -90,5 +92,6 @@ function parseLook(v: unknown): Look | undefined {
   const tint = typeof o.tint === "string" && COLOR.test(o.tint) ? o.tint : "#ffffff";
   const look: Look = { model: o.model as ModelId, show, tint };
   for (const k of ["hair", "outfit"] as const) if (typeof o[k] === "string" && COLOR.test(o[k] as string)) look[k] = o[k] as string;
+  if (o.expression === "fierce" || o.expression === "calm" || o.expression === "wild") look.expression = o.expression;
   return look;
 }
