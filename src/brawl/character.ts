@@ -6,7 +6,7 @@ export const MODELS = ["knight", "barbarian", "mage", "rogue", "rogue_hooded"] a
 /** Anime 3D models available to every pack (VRoid Studio samples, CC0). */
 export const ANIME_MODELS = ["kaito", "fumiriya", "shino", "akane", "vita", "rubin"] as const;
 /** Models built entirely in code (no file), on the same humanoid skeleton as the anime ones. */
-export const PROCEDURAL_MODELS = ["turtle"] as const;
+export const PROCEDURAL_MODELS = ["turtle", "swordsman"] as const;
 export type ModelId = (typeof MODELS)[number] | (typeof ANIME_MODELS)[number] | (typeof PROCEDURAL_MODELS)[number];
 const ALL_MODELS: readonly string[] = [...MODELS, ...ANIME_MODELS, ...PROCEDURAL_MODELS];
 
@@ -32,6 +32,15 @@ export interface Character {
   colors: { primary: string; secondary: string };
   /** Absent: the client picks a model from the fighter's archetype. */
   look?: Look;
+  /** Presentation of specials, by special id: display only. */
+  moves: Record<string, MoveStyle>;
+}
+
+export interface MoveStyle {
+  /** Short text written on screen when the special starts (e.g. its name in kanji), ≤ 8 characters. */
+  callout?: string;
+  /** Number of blade slashes drawn across the target when the special hits (0–12). */
+  slashes?: number;
 }
 
 const COLOR = /^#[0-9a-fA-F]{6}$/;
@@ -51,7 +60,26 @@ export function parseCharacter(data: unknown, fallbackName: string): Character {
       secondary: typeof c.secondary === "string" && COLOR.test(c.secondary) ? c.secondary : "#dddddd",
     },
     look: parseLook(o.look),
+    moves: parseMoves(o.moves),
   };
+}
+
+function parseMoves(v: unknown): Record<string, MoveStyle> {
+  const out: Record<string, MoveStyle> = {};
+  if (typeof v !== "object" || v === null) return out;
+  for (const [id, m] of Object.entries(v as Record<string, unknown>).slice(0, 8)) {
+    if (!/^[a-z0-9-]{1,40}$/.test(id) || typeof m !== "object" || m === null) continue;
+    const o = m as Record<string, unknown>;
+    const style: MoveStyle = {};
+    // Letters only (any script), no markup or control characters.
+    if (typeof o.callout === "string") {
+      const t = [...o.callout.trim()].filter((ch) => /\p{L}|\p{N}/u.test(ch)).slice(0, 8).join("");
+      if (t) style.callout = t;
+    }
+    if (typeof o.slashes === "number" && Number.isFinite(o.slashes)) style.slashes = Math.max(0, Math.min(12, Math.round(o.slashes)));
+    out[id] = style;
+  }
+  return out;
 }
 
 function parseLook(v: unknown): Look | undefined {

@@ -5,7 +5,7 @@
 import * as THREE from "three";
 import { noOutline, outlineOf, toon } from "./toon.ts";
 
-export const ANIME_WEAPONS = ["1H_Katana", "2H_Odachi", "Kunai", "Kunai_Offhand", "2H_Staff", "Sai", "Sai_Offhand"] as const;
+export const ANIME_WEAPONS = ["1H_Katana", "2H_Odachi", "Kunai", "Kunai_Offhand", "2H_Staff", "Sai", "Sai_Offhand", "Sakabato"] as const;
 
 const STEEL = 0xe8eef6;
 
@@ -65,6 +65,7 @@ function katana(bladeLength: number, handle: number, scale = 1): THREE.Group {
   g.add(tsuba);
   const blade = part(curvedBlade(bladeLength, 0.032 * scale, 0.05 * scale), STEEL, 0.002);
   blade.position.y = 0.076;
+  blade.userData.blade = true;
   g.add(blade);
   markTrail(g, 0.08, 0.076 + bladeLength);
   return g;
@@ -153,6 +154,12 @@ export function buildWeapon(name: string): THREE.Group | null {
   switch (name) {
     case "1H_Katana":
       return katana(0.72, 0.26);
+    case "Sakabato": {
+      // Reversed edge: the cutting edge on the inside of the curve, toward the wielder.
+      const k = katana(0.74, 0.27);
+      for (const c of k.children) if (c.userData.blade) c.rotation.y += Math.PI;
+      return k;
+    }
     case "2H_Odachi":
       return katana(1.05, 0.38, 1.25);
     case "Kunai":

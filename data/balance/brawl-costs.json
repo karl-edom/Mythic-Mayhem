@@ -38,10 +38,13 @@
     "areaRadiusFactor": 0.1,
     "areaDelayDiscountPerSecond": 0.3,
     "areaMaxDelayDiscount": 0.4,
+    "counterWindowFactor": 0.5,
     "deliveryFactor": {
       "projectile": 1.313,
       "rush": 0.2878,
-      "area": 0.6889
+      "area": 0.6889,
+      "leap": 0.6889,
+      "counter": 0.6
     },
     "extraSpecialWeights": [
       1,

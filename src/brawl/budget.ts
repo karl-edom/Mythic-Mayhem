@@ -2,7 +2,7 @@
 // data/balance/brawl-costs.json and are PROVISIONAL: they will be calibrated
 // by bot-vs-bot simulation, never by tuning one fighter at a time.
 
-import type { FighterKit, Special, Strike } from "./kit.ts";
+import { leapFlightTime, type FighterKit, type Special, type Strike } from "./kit.ts";
 
 export interface BrawlCostTable {
   version: number;
@@ -23,6 +23,8 @@ export interface BrawlCostTable {
     areaRadiusFactor: number;
     areaDelayDiscountPerSecond: number;
     areaMaxDelayDiscount: number;
+    /** Counter: price per second of the stance's window. */
+    counterWindowFactor: number;
     /**
      * Damage per energy point has diminishing value (energy income and recovery
      * cap how often a special fires): points follow (efficiency / reference)^exponent.
@@ -67,6 +69,15 @@ export function specialMultiplier(sp: Special, c: BrawlCostTable): number {
         (1 + d.radius * k.areaRadiusFactor) *
         (1 - Math.min(d.delay * k.areaDelayDiscountPerSecond, k.areaMaxDelayDiscount))
       );
+    case "leap":
+      // Priced as a circle cast as far, telegraphed for the whole flight.
+      return (
+        (1 + d.range * k.areaCastRangeFactor) *
+        (1 + d.radius * k.areaRadiusFactor) *
+        (1 - Math.min(leapFlightTime(d.height) * k.areaDelayDiscountPerSecond, k.areaMaxDelayDiscount))
+      );
+    case "counter":
+      return 1 + d.window * k.counterWindowFactor;
   }
 }
 

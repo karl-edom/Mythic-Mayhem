@@ -43,14 +43,14 @@ export const TURTLE_HEIGHT = 1.74;
 // ---------------------------------------------------------------------------
 // Painted textures (canvas): colour maps and matching bump maps.
 
-function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
+export function canvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
   const c = document.createElement("canvas");
   c.width = w;
   c.height = h;
   return [c, c.getContext("2d")!];
 }
 
-function texture(c: HTMLCanvasElement, color = true, repeat: [number, number] = [1, 1]): THREE.CanvasTexture {
+export function texture(c: HTMLCanvasElement, color = true, repeat: [number, number] = [1, 1]): THREE.CanvasTexture {
   const t = new THREE.CanvasTexture(c);
   if (color) t.colorSpace = THREE.SRGBColorSpace;
   t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -59,7 +59,7 @@ function texture(c: HTMLCanvasElement, color = true, repeat: [number, number] = 
   return t;
 }
 
-function seeded(seed: number): () => number {
+export function seeded(seed: number): () => number {
   let s = seed >>> 0;
   return () => {
     s = (s * 1664525 + 1013904223) >>> 0;
@@ -308,14 +308,14 @@ function wrapTexture(): THREE.CanvasTexture {
 // Geometry helpers.
 
 /** A sphere squashed to the given radii. */
-function blob(rx: number, ry: number, rz: number, seg = 32): THREE.BufferGeometry {
+export function blob(rx: number, ry: number, rz: number, seg = 32): THREE.BufferGeometry {
   const g = new THREE.SphereGeometry(1, seg, Math.round(seg * 0.75));
   g.scale(rx, ry, rz);
   return g;
 }
 
 /** Capsule between two points (for limbs). */
-function limb(a: THREE.Vector3, b: THREE.Vector3, ra: number, rb: number): THREE.BufferGeometry {
+export function limb(a: THREE.Vector3, b: THREE.Vector3, ra: number, rb: number): THREE.BufferGeometry {
   const len = a.distanceTo(b);
   const g = new THREE.CylinderGeometry(rb, ra, len, 24, 6, true);
   // Muscle: bulge in the middle third.
@@ -338,7 +338,7 @@ function limb(a: THREE.Vector3, b: THREE.Vector3, ra: number, rb: number): THREE
 }
 
 /** Merges geometries keeping position, normal and uv only. */
-function mergeSimple(list: THREE.BufferGeometry[]): THREE.BufferGeometry {
+export function mergeSimple(list: THREE.BufferGeometry[]): THREE.BufferGeometry {
   const parts = list.map((g) => (g.index ? g.toNonIndexed() : g));
   const total = parts.reduce((n, g) => n + g.attributes.position!.count, 0);
   const pos = new Float32Array(total * 3);
@@ -360,7 +360,7 @@ function mergeSimple(list: THREE.BufferGeometry[]): THREE.BufferGeometry {
 }
 
 /** Band of cloth or leather around a limb axis (Y), slightly irregular. */
-function band(radius: number, width: number, tilt: number): THREE.BufferGeometry {
+export function band(radius: number, width: number, tilt: number): THREE.BufferGeometry {
   const g = new THREE.CylinderGeometry(radius, radius * 1.02, width, 28, 1, true);
   g.rotateX(tilt);
   return g;

@@ -2,7 +2,7 @@
 // never changes the simulation. Readability first: every state that matters to
 // the opponent has a visual cue.
 //   strike → a trail that follows the weapon while the blow travels
-//   guard → bubble · guard broken → spinning stars · energy charge → aura column
+//   guard → bubble · guard broken → spinning stars · energy charge → aura column · counter stance → pale aura
 //   invulnerable → blinking · area special → magic circle filling up until impact
 
 import * as THREE from "three";
@@ -291,6 +291,12 @@ export class ArenaView {
           const big = e.knockdown || e.by === "heavy" || e.by === "special" || e.by === "throw";
           this.fighters[e.target]!.flashUntil = w.time + 0.1;
           this.vfx.hit(this.center(w.fighters[e.target]!), this.characters[e.source]!.colors.secondary, big);
+          // A special that cuts many times at once: its slashes across the target.
+          if (e.slot !== undefined) {
+            const id = w.fighters[e.source]!.kit.specials[e.slot]?.id;
+            const n = id ? this.characters[e.source]!.moves[id]?.slashes ?? 0 : 0;
+            if (n > 0) this.vfx.slashes(this.center(w.fighters[e.target]!), n, this.characters[e.source]!.colors.primary);
+          }
           if (e.knockdown) this.vfx.groundWave(new THREE.Vector3(w.fighters[e.target]!.pos.x, w.fighters[e.target]!.floor, w.fighters[e.target]!.pos.z), 0xffffff, 3);
           break;
         }
@@ -353,6 +359,25 @@ export class ArenaView {
           this.vfx.groundWave(new THREE.Vector3(f.pos.x, f.floor, f.pos.z), 0xbfefff, w.config.breakerRadius * 1.6);
           this.fighters[e.unit]!.flashUntil = w.time + 0.12;
           this.freezeUntil = now + 90;
+          break;
+        }
+        case "special": {
+          // The technique's name, written beside the fighter (on the camera's right).
+          const f = w.fighters[e.unit]!;
+          const id = f.kit.specials[e.slot]?.id;
+          const text = id ? this.characters[e.unit]!.moves[id]?.callout : undefined;
+          if (text) {
+            const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0).setY(0).normalize();
+            this.vfx.callout(this.center(f).addScaledVector(right, 1.3).add(new THREE.Vector3(0, 1.1, 0)), text, this.characters[e.unit]!.colors.primary);
+          }
+          break;
+        }
+        case "counter": {
+          // Counter: a flash where the defender reappears, behind the attacker.
+          const d = w.fighters[e.unit]!;
+          this.vfx.glint(this.center(d), 0xffffff, 2.2);
+          this.vfx.ring(this.center(d), this.characters[e.unit]!.colors.primary, 2.4);
+          this.freezeUntil = now + 120;
           break;
         }
         case "parry": {
@@ -485,10 +510,15 @@ export class ArenaView {
     const low = f.alive && f.hp / f.kit.stats.hp < 0.35;
     v.lowHp.visible = low;
     if (low) v.lowHp.material.opacity = 0.3 + 0.15 * Math.sin(t * 8);
-    v.aura.visible = a?.kind === "charge";
+    // Energy charge: a column of the fighter's colour. Counter stance: a pale, slow,
+    // breathing column (careful: a blow struck now is answered in the back).
+    v.aura.visible = a?.kind === "charge" || a?.kind === "counter";
     if (v.aura.visible) {
-      (v.aura.material as THREE.MeshBasicMaterial).opacity = 0.22 + 0.12 * Math.sin(t * 22);
-      v.aura.rotation.y += dt * 3;
+      const m = v.aura.material as THREE.MeshBasicMaterial;
+      const counter = a?.kind === "counter";
+      m.color.set(counter ? 0xdff6ff : this.characters[f.id]!.colors.secondary);
+      m.opacity = counter ? 0.16 + 0.1 * Math.sin(t * 7) : 0.22 + 0.12 * Math.sin(t * 22);
+      v.aura.rotation.y += dt * (counter ? 1 : 3);
     }
     v.stars.visible = a?.kind === "guardbroken";
     v.stars.rotation.y = t * 6;

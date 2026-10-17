@@ -9,6 +9,8 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { ANIME_MODELS, MODELS, isAnime, type Look, type ModelId } from "../brawl/character.ts";
 import { turtlePoses } from "./poses.ts";
+import { swordsmanPoses } from "./swordPoses.ts";
+import { SWORDSMAN_HEIGHT, animateSwordsman, buildSwordsmanRig, paintSwordsman } from "./swordsman.ts";
 import { TURTLE_HEIGHT, animateTurtle, buildTurtleRig, paintTurtle } from "./turtle.ts";
 import type { Archetype } from "../brawl/kit.ts";
 import { KAYKIT_TO_HUMANOID, LOCOMOTION, LOCOMOTION_LEGS, Retargeter, amplifyClip, amplitudeFor, clenchFists } from "./retarget.ts";
@@ -32,6 +34,8 @@ interface AnimeTemplate {
   procedural?: boolean;
   /** Hand-keyed clips that replace the retargeted ones of the same name (stances from a reference sheet). */
   poses?: () => Map<string, THREE.AnimationClip>;
+  /** Procedural models: colours, optional parts and secondary motion of an instance. */
+  dress?: (rig: THREE.Object3D, look: Look) => void;
 }
 
 /** Reflections for procedural models (lacquer, steel, shell): set by the view once it has a renderer. */
@@ -131,7 +135,22 @@ export async function loadModels(base: string, onProgress?: (done: number, total
   });
   const turtle = buildTurtleRig();
   const hipsRest = turtle.getObjectByName("hips")!.position.clone();
-  anime.set("turtle", { rig: turtle, height: TURTLE_HEIGHT, procedural: true, poses: () => turtlePoses(hipsRest) });
+  anime.set("turtle", {
+    rig: turtle, height: TURTLE_HEIGHT, procedural: true, poses: () => turtlePoses(hipsRest),
+    dress: (rig, look) => {
+      paintTurtle(rig, look.outfit);
+      animateTurtle(rig);
+    },
+  });
+  const swordsman = buildSwordsmanRig();
+  const swordsmanHips = swordsman.getObjectByName("hips")!.position.clone();
+  anime.set("swordsman", {
+    rig: swordsman, height: SWORDSMAN_HEIGHT, procedural: true, poses: () => swordsmanPoses(swordsmanHips),
+    dress: (rig, look) => {
+      paintSwordsman(rig, look);
+      animateSwordsman(rig);
+    },
+  });
   return {
     templates,
     anime,
@@ -364,10 +383,7 @@ function instantiateAnime(lib: ModelLibrary, look: Look): ModelInstance {
     materials.push(m);
   });
   clenchFists(rig);
-  if (t.procedural) {
-    paintTurtle(rig, look.outfit);
-    animateTurtle(rig);
-  }
+  t.dress?.(rig, look);
   for (const w of look.show) attachWeapon(rig, w);
   const root = new THREE.Group();
   root.add(rig);

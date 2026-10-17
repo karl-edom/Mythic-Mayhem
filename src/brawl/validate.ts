@@ -4,7 +4,7 @@
 
 import { Reader } from "../sim/validate.ts";
 import { fighterBudget, type BrawlBudget, type BrawlCostTable } from "./budget.ts";
-import { ARCHETYPES, FIGHTER_SCHEMA_VERSION, type Archetype, type FighterKit, type Special, type SpecialDelivery, type Strike } from "./kit.ts";
+import { ARCHETYPES, FIGHTER_SCHEMA_VERSION, leapFlightTime, type Archetype, type FighterKit, type Special, type SpecialDelivery, type Strike } from "./kit.ts";
 
 export const MAX_LIGHT_HITS = 3;
 export const MAX_SPECIALS = 3;
@@ -36,6 +36,9 @@ const LIMITS = {
   castRange: [0, 15],
   areaRadius: [0.5, 5],
   areaDelay: [0, 2],
+  leapRange: [0, 15],
+  leapHeight: [1, 12],
+  counterWindow: [0.1, 1.2],
 } as const satisfies Record<string, readonly [number, number]>;
 
 /** A light-combo opener must be slow enough to be blocked on reaction... */
@@ -95,6 +98,15 @@ function readDelivery(r: Reader, v: unknown, path: string): SpecialDelivery | un
         radius: r.num(o, "radius", path, LIMITS.areaRadius),
         delay: r.num(o, "delay", path, LIMITS.areaDelay),
       };
+    case "leap":
+      return {
+        type: "leap",
+        range: r.num(o, "range", path, LIMITS.leapRange),
+        height: r.num(o, "height", path, LIMITS.leapHeight),
+        radius: r.num(o, "radius", path, LIMITS.areaRadius),
+      };
+    case "counter":
+      return { type: "counter", window: r.num(o, "window", path, LIMITS.counterWindow) };
     default:
       r.errors.push(`${path}.type: livraison inconnue "${String(o.type)}"`);
       return undefined;
@@ -140,7 +152,8 @@ function designErrors(kit: FighterKit): string[] {
     errors.push(`heavy.startup: au moins ${MIN_HEAVY_STARTUP} s, l'attaque lourde use le bouclier deux fois plus vite et doit se voir venir`);
   if (kit.heavy.recovery < MIN_RECOVERY.heavy) errors.push(`heavy.recovery: au moins ${MIN_RECOVERY.heavy} s, un coup raté doit pouvoir se punir`);
   kit.specials.forEach((sp, i) => {
-    const telegraph = sp.startup + (sp.delivery.type === "area" ? sp.delivery.delay : 0);
+    const d = sp.delivery;
+    const telegraph = sp.startup + (d.type === "area" ? d.delay : d.type === "leap" ? leapFlightTime(d.height) : 0);
     if (sp.recovery < MIN_RECOVERY.special) errors.push(`specials[${i}].recovery: au moins ${MIN_RECOVERY.special} s, une spéciale ratée doit pouvoir se punir`);
     if (sp.guardBreak && telegraph < MIN_GUARD_BREAK_TELEGRAPH)
       errors.push(`specials[${i}]: une spéciale brise-garde doit être télégraphiée au moins ${MIN_GUARD_BREAK_TELEGRAPH} s (démarrage + délai)`);

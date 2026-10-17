@@ -129,6 +129,65 @@ test("une zone ne frappe qu'à la fin de son télégraphe", () => {
   assert.equal(w.fighters[1]!.hp, 900);
 });
 
+test("saut plongeant : cercle d'atterrissage visible dès l'envol, frappe à l'arrivée ; coupé en l'air, il disparaît", () => {
+  const leap: Special = {
+    id: "saut", energyCost: 20, startup: 0.1, recovery: 0.3, delivery: { type: "leap", range: 8, height: 4, radius: 1.2 },
+    damage: 120, hitstun: 0.4, knockback: 6, guardBreak: false,
+  };
+  const flight = 2 * Math.sqrt((2 * 4) / BRAWL_CONFIG.gravity);
+  const w = duel(fighter([leap]), fighter(), 6);
+  step(w, [{ unit: 0, special: 0 }]);
+  run(w, 0.15);
+  const a = w.fighters[0]!;
+  assert.equal(a.action?.kind, "leap");
+  assert.equal(w.zones.length, 1);
+  assert.ok(Math.abs(w.zones[0]!.center.x - 6) < 0.05, "le cercle est sur la cible");
+  run(w, flight / 2);
+  assert.ok(a.pos.y > 3, `au sommet : ${a.pos.y}`);
+  assert.equal(w.fighters[1]!.hp, 1000);
+  run(w, flight / 2 + 0.05);
+  assert.equal(w.fighters[1]!.hp, 880);
+  assert.ok(Math.abs(a.pos.y) < 1e-6 && Math.abs(a.pos.x - 6) < 1.2, `posé près de la cible : ${a.pos.x}`);
+
+  // Struck out of the air (by a projectile): no landing strike.
+  const w2 = duel(fighter([leap]), fighter(), 6);
+  step(w2, [{ unit: 0, special: 0 }]);
+  run(w2, 0.3);
+  w2.projectiles.push({ owner: 1, team: 1, slot: 0, pos: { ...w2.fighters[0]!.pos, y: w2.fighters[0]!.pos.y + 0.9 }, dir: { x: -1, y: 0, z: 0 }, speed: 1, remaining: 0.5, size: 0.6, hit: { damage: 10, hitstun: 0.3, knockback: 2, guardBreak: false, by: "special" } });
+  run(w2, 0.05);
+  assert.equal(w2.fighters[0]!.action?.kind, "hitstun");
+  assert.equal(w2.zones.length, 0);
+  run(w2, flight);
+  assert.equal(w2.fighters[1]!.hp, 1000);
+});
+
+test("contre : un coup au corps à corps est esquivé et puni dans le dos ; dans le vide, toute la récupération", () => {
+  const counter: Special = {
+    id: "contre", energyCost: 20, startup: 0.05, recovery: 0.5, delivery: { type: "counter", window: 0.5 },
+    damage: 150, hitstun: 0.5, knockback: 8, guardBreak: false,
+  };
+  const w = duel(fighter([counter]), fighter());
+  step(w, [{ unit: 0, special: 0 }]);
+  run(w, 0.08);
+  assert.equal(w.fighters[0]!.action?.kind, "counter");
+  step(w, [{ unit: 1, light: true }]);
+  run(w, 0.2);
+  const [d, att] = [w.fighters[0]!, w.fighters[1]!];
+  assert.equal(d.hp, 1000, "le contre ne prend rien");
+  assert.equal(att.hp, 850);
+  assert.ok(w.events.some((e) => e.type === "counter"));
+  // The attacker faced −x (toward the defender): the defender is now on its +x side, its back.
+  assert.ok(d.pos.x > att.pos.x, `derrière : ${d.pos.x} / ${att.pos.x}`);
+
+  const w2 = duel(fighter([counter]), fighter());
+  step(w2, [{ unit: 0, special: 0 }]);
+  run(w2, 0.6);
+  assert.equal(w2.fighters[0]!.action?.kind, "special", "toujours engagé après une fenêtre vide");
+  step(w2, [{ unit: 1, light: true }]);
+  run(w2, 0.2);
+  assert.equal(w2.fighters[0]!.hp, 950, "la récupération se punit");
+});
+
 test("un K.-O. remplit la jauge de victoire ; le personnage réapparaît invulnérable", () => {
   const w = duel(fighter(), fighter());
   w.fighters[1]!.hp = 10;
@@ -223,6 +282,9 @@ test("apparence : un look valide est lu, un look invalide est ignoré", async ()
   assert.equal(parseCharacter({ look: { model: "dragon" } }, "x").look, undefined);
   const anime = parseCharacter({ look: { model: "shino", show: ["Kunai"], tint: "#ffffff", hair: "#ff0000", outfit: "rouge" } }, "x");
   assert.deepEqual(anime.look, { model: "shino", show: ["Kunai"], tint: "#ffffff", hair: "#ff0000" });
+  // Technique presentation: letters only (any script), at most 8; slashes within 0–12.
+  const moves = parseCharacter({ moves: { "coup-1": { callout: "龍<b>槌</b>閃", slashes: 40 }, "BAD ID": { callout: "x" } } }, "x").moves;
+  assert.deepEqual(moves, { "coup-1": { callout: "龍b槌b閃", slashes: 12 } });
 });
 
 test("dégagement : sous les coups, il repousse l'agresseur sans dégâts et coûte 50 d'énergie", () => {

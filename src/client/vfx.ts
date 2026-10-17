@@ -244,6 +244,84 @@ export class Vfx {
     if (list.length) this.dust(list[0]!.pos, 4);
   }
 
+  /**
+   * The name of a technique, written top to bottom in bold brush-like strokes beside the
+   * fighter: it stamps in (scale down, fade in), holds, and fades. Drawn over the scene.
+   */
+  callout(pos: THREE.Vector3, text: string, color: THREE.ColorRepresentation): void {
+    const chars = [...text];
+    const cell = 112;
+    const c = document.createElement("canvas");
+    c.width = 160;
+    c.height = cell * chars.length + 48;
+    const g = c.getContext("2d")!;
+    // A brush stroke of the fighter's colour behind the characters.
+    g.fillStyle = `#${new THREE.Color(color).getHexString()}`;
+    g.globalAlpha = 0.85;
+    g.beginPath();
+    g.moveTo(52, 10);
+    g.quadraticCurveTo(120, 0, 112, c.height * 0.5);
+    g.quadraticCurveTo(104, c.height - 6, 58, c.height - 14);
+    g.quadraticCurveTo(36, c.height * 0.5, 52, 10);
+    g.fill();
+    g.globalAlpha = 1;
+    g.font = `900 ${cell * 0.86}px "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", "Noto Serif CJK JP", "MS Mincho", serif`;
+    g.textAlign = "center";
+    g.textBaseline = "middle";
+    g.lineJoin = "round";
+    chars.forEach((ch, i) => {
+      const y = 24 + cell * (i + 0.5);
+      g.lineWidth = 14;
+      g.strokeStyle = "#ffffff";
+      g.strokeText(ch, 80, y);
+      g.fillStyle = "#111111";
+      g.fillText(ch, 80, y);
+    });
+    const map = new THREE.CanvasTexture(c);
+    map.colorSpace = THREE.SRGBColorSpace;
+    const m = noOutline(new THREE.SpriteMaterial({ map, transparent: true, depthTest: false, depthWrite: false }));
+    const sprite = new THREE.Sprite(m);
+    sprite.renderOrder = 10;
+    sprite.position.copy(pos);
+    const h = 0.6 * chars.length + 0.3;
+    const w = (h * c.width) / c.height;
+    this.add(sprite, 1.4, (k) => {
+      const stamp = Math.min(1, k / 0.08);
+      const s = 1 + 0.35 * (1 - stamp) * (1 - stamp);
+      sprite.scale.set(w * s, h * s, 1);
+      m.opacity = stamp * (k > 0.75 ? (1 - k) / 0.25 : 1);
+      if (k >= 1) map.dispose();
+    });
+  }
+
+  /**
+   * Blade cuts across a target, one after the other within a blink: thin bright streaks
+   * at many angles (nine for the nine-headed dragon), each with a white core.
+   */
+  slashes(pos: THREE.Vector3, count: number, color: THREE.ColorRepresentation): void {
+    for (let i = 0; i < count; i++) {
+      // Spread the angles evenly, starting from a vertical cut.
+      const angle = Math.PI / 2 + (i * Math.PI) / count + (Math.random() - 0.5) * 0.15;
+      const delay = (i / count) * 0.12;
+      const off = new THREE.Vector3((Math.random() - 0.5) * 0.25, (Math.random() - 0.5) * 0.35, (Math.random() - 0.5) * 0.25);
+      for (const [tex, tint, width] of [[this.glow, color, 0.2], [this.glow, 0xffffff, 0.06]] as const) {
+        const s = this.sprite(tex, tint);
+        s.position.copy(pos).add(off);
+        s.material.rotation = angle;
+        s.visible = false;
+        this.add(s, 0.32 + delay, (k) => {
+          const t = (k * (0.32 + delay) - delay) / 0.32;
+          s.visible = t >= 0;
+          if (t < 0) return;
+          // Drawn out fast, then thins and fades.
+          s.scale.set(width * (1 - t * 0.7), 3.4 * Math.min(1, t * 5), 1);
+          s.material.opacity = 1 - t;
+        });
+      }
+    }
+    this.shake = Math.max(this.shake, 0.45);
+  }
+
   update(dt: number): void {
     this.shake *= Math.exp(-dt * 12);
     this.effects = this.effects.filter((e) => {

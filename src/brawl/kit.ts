@@ -45,7 +45,20 @@ export type SpecialDelivery =
   /** The fighter rushes forward; the first enemy touched is hit and the rush stops. */
   | { type: "rush"; distance: number; speed: number; size: number }
   /** Telegraphed circle placed towards the target, resolves after `delay`. */
-  | { type: "area"; castRange: number; radius: number; delay: number };
+  | { type: "area"; castRange: number; radius: number; delay: number }
+  /**
+   * Leaps `height` metres up and comes down on the target's spot (up to `range` away):
+   * the landing circle (`radius`) shows from take-off and strikes on touchdown.
+   */
+  | { type: "leap"; range: number; height: number; radius: number }
+  /**
+   * Counter stance for `window` seconds: a blow struck in person (melee or rush) is
+   * slipped with a spin, and the special strikes the attacker in the back.
+   */
+  | { type: "counter"; window: number };
+
+/** Air time of a leap special, seconds (a symmetric arc `height` metres high). */
+export const leapFlightTime = (height: number, gravity = 18) => 2 * Math.sqrt((2 * height) / gravity);
 
 export interface Special {
   id: string;

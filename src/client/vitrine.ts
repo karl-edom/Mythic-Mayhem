@@ -15,6 +15,7 @@ const look: Look = {
   show: (q.get("show") ?? "Sai,Sai_Offhand").split(",").filter(Boolean),
   tint: "#ffffff",
   outfit: q.get("outfit") ?? "#d01c1c",
+  ...(q.get("hair") ? { hair: q.get("hair")! } : {}),
 };
 
 if (q.get("wrist")) setWrist(Number(q.get("wrist")));

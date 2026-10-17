@@ -349,6 +349,12 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
       const del = sp.delivery;
       if (del.type === "projectile") return d <= del.range;
       if (del.type === "rush") return d <= del.distance + reach;
+      if (del.type === "leap") return d <= del.range + del.radius;
+      // The counter is a read: only against a blow already coming.
+      if (del.type === "counter") {
+        const k = foe.action?.kind;
+        return (k === "rush" && d <= 8) || ((k === "light" || k === "heavy" || k === "aerial") && d <= reach + 1.5);
+      }
       return d <= del.castRange + del.radius;
     });
 
