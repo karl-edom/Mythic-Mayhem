@@ -61,3 +61,21 @@ Kenshin est rapide et léger : 780 PV, vitesse 6,6, poids 0,75. L'épreuve (`--t
 - Le hakama est fait de pièces rigides, une par segment de jambe : on voit un raccord au genou dans les grandes fentes.
 - Les kanji dépendent des polices japonaises du système (présentes sur Windows, macOS, Android et iOS).
 - Le ressenti en mouvement reste à juger manette en main.
+
+## Reprise de la finesse du modèle (2026-10-17)
+
+> « Tu peux faire beaucoup plus fin que ça… le mec a des cônes sur la tête. »
+
+- **Cheveux en mèches.** Chaque mèche est un ruban effilé, aplati contre le crâne, qui suit une courbe. Il y en a environ 130 :
+  - deux couches de mèches devant, les plus longues au milieu, jusqu'aux yeux ;
+  - de longues mèches qui encadrent le visage et tombent sur les oreilles ;
+  - des mèches tirées du sommet et de la nuque jusqu'à l'attache, en suivant le crâne ;
+  - quelques mèches courtes sur la nuque et quelques brins rebelles ;
+  - une queue de cheval de 26 mèches qui s'écartent vers les pointes.
+- **Tête d'un seul tenant**, sculptée à partir d'une sphère : crâne plein, mâchoire qui s'affine vers un petit menton, arête du nez. Les joues et le menton ne sont plus des boules ajoutées.
+- **Visage peint**, posé point par point sur la surface de la tête :
+  - yeux en amande avec l'ombre de la paupière, iris violet foncé en haut, pupille et deux reflets ;
+  - trait de cils épais qui s'étire vers l'extérieur, cils du bas fins, pli de la paupière ;
+  - sourcils fins de la couleur des cheveux, ombre du nez, petite bouche ;
+  - cicatrice fine en croix si le pack la demande.
+- **Gi** : un buste tourné (épaules qui tombent vers le cou, poitrine plus pleine), un col plat qui passe derrière la nuque et se croise gauche sur droite, des plis en relief sur le gi et le hakama.

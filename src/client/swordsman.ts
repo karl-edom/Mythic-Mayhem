@@ -10,7 +10,7 @@
 
 import * as THREE from "three";
 import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
-import { blob, canvas, limb, seeded, texture } from "./turtle.ts";
+import { blob, canvas, limb, mergeSimple, seeded, texture } from "./turtle.ts";
 
 /** Bone name, parent, rest position in the model (metres, T-pose, facing +Z). */
 export const SWORDSMAN_BONES: [string, string | null, number, number, number][] = [
@@ -39,7 +39,8 @@ export const SWORDSMAN_BONES: [string, string | null, number, number, number][] 
 export const SWORDSMAN_HEIGHT = 1.72;
 
 /** Optional parts, shown only when the look's `show` list names them. */
-const OPTIONAL = ["Scar_Cross"];
+/** Optional details painted on the face when the look's `show` list names them. */
+const FACE_DETAILS = ["Scar_Cross"];
 
 // ---------------------------------------------------------------------------
 // Painted textures.
@@ -70,6 +71,32 @@ function weave(seed: number, slub: number): THREE.CanvasTexture {
     g.fillRect(x - 10, 0, 20, 256);
   }
   return texture(c, true, [3, 3]);
+}
+
+/** Soft folds of cloth for a bump map: long creases, mostly along the fall of the fabric. */
+function folds(seed: number): THREE.CanvasTexture {
+  const [c, g] = canvas(256, 256);
+  g.fillStyle = "#808080";
+  g.fillRect(0, 0, 256, 256);
+  const r = seeded(seed);
+  for (let i = 0; i < 26; i++) {
+    const x = r() * 256;
+    const w = 6 + r() * 18;
+    const lean = (r() - 0.5) * 60;
+    const grad = g.createLinearGradient(x - w, 0, x + w, 0);
+    const dark = r() < 0.5;
+    grad.addColorStop(0, "rgba(128,128,128,0)");
+    grad.addColorStop(0.5, dark ? `rgba(60,60,60,${0.25 + r() * 0.3})` : `rgba(200,200,200,${0.2 + r() * 0.3})`);
+    grad.addColorStop(1, "rgba(128,128,128,0)");
+    g.fillStyle = grad;
+    g.beginPath();
+    g.moveTo(x - w, 0);
+    g.lineTo(x + w, 0);
+    g.lineTo(x + w + lean, 256);
+    g.lineTo(x - w + lean, 256);
+    g.fill();
+  }
+  return texture(c, false, [2, 1]);
 }
 
 /** Hair: long strands with darker roots between locks and light sheen streaks. */
@@ -149,6 +176,261 @@ function sleeve(side: number, x0: number, x1: number, r0: number, r1: number, sa
   return g;
 }
 
+/**
+ * A lock of hair along a smooth curve through `pts`: a flattened, tapering tube whose
+ * flat side lies along the surface it grows from (`out` gives the outward direction at
+ * a point). It widens from `root` × its width and narrows to a point, or to `end` × its
+ * width (locks gathered at a tie). With both at 1: a flat band (a collar).
+ */
+function lock(pts: THREE.Vector3[], width: number, thick: number, out: (p: THREE.Vector3) => THREE.Vector3, end = 0, root = 0.35): THREE.BufferGeometry {
+  const curve = new THREE.CatmullRomCurve3(pts, false, "catmullrom", 0.5);
+  const segs = 16;
+  const sides = 8;
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  const side = new THREE.Vector3();
+  const up = new THREE.Vector3();
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs;
+    const p = curve.getPoint(t);
+    const tan = curve.getTangent(t);
+    side.crossVectors(tan, out(p)).normalize();
+    up.crossVectors(side, tan).normalize();
+    // Full width a little after the root, then tapering.
+    const w = width * (root + (1 - root) * Math.min(1, t / 0.2)) * (end + (1 - end) * Math.pow(1 - t, 0.85));
+    const h = thick * (w / width);
+    for (let k = 0; k <= sides; k++) {
+      const a = (k / sides) * Math.PI * 2;
+      pos.push(p.x + side.x * Math.cos(a) * w + up.x * Math.sin(a) * h, p.y + side.y * Math.cos(a) * w + up.y * Math.sin(a) * h, p.z + side.z * Math.cos(a) * w + up.z * Math.sin(a) * h);
+      uv.push(k / sides, t);
+    }
+  }
+  for (let i = 0; i < segs; i++)
+    for (let k = 0; k < sides; k++) {
+      const a = i * (sides + 1) + k;
+      const b = a + sides + 1;
+      idx.push(a, b, a + 1, a + 1, b, b + 1);
+    }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+/** The face area painted by faceTexture, in model coordinates (metres). */
+const FACE = { x0: -0.085, x1: 0.085, y0: 1.45, y1: 1.65 };
+
+/**
+ * A thin skin over the front of the head carrying the painted features: a grid cast
+ * onto the head's surface from the front, lifted a hair off it.
+ */
+function faceShell(head: THREE.Mesh[]): THREE.BufferGeometry {
+  const n = 48;
+  const ray = new THREE.Raycaster();
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const ok: boolean[] = [];
+  for (let j = 0; j <= n; j++)
+    for (let i = 0; i <= n; i++) {
+      const u = i / n;
+      const v = j / n;
+      const x = FACE.x0 + (FACE.x1 - FACE.x0) * u;
+      const y = FACE.y0 + (FACE.y1 - FACE.y0) * v;
+      ray.set(new THREE.Vector3(x, y, 0.4), new THREE.Vector3(0, 0, -1));
+      const hit = ray.intersectObjects(head, false)[0];
+      ok.push(!!hit);
+      const p = hit ? hit.point.clone().add(new THREE.Vector3(0, 0, 0.0008)) : new THREE.Vector3(x, y, 0);
+      pos.push(p.x, p.y, p.z);
+      uv.push(u, v);
+    }
+  const idx: number[] = [];
+  for (let j = 0; j < n; j++)
+    for (let i = 0; i < n; i++) {
+      const a = j * (n + 1) + i;
+      const b = a + n + 1;
+      if (ok[a] && ok[a + 1] && ok[b] && ok[b + 1]) idx.push(a, a + 1, b, a + 1, b + 1, b);
+    }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
+
+const faces = new Map<string, THREE.CanvasTexture>();
+
+/**
+ * The painted face, anime style: almond eyes with a heavy upper lash line flicking out,
+ * a large iris with a dark top, a pupil and two highlights, a lid crease, fine brows, a
+ * hint of nose, a small mouth; optionally a cross-shaped scar on the left cheek.
+ */
+function faceTexture(o: { brows?: string; iris?: string; scar?: boolean }): THREE.CanvasTexture {
+  const key = JSON.stringify(o);
+  const cached = faces.get(key);
+  if (cached) return cached;
+  const W = 512;
+  const H = Math.round((W * (FACE.y1 - FACE.y0)) / (FACE.x1 - FACE.x0));
+  const [c, g] = canvas(W, H);
+  const P = (x: number, y: number): [number, number] => [((x - FACE.x0) / (FACE.x1 - FACE.x0)) * W, (1 - (y - FACE.y0) / (FACE.y1 - FACE.y0)) * H];
+  const m = W / (FACE.x1 - FACE.x0); // pixels per metre
+  const iris = new THREE.Color(o.iris ?? "#6b4596");
+  const irisDark = iris.clone().multiplyScalar(0.35);
+  const brow = o.brows ?? "#3a2418";
+  g.lineCap = "round";
+  g.lineJoin = "round";
+  for (const s of [-1, 1]) {
+    const [cx, cy] = P(s * 0.032, 1.578);
+    const hw = 0.0185 * m;
+    const inner = cx - s * hw;
+    const outer = cx + s * hw;
+    // Almond: the upper lid arches high and lifts at the outer corner, the lower is flatter.
+    const almond = () => {
+      g.beginPath();
+      g.moveTo(inner, cy + 2);
+      g.bezierCurveTo(inner + s * hw * 0.4, cy - 0.0105 * m, outer - s * hw * 0.35, cy - 0.011 * m, outer, cy - 0.0035 * m);
+      g.bezierCurveTo(outer - s * hw * 0.3, cy + 0.006 * m, inner + s * hw * 0.4, cy + 0.0065 * m, inner, cy + 2);
+      g.closePath();
+    };
+    g.save();
+    almond();
+    g.fillStyle = "#f8f4ee";
+    g.fill();
+    g.clip();
+    // Iris, a little toward the nose, its top hidden under the lid.
+    const ix = cx - s * 0.002 * m;
+    const iy = cy - 0.001 * m;
+    const ir = 0.0078 * m;
+    const grad = g.createLinearGradient(0, iy - ir, 0, iy + ir);
+    grad.addColorStop(0, `#${irisDark.getHexString()}`);
+    grad.addColorStop(0.55, `#${iris.getHexString()}`);
+    grad.addColorStop(1, `#${iris.clone().lerp(new THREE.Color("#ffffff"), 0.35).getHexString()}`);
+    g.fillStyle = grad;
+    g.beginPath();
+    g.ellipse(ix, iy, ir * 0.85, ir, 0, 0, Math.PI * 2);
+    g.fill();
+    g.strokeStyle = `#${irisDark.getHexString()}`;
+    g.lineWidth = 2;
+    g.stroke();
+    g.fillStyle = "#140a12";
+    g.beginPath();
+    g.ellipse(ix, iy + 1, ir * 0.32, ir * 0.42, 0, 0, Math.PI * 2);
+    g.fill();
+    // Shadow of the upper lid across the white and the iris.
+    const lid = g.createLinearGradient(0, cy - 0.011 * m, 0, cy);
+    lid.addColorStop(0, "rgba(70,35,35,0.55)");
+    lid.addColorStop(1, "rgba(70,35,35,0)");
+    g.fillStyle = lid;
+    g.fillRect(cx - hw - 4, cy - 0.012 * m, hw * 2 + 8, 0.012 * m);
+    g.fillStyle = "#ffffff";
+    g.beginPath();
+    g.arc(ix + s * ir * 0.35, iy - ir * 0.4, ir * 0.24, 0, Math.PI * 2);
+    g.fill();
+    g.beginPath();
+    g.arc(ix - s * ir * 0.3, iy + ir * 0.45, ir * 0.11, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+    // Upper lash line: heavy, thickening outward, with a flick at the outer corner.
+    g.strokeStyle = "#1a100c";
+    g.lineWidth = 5;
+    g.beginPath();
+    g.moveTo(inner + s * 2, cy - 1);
+    g.bezierCurveTo(inner + s * hw * 0.4, cy - 0.0108 * m, outer - s * hw * 0.35, cy - 0.0113 * m, outer + s * 4, cy - 0.0045 * m);
+    g.stroke();
+    g.lineWidth = 3;
+    g.beginPath();
+    g.moveTo(outer - s * 6, cy - 0.0062 * m);
+    g.lineTo(outer + s * 0.004 * m, cy - 0.0075 * m);
+    g.stroke();
+    // Lower lashes: a fine line on the outer half.
+    g.strokeStyle = "rgba(70,40,30,0.8)";
+    g.lineWidth = 1.6;
+    g.beginPath();
+    g.moveTo(cx, cy + 0.0062 * m);
+    g.quadraticCurveTo(outer - s * hw * 0.3, cy + 0.0058 * m, outer, cy - 0.0028 * m);
+    g.stroke();
+    // Lid crease.
+    g.strokeStyle = "rgba(120,70,55,0.45)";
+    g.lineWidth = 1.5;
+    g.beginPath();
+    g.moveTo(inner + s * hw * 0.35, cy - 0.0125 * m);
+    g.quadraticCurveTo(cx + s * hw * 0.2, cy - 0.0155 * m, outer - s * 3, cy - 0.0095 * m);
+    g.stroke();
+    // Brow: fine, nearly straight, tapering outward.
+    const [bx0, by0] = P(s * 0.011, 1.606);
+    const [bx1, by1] = P(s * 0.056, 1.603);
+    g.strokeStyle = brow;
+    for (let k = 0; k < 6; k++) {
+      g.lineWidth = 4.5 - k * 0.6;
+      g.beginPath();
+      g.moveTo(bx0 + s * k * 6, by0 + k * 0.2);
+      g.quadraticCurveTo((bx0 + bx1) / 2, by0 - 7, bx1, by1 + 1);
+      g.stroke();
+    }
+  }
+  // Nose: just the shadow under its tip, and a touch along one side.
+  {
+    const [nx, ny] = P(0.0, 1.543);
+    g.strokeStyle = "rgba(150,85,65,0.55)";
+    g.lineWidth = 2.5;
+    g.beginPath();
+    g.moveTo(nx - 7, ny);
+    g.quadraticCurveTo(nx, ny + 3, nx + 6, ny - 1);
+    g.stroke();
+    g.strokeStyle = "rgba(170,110,90,0.25)";
+    g.lineWidth = 2;
+    g.beginPath();
+    g.moveTo(nx - 4, ny - 30);
+    g.lineTo(nx - 6, ny - 6);
+    g.stroke();
+  }
+  // Mouth: small, calm, a darker centre and a hint of the lower lip.
+  {
+    const [mx, my] = P(0, 1.508);
+    g.strokeStyle = "#7e3e34";
+    g.lineWidth = 2.6;
+    g.beginPath();
+    g.moveTo(mx - 17, my);
+    g.quadraticCurveTo(mx, my + 2.5, mx + 17, my - 0.5);
+    g.stroke();
+    g.strokeStyle = "rgba(190,110,95,0.35)";
+    g.lineWidth = 3;
+    g.beginPath();
+    g.moveTo(mx - 8, my + 8);
+    g.quadraticCurveTo(mx, my + 10, mx + 8, my + 8);
+    g.stroke();
+  }
+  // Scar: two thin healed cuts crossing on the left cheek, the long one slanting down
+  // toward the nose.
+  if (o.scar) {
+    const cut = (x0: number, y0: number, x1: number, y1: number, w: number) => {
+      const [a, b] = P(x0, y0);
+      const [c2, d] = P(x1, y1);
+      g.strokeStyle = "rgba(240,190,175,0.7)";
+      g.lineWidth = w + 2;
+      g.beginPath();
+      g.moveTo(a, b);
+      g.lineTo(c2, d);
+      g.stroke();
+      g.strokeStyle = "#a4443a";
+      g.lineWidth = w;
+      g.beginPath();
+      g.moveTo(a, b);
+      g.lineTo(c2, d);
+      g.stroke();
+    };
+    cut(0.056, 1.552, 0.039, 1.53, 1.6);
+    cut(0.04, 1.548, 0.054, 1.535, 1.4);
+  }
+  const t = texture(c);
+  t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping;
+  faces.set(key, t);
+  return t;
+}
+
 // ---------------------------------------------------------------------------
 
 interface SwordsmanMaterials {
@@ -162,10 +444,7 @@ interface SwordsmanMaterials {
   thong: THREE.MeshStandardMaterial;
   lacquer: THREE.MeshPhysicalMaterial;
   brass: THREE.MeshPhysicalMaterial;
-  eyeWhite: THREE.MeshPhysicalMaterial;
-  iris: THREE.MeshPhysicalMaterial;
-  line: THREE.MeshStandardMaterial;
-  scar: THREE.MeshStandardMaterial;
+  face: THREE.MeshPhysicalMaterial;
 }
 
 let shared: SwordsmanMaterials | null = null;
@@ -178,10 +457,10 @@ function materials(): SwordsmanMaterials {
       name: "skin", color: "#efc29c", roughness: 0.55, sheen: 0.3, sheenColor: new THREE.Color("#ffd9c0"), sheenRoughness: 0.6, clearcoat: 0.05,
     }),
     gi: new THREE.MeshPhysicalMaterial({
-      name: "gi", color: "#ebe5d6", map: cloth, roughness: 0.9, sheen: 0.4, sheenColor: new THREE.Color("#ffffff"), sheenRoughness: 0.8, side: THREE.DoubleSide,
+      name: "gi", color: "#e8e1d0", map: cloth, bumpMap: folds(3), bumpScale: 2.5, roughness: 0.9, sheen: 0.4, sheenColor: new THREE.Color("#ffffff"), sheenRoughness: 0.8, side: THREE.DoubleSide,
     }),
     hakama: new THREE.MeshPhysicalMaterial({
-      name: "hakama", color: "#8a8276", map: weave(7, 2), roughness: 0.95, sheen: 0.12, sheenColor: new THREE.Color("#d8c8c0"), sheenRoughness: 0.9, side: THREE.DoubleSide,
+      name: "hakama", color: "#8a8276", map: weave(7, 2), bumpMap: folds(9), bumpScale: 2, roughness: 0.95, sheen: 0.12, sheenColor: new THREE.Color("#d8c8c0"), sheenRoughness: 0.9, side: THREE.DoubleSide,
     }),
     obi: new THREE.MeshPhysicalMaterial({ name: "obi", color: "#8d867b", map: cloth, roughness: 0.85, sheen: 0.3, side: THREE.DoubleSide }),
     hair: new THREE.MeshPhysicalMaterial({
@@ -192,11 +471,10 @@ function materials(): SwordsmanMaterials {
     straw: new THREE.MeshStandardMaterial({ name: "straw", color: "#ffffff", map: strawTexture(), roughness: 0.95 }),
     thong: new THREE.MeshStandardMaterial({ name: "thong", color: "#e9e2d0", roughness: 0.8 }),
     lacquer: new THREE.MeshPhysicalMaterial({ name: "lacquer", color: "#4a1d12", roughness: 0.3, clearcoat: 0.9, clearcoatRoughness: 0.15 }),
+    face: new THREE.MeshPhysicalMaterial({
+      name: "face", map: faceTexture({}), transparent: true, roughness: 0.55, polygonOffset: true, polygonOffsetFactor: -2, depthWrite: false,
+    }),
     brass: new THREE.MeshPhysicalMaterial({ name: "brass", color: "#b08a3e", metalness: 0.85, roughness: 0.35 }),
-    eyeWhite: new THREE.MeshPhysicalMaterial({ name: "eye", color: "#f6f3ec", roughness: 0.25, clearcoat: 1 }),
-    iris: new THREE.MeshPhysicalMaterial({ name: "iris", color: "#5e3d78", roughness: 0.1, clearcoat: 1 }),
-    line: new THREE.MeshStandardMaterial({ name: "line", color: "#2a1a14", roughness: 0.8 }),
-    scar: new THREE.MeshStandardMaterial({ name: "scar", color: "#8e3f38", roughness: 0.7 }),
   };
   return shared;
 }
@@ -234,38 +512,46 @@ export function buildSwordsmanRig(): THREE.Group {
   };
   const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 
-  // --- Gi: the jacket, tucked into the hakama. Lower body on the spine, upper on the chest.
-  put("spine", new THREE.CylinderGeometry(0.175, 0.185, 0.24, 32, 2, true).scale(1, 1, 0.72).translate(0, 1.04, 0), M.gi, "gi");
-  {
-    const g = new THREE.CylinderGeometry(0.19, 0.178, 0.3, 32, 4, true);
-    g.scale(1, 1, 0.7);
-    g.translate(0, 1.27, 0);
-    put("chest", g, M.gi, "gi");
-    // Shoulders: soft caps where the sleeves join.
-    for (const s of [-1, 1]) put("chest", blob(0.08, 0.06, 0.085).translate(s * 0.165, 1.385, 0), M.gi, "gi");
-    // Top of the jacket round the neck.
-    put("chest", blob(0.17, 0.05, 0.12).translate(0, 1.415, -0.005), M.gi, "gi");
-  }
-  // Open V of the collar: the chest shows between the lapels, left over right.
-  {
-    const tri = new THREE.BufferGeometry();
-    tri.setAttribute("position", new THREE.Float32BufferAttribute([-0.06, 1.44, 0.128, 0.07, 1.44, 0.128, 0.01, 1.25, 0.136], 3));
-    tri.setIndex([0, 2, 1]);
-    tri.computeVertexNormals();
-    put("chest", tri, M.skin);
-    for (const [s, len, x, y] of [[1, 0.27, -0.03, 1.33], [-1, 0.25, 0.04, 1.34]] as const) {
-      const lapel = new RoundedBoxGeometry(0.045, len, 0.02, 2, 0.008);
-      lapel.rotateZ(s * 0.32);
-      lapel.rotateX(-0.12);
-      lapel.translate(x, y, 0.135);
-      put("chest", lapel, M.gi, "gi");
+  // --- Gi: the jacket, tucked into the hakama. A turned body (shoulders sloping to the
+  // neck, a fuller chest), lower half on the spine, upper on the chest.
+  const TORSO: [number, number][] = [[0.9, 0.172], [1.0, 0.176], [1.1, 0.182], [1.2, 0.19], [1.29, 0.196], [1.35, 0.19], [1.39, 0.172], [1.42, 0.135], [1.445, 0.075]];
+  const DEPTH = 0.68;
+  const torsoR = (y: number) => {
+    for (let i = 1; i < TORSO.length; i++) {
+      const [y0, r0] = TORSO[i - 1]!;
+      const [y1, r1] = TORSO[i]!;
+      if (y <= y1) return r0 + ((r1 - r0) * (y - y0)) / (y1 - y0);
     }
-    // Collar band behind the neck.
-    const back = new THREE.TorusGeometry(0.075, 0.016, 8, 24, Math.PI);
-    back.rotateX(Math.PI / 2);
-    back.rotateZ(Math.PI);
-    back.translate(0, 1.44, 0.02);
-    put("chest", back, M.gi, "gi");
+    return TORSO.at(-1)![1];
+  };
+  const torso = (y0: number, y1: number) => {
+    const pts = TORSO.filter(([y]) => y >= y0 - 1e-6 && y <= y1 + 1e-6).map(([y, r]) => new THREE.Vector2(r, y));
+    if (pts[0]!.y > y0) pts.unshift(new THREE.Vector2(torsoR(y0), y0));
+    if (pts.at(-1)!.y < y1) pts.push(new THREE.Vector2(torsoR(y1), y1));
+    const g = new THREE.LatheGeometry(pts, 48);
+    g.scale(1, 1, DEPTH);
+    return g;
+  };
+  put("spine", torso(0.9, 1.17), M.gi, "gi");
+  put("chest", torso(1.1, 1.445), M.gi, "gi");
+  for (const s of [-1, 1]) put("chest", blob(0.07, 0.055, 0.075).translate(s * 0.17, 1.375, 0), M.gi, "gi"); // shoulder seams
+  // Collar (eri): a band round the back of the neck, down the front, left panel over
+  // right; between them the chest shows in a V.
+  {
+    const front = (x: number, y: number, lift = 0.004) => V(x, y, torsoR(y) * DEPTH * Math.sqrt(Math.max(0, 1 - (x / torsoR(y)) ** 2)) + lift);
+    const outward = (q: THREE.Vector3) => V(q.x, 0, q.z / DEPTH).normalize();
+    const vee = new THREE.BufferGeometry();
+    const a0 = front(-0.05, 1.43, 0.001);
+    const a1 = front(0.05, 1.43, 0.001);
+    const a2 = front(0.0, 1.25, 0.001);
+    vee.setAttribute("position", new THREE.Float32BufferAttribute([a0.x, a0.y, a0.z, a1.x, a1.y, a1.z, a2.x, a2.y, a2.z], 3));
+    vee.setIndex([0, 2, 1]);
+    vee.computeVertexNormals();
+    put("chest", vee, M.skin);
+    const back = V(0, 1.452, -0.06);
+    // Under panel (wearer's right), then the top one (wearer's left) crossing over it.
+    put("chest", lock([back, V(-0.058, 1.445, -0.015), V(-0.066, 1.43, 0.05), front(-0.036, 1.34, 0.006), front(0.03, 1.22, 0.006)], 0.019, 0.006, outward, 1, 1), M.gi, "gi");
+    put("chest", lock([back, V(0.058, 1.445, -0.015), V(0.066, 1.43, 0.05), front(0.036, 1.34, 0.01), front(-0.03, 1.22, 0.01), front(-0.08, 1.12, 0.01)], 0.02, 0.0065, outward, 1, 1), M.gi, "gi");
   }
 
   // --- Hakama: a pleated skirt from the hips, each leg a wide flared tube (they move
@@ -376,124 +662,154 @@ export function buildSwordsmanRig(): THREE.Group {
     }
   }
 
-  // --- Neck and head: a lean face, big anime eyes, spiky bangs and a long ponytail.
-  put("neck", limb(V(0, 1.4, 0.0), V(0, 1.52, 0.01), 0.048, 0.044), M.skin);
+  // --- Neck and head: a lean face with painted anime features, hair in locks.
+  put("neck", limb(V(0, 1.4, 0.0), V(0, 1.52, 0.01), 0.047, 0.043), M.skin);
   {
-    put("head", blob(0.092, 0.105, 0.1, 40).translate(0, 1.6, 0.0), M.skin, "skull");
-    put("head", blob(0.078, 0.07, 0.08, 40).translate(0, 1.545, 0.025), M.skin, "jaw");
-    put("head", blob(0.03, 0.022, 0.03).translate(0, 1.5, 0.07), M.skin, "chin");
-    const nose = new THREE.ConeGeometry(0.012, 0.035, 8);
-    nose.rotateX(Math.PI / 2 + 0.5);
-    nose.translate(0, 1.565, 0.105);
-    put("head", nose, M.skin);
-    for (const s of [-1, 1]) put("head", blob(0.016, 0.026, 0.014).translate(s * 0.092, 1.575, 0.0), M.skin); // ears
-    // Mouth: a short calm line.
-    const mouth = new RoundedBoxGeometry(0.03, 0.004, 0.006, 1, 0.002);
-    mouth.translate(0, 1.523, 0.103);
-    put("head", mouth, M.line);
-    // Eyes: almond whites, large irises, a heavy upper lash line and the brows.
-    for (const s of [-1, 1]) {
-      const white = blob(0.024, 0.014, 0.01);
-      white.rotateY(s * 0.38);
-      put("head", white.translate(s * 0.036, 1.59, 0.093), M.eyeWhite);
-      const iris = blob(0.011, 0.012, 0.005);
-      iris.rotateY(s * 0.38);
-      put("head", iris.translate(s * 0.034, 1.589, 0.1), M.iris);
-      const lash = new RoundedBoxGeometry(0.05, 0.006, 0.008, 1, 0.003);
-      lash.rotateZ(s * -0.12);
-      lash.rotateY(s * 0.38);
-      lash.translate(s * 0.036, 1.603, 0.099);
-      put("head", lash, M.line);
-      const brow = new RoundedBoxGeometry(0.045, 0.008, 0.01, 1, 0.004);
-      brow.rotateZ(s * 0.18);
-      brow.rotateY(s * 0.38);
-      brow.translate(s * 0.038, 1.625, 0.097);
-      put("head", brow, M.hair, "hair");
-    }
-    // Optional: a cross-shaped scar on the left cheek.
+    // One smooth head, sculpted from a sphere: a full cranium, a jaw that narrows to a
+    // small pointed chin (anime proportions), a faint nose ridge.
+    const head: THREE.Mesh[] = [];
     {
-      const scar = new THREE.Group();
-      scar.name = "Scar_Cross";
-      for (const [rot, len] of [[0.5, 0.036], [-0.75, 0.028]] as const) {
-        const cut = new RoundedBoxGeometry(0.0035, len, 0.003, 1, 0.0015);
-        cut.rotateZ(rot);
-        const m = new THREE.Mesh(cut, M.scar);
-        scar.add(m);
+      const g = new THREE.SphereGeometry(1, 64, 48);
+      const p = g.attributes.position!;
+      for (let i = 0; i < p.count; i++) {
+        const x = p.getX(i);
+        const y = p.getY(i);
+        const z = p.getZ(i);
+        const low = Math.max(0, -y);
+        const front = Math.max(0, z);
+        const X = x * 0.088 * (1 - 0.45 * Math.pow(low, 1.5) * (0.4 + 0.6 * front));
+        const Y = y * 0.108 - 0.022 * low * low * front * front;
+        let Z = z * (z < 0 ? 0.102 : 0.095) + 0.01 * front * low;
+        // Nose: a soft ridge down the middle of the face, ending in a small tip.
+        Z += 0.011 * Math.exp(-((x / 0.1) ** 2)) * Math.exp(-(((y + 0.13) / 0.11) ** 2)) * front ** 4;
+        // Cheekbones, barely.
+        Z += 0.003 * Math.exp(-(((Math.abs(x) - 0.45) / 0.15) ** 2) - ((y + 0.15) / 0.15) ** 2) * front;
+        p.setXYZ(i, X, Y, Z);
       }
-      scar.position.set(0.05, 1.548, 0.089).sub(world.get("head")!);
-      scar.rotation.y = 0.62;
-      bones.get("head")!.add(scar);
-    }
-
-    // Hair: a cap over the top and back of the skull.
-    const cap = new THREE.SphereGeometry(1, 40, 24, 0, Math.PI * 2, 0, 1.25);
-    cap.scale(0.102, 0.118, 0.11);
-    cap.translate(0, 1.61, -0.005);
-    put("head", cap, M.hair, "hair");
-    const back = new THREE.SphereGeometry(1, 32, 24, Math.PI * 0.15, Math.PI * 0.7, 0.9, 1.25);
-    back.rotateY(Math.PI);
-    back.scale(0.104, 0.115, 0.112);
-    back.translate(0, 1.6, -0.005);
-    put("head", back, M.hair, "hair");
-    // Spikes: bangs falling over the forehead and down the sides of the face, a few on top.
-    const r = seeded(21);
-    const spike = (root: THREE.Vector3, dir: THREE.Vector3, len: number, rad: number) => {
-      const g = new THREE.ConeGeometry(rad, len, 6, 1);
-      g.rotateX(Math.PI);
-      g.translate(0, -len / 2, 0); // thick base at the root, tip along −Y
-      g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, -1, 0), dir.clone().normalize()));
-      g.translate(root.x, root.y, root.z);
-      put("head", g, M.hair, "hair");
-    };
-    for (let i = 0; i < 9; i++) {
-      const x = -0.075 + (i / 8) * 0.15;
-      const len = 0.09 + r() * 0.06 + (Math.abs(x) > 0.05 ? 0.03 : 0);
-      spike(V(x, 1.69, 0.07), V(x * 2.2 + (r() - 0.5) * 0.3, -1, 0.35), len, 0.022 + r() * 0.008);
+      g.computeVertexNormals();
+      g.translate(0, 1.59, 0);
+      head.push(put("head", g, M.skin, "skull"));
     }
     for (const s of [-1, 1]) {
-      spike(V(s * 0.085, 1.64, 0.05), V(s * 0.12, -1, 0.12), 0.16, 0.024); // side locks to the jaw
-      spike(V(s * 0.095, 1.65, 0.0), V(s * 0.35, -1, -0.1), 0.12, 0.026);
+      const ear = blob(0.009, 0.022, 0.014);
+      ear.rotateY(s * 0.35);
+      put("head", ear.translate(s * 0.087, 1.578, -0.008), M.skin);
     }
-    for (let i = 0; i < 7; i++) {
-      const a = (i / 7) * Math.PI * 2;
-      // Lying back over the crown, tips lifting a little: messy, not a crest.
-      spike(V(Math.sin(a) * 0.06, 1.69, Math.cos(a) * 0.05 + 0.01), V(Math.sin(a) * 0.55, 0.12, -0.85), 0.09 + r() * 0.04, 0.032);
+    // Face: the features are painted (see faceTexture) on a thin skin laid over the front
+    // of the head, vertex by vertex, so they follow its curves exactly.
+    rig.updateMatrixWorld(true);
+    put("head", faceShell(head), M.face, "face");
+
+    // Hair: a cap under everything, then locks: bangs over the forehead, long locks down
+    // the cheeks, locks drawn back from the crown and up from the nape to the tie.
+    const cap = new THREE.SphereGeometry(1, 48, 32, 0, Math.PI * 2, 0, 1.75);
+    cap.rotateX(-0.42);
+    cap.scale(0.096, 0.11, 0.104);
+    cap.translate(0, 1.607, -0.008);
+    put("head", cap, M.hair, "hair");
+    const C = V(0, 1.607, -0.008);
+    const scalp = (az: number, el: number, out = 0) =>
+      V((0.096 + out) * Math.cos(el) * Math.sin(az), (0.11 + out) * Math.sin(el), (0.104 + out) * Math.cos(el) * Math.cos(az)).add(C);
+    const fromHead = (q: THREE.Vector3) => q.clone().sub(C).normalize();
+    const r = seeded(21);
+    const locks: THREE.BufferGeometry[] = [];
+    // Bangs: two layers of pointed locks from the front of the crown down to the eyes,
+    // the middle ones longest; a little disorder in every one.
+    for (const [n, out, w0] of [[11, 0.006, 0.024], [8, 0.012, 0.02]] as const) {
+      for (let i = 0; i < n; i++) {
+        const az = -0.95 + (1.9 * (i + (out > 0.01 ? 0.5 : 0))) / n + (r() - 0.5) * 0.06;
+        const centre = 1 - Math.min(1, Math.abs(az) / 0.95);
+        const tipEl = -0.02 - 0.12 * centre - 0.08 * r();
+        const swing = (r() - 0.5) * 0.25;
+        locks.push(
+          lock([scalp(az * 0.6, 1.15, out - 0.004), scalp(az * 0.9, 0.7, out + 0.01), scalp(az + swing * 0.4, 0.3, out + 0.016), scalp(az * 1.05 + swing, tipEl, out + 0.014)], w0 + r() * 0.006, 0.0055, fromHead),
+        );
+      }
     }
+    // Long locks framing the face, down to the jaw.
+    for (const s of [-1, 1])
+      for (let i = 0; i < 3; i++) {
+        const az = s * (1.0 + i * 0.16);
+        const tip = -0.55 - 0.25 * r() - (i === 0 ? 0.15 : 0);
+        locks.push(lock([scalp(az * 0.7, 1.0, 0.002), scalp(az, 0.45, 0.014), scalp(az * 1.02, -0.1, 0.016), scalp(az * 0.97 - s * 0.05, tip, 0.012)], 0.022 + r() * 0.006, 0.006, fromHead));
+      }
+    // Crown and back: locks swept toward the tie, and up from the nape.
+    const tie = V(0, 1.598, -0.112);
+    // A point on the scalp (lifted by `out`) in a direction from the head's centre.
+    const onScalp = (d: THREE.Vector3, out: number) =>
+      d.clone().multiplyScalar(1 / Math.hypot(d.x / (0.096 + out), d.y / (0.11 + out), d.z / (0.104 + out))).add(C);
+    const over = V(0, 1, -0.35).normalize();
+    const toTie = (az: number, el: number) => {
+      const a0 = scalp(az, el, -0.002);
+      const d0 = fromHead(a0);
+      const d1 = fromHead(tie);
+      // Along the scalp, arching over the crown (a quadratic blend through « up and back »).
+      const pts = [a0];
+      for (const k of [0.3, 0.6, 0.85]) {
+        const d = d0.clone().multiplyScalar((1 - k) ** 2).addScaledVector(over, 2 * k * (1 - k)).addScaledVector(d1, k * k).normalize();
+        pts.push(onScalp(d, 0.007 + 0.004 * k));
+      }
+      pts.push(tie.clone().add(V((r() - 0.5) * 0.016, (r() - 0.5) * 0.016, 0.006)));
+      return lock(pts, 0.028 + r() * 0.008, 0.0055, fromHead, 0.35);
+    };
+    for (const [el, n, span] of [[1.3, 7, 2.4], [0.95, 11, 2.7], [0.6, 11, 2.6], [0.2, 9, 2.0]] as const)
+      for (let i = 0; i < n; i++) {
+        const az = Math.PI + (-span + (2 * span * i) / (n - 1)) * (el > 1 ? 1 : 1) + (r() - 0.5) * 0.12;
+        locks.push(toTie(az, el + (r() - 0.5) * 0.08));
+      }
+    for (let i = 0; i < 9; i++) locks.push(toTie(Math.PI + (-1.3 + (2.6 * i) / 8), -0.5 + (r() - 0.5) * 0.1));
+    // Over the ears: long locks falling from the temples, swept a little back.
+    for (const s of [-1, 1])
+      for (let i = 0; i < 5; i++) {
+        const az = s * (1.25 + i * 0.17);
+        const tip = -0.7 - 0.25 * r();
+        locks.push(lock([scalp(az * 0.8, 0.95, -0.002), scalp(az, 0.45, 0.012), scalp(az * 1.04, -0.1, 0.018), scalp(az * 1.08, tip, 0.016)], 0.026 + r() * 0.006, 0.006, fromHead));
+      }
+    // Nape: short locks hanging below the tie line.
+    for (let i = 0; i < 9; i++) {
+      const az = Math.PI + (-1.2 + (2.4 * i) / 8) + (r() - 0.5) * 0.1;
+      locks.push(lock([scalp(az, -0.05, -0.002), scalp(az, -0.45, 0.01), scalp(az * 1.0, -0.85 - r() * 0.15, 0.016)], 0.026, 0.0055, fromHead));
+    }
+    // A few strands escaping at the crown, as messy hair does.
+    for (let i = 0; i < 4; i++) {
+      const az = (r() - 0.5) * 2;
+      const root = scalp(az, 1.25, 0.006);
+      const d = fromHead(root);
+      locks.push(lock([root, root.clone().addScaledVector(d, 0.012).add(V(Math.sin(az) * 0.01, 0, -0.025)), root.clone().addScaledVector(d, 0.014).add(V(Math.sin(az) * 0.035, -0.012, -0.06))], 0.011, 0.0035, fromHead));
+    }
+    put("head", mergeSimple(locks), M.hair, "hair");
+
     // Ponytail, tied high at the back: a pivot the animation swings (see animateSwordsman).
     const tail = new THREE.Group();
     tail.name = "ponytail";
-    const tie = V(0, 1.6, -0.105);
     tail.position.copy(tie).sub(world.get("head")!);
     {
-      const len = 0.5;
-      const pts: THREE.Vector2[] = [];
-      for (let i = 0; i <= 12; i++) {
-        const t = i / 12;
-        pts.push(new THREE.Vector2(0.028 + 0.03 * Math.sin(Math.PI * Math.min(1, t * 1.6)) * (1 - t) - 0.022 * t, -t * len));
+      const strands: THREE.BufferGeometry[] = [];
+      const axis = (q: THREE.Vector3) => V(q.x, 0, q.z + 0.03).normalize();
+      for (let i = 0; i < 26; i++) {
+        const a = (i / 26) * Math.PI * 2 + r() * 0.2;
+        const rad = 0.008 + r() * 0.01;
+        const len = 0.36 + r() * 0.22;
+        const spread = 1 + r() * 1.5;
+        const o = V(Math.cos(a) * rad, 0, Math.sin(a) * rad * 0.7);
+        strands.push(
+          lock([
+            o.clone(),
+            o.clone().multiplyScalar(1.6).add(V(0, -0.05, -0.045)),
+            o.clone().multiplyScalar(2.2 * spread).add(V(0, -0.2, -0.07)),
+            o.clone().multiplyScalar(2.8 * spread).add(V((r() - 0.5) * 0.04, -len, -0.05 + (r() - 0.5) * 0.04)),
+          ], 0.016 + r() * 0.008, 0.007, axis, 0.25),
+        );
       }
-      const g = new THREE.LatheGeometry(pts, 12);
-      g.scale(1, 1, 0.75);
-      const m = new THREE.Mesh(g, M.hair);
+      const m = new THREE.Mesh(mergeSimple(strands), M.hair);
       m.name = "hair";
       m.castShadow = true;
       tail.add(m);
-      // A few loose strands splitting from the bundle near its end.
-      for (let i = 0; i < 5; i++) {
-        const s = new THREE.ConeGeometry(0.012, 0.18, 5);
-        s.translate(0, -0.09, 0);
-        s.rotateZ((r() - 0.5) * 0.5);
-        s.rotateX((r() - 0.5) * 0.4);
-        s.translate((r() - 0.5) * 0.03, -len * 0.62, (r() - 0.5) * 0.02);
-        const sm = new THREE.Mesh(s, M.hair);
-        sm.name = "hair";
-        tail.add(sm);
-      }
-      const band = new THREE.TorusGeometry(0.026, 0.008, 6, 14);
-      band.rotateX(Math.PI / 2);
-      band.translate(0, -0.02, 0);
+      const band = new THREE.TorusGeometry(0.02, 0.006, 8, 18);
+      band.rotateX(Math.PI / 2 - 0.5);
+      band.translate(0, -0.012, -0.008);
       tail.add(new THREE.Mesh(band, M.obi));
     }
-    tail.userData.restDown = new THREE.Vector3(0, -1, -0.25).normalize();
     bones.get("head")!.add(tail);
   }
   // A touch big, so the face reads from the arena camera.
@@ -542,13 +858,15 @@ export function animateSwordsman(root: THREE.Object3D): void {
   };
 }
 
-/** Colours and optional parts of an instance (its materials are its own copies by then). */
+/** Colours and optional details of an instance (its materials are its own copies by then). */
 export function paintSwordsman(root: THREE.Object3D, look: { show: string[]; hair?: string; outfit?: string }): void {
+  const brows = look.hair ? `#${new THREE.Color(look.hair).multiplyScalar(0.55).getHexString()}` : undefined;
+  const scar = FACE_DETAILS.some((d) => look.show.includes(d));
   root.traverse((o) => {
-    if (OPTIONAL.includes(o.name)) o.visible = look.show.includes(o.name);
     if (!(o instanceof THREE.Mesh)) return;
-    const name = (o.material as THREE.Material).name;
-    if (name === "hair" && look.hair) (o.material as THREE.MeshPhysicalMaterial).color.set(look.hair);
-    if (name === "hakama" && look.outfit) (o.material as THREE.MeshPhysicalMaterial).color.set(look.outfit);
+    const mat = o.material as THREE.MeshPhysicalMaterial;
+    if (mat.name === "hair" && look.hair) mat.color.set(look.hair);
+    if (mat.name === "hakama" && look.outfit) mat.color.set(look.outfit);
+    if (mat.name === "face") mat.map = faceTexture({ brows, scar });
   });
 }

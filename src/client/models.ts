@@ -365,7 +365,9 @@ function instantiateAnime(lib: ModelLibrary, look: Look): ModelInstance {
       const m = (o.material as THREE.MeshStandardMaterial).clone();
       m.envMap = proceduralEnv.map;
       m.envMapIntensity = 0.8;
-      outlineOf(m, 0.0022);
+      // Painted decals (a face) lie on the skin: no ink line round their edge.
+      if (m.transparent) noOutline(m);
+      else outlineOf(m, 0.0022);
       o.material = m;
       o.castShadow = true;
       o.frustumCulled = false;
