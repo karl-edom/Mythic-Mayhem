@@ -37,6 +37,9 @@ export const TURTLE_BONES: [string, string | null, number, number, number][] = [
 const TAIL_LENGTH = 0.55;
 const TAIL_ROWS = 14;
 
+/** Optional parts, shown only when the look's `show` list names them. */
+const OPTIONAL = ["Katana_Back"];
+
 /** Height of the model (feet to top of head), metres. */
 export const TURTLE_HEIGHT = 1.74;
 
@@ -476,6 +479,56 @@ export function buildTurtleRig(): THREE.Group {
     g.translate(0, 1.13, -0.06);
     put("chest", g, M.rim);
   }
+  // Optional (`Katana_Back`): two sheaths crossed over the shell, the hilts above the
+  // shoulders. The right one still holds a sword; the left one is empty (its sword is in
+  // hand). A leather strap across the plastron holds them.
+  {
+    const back = new THREE.Group();
+    back.name = "Katana_Back";
+    const lacquer = new THREE.MeshPhysicalMaterial({ color: "#1d1712", roughness: 0.3, clearcoat: 0.9, clearcoatRoughness: 0.2 });
+    const wrapMat = new THREE.MeshStandardMaterial({ color: "#1d2c5e", roughness: 0.8 });
+    const gold = new THREE.MeshPhysicalMaterial({ color: "#b08a3e", metalness: 0.85, roughness: 0.35 });
+    const add = (geo: THREE.BufferGeometry, mat: THREE.Material) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.castShadow = true;
+      back.add(m);
+      return m;
+    };
+    for (const s of [1, -1]) {
+      // Mouth over the shoulder, tip at the opposite hip, bowed out over the dome.
+      const mouth = V(s * 0.17, 1.43, -0.25);
+      const curve = new THREE.QuadraticBezierCurve3(mouth, V(0, 1.14, s > 0 ? -0.4 : -0.43), V(-s * 0.19, 0.86, -0.27));
+      const sheath = new THREE.TubeGeometry(curve, 24, 0.021, 10);
+      add(sheath, lacquer);
+      const end = curve.getPoint(1);
+      add(new THREE.SphereGeometry(0.023, 10, 8).translate(end.x, end.y, end.z), gold);
+      const out = mouth.clone().sub(curve.getPoint(0.06)).normalize();
+      const turn = new THREE.Quaternion().setFromUnitVectors(V(0, 1, 0), out);
+      add(new THREE.CylinderGeometry(0.025, 0.025, 0.03, 12).applyQuaternion(turn).translate(mouth.x, mouth.y, mouth.z), gold);
+      if (s > 0) {
+        // The sheathed sword: guard, wrapped grip, pommel.
+        const guard = mouth.clone().addScaledVector(out, 0.025);
+        add(new THREE.CylinderGeometry(0.045, 0.045, 0.01, 16).applyQuaternion(turn).translate(guard.x, guard.y, guard.z), gold);
+        const grip = guard.clone().addScaledVector(out, 0.13);
+        add(new THREE.CylinderGeometry(0.017, 0.019, 0.24, 10).applyQuaternion(turn).translate(grip.x, grip.y, grip.z), wrapMat);
+        for (let k = 0; k < 5; k++) {
+          const ring = guard.clone().addScaledVector(out, 0.03 + k * 0.045);
+          add(new THREE.TorusGeometry(0.019, 0.003, 4, 12).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(V(0, 0, 1), out)).translate(ring.x, ring.y, ring.z), gold);
+        }
+        const pommel = guard.clone().addScaledVector(out, 0.255);
+        add(new THREE.SphereGeometry(0.02, 10, 8).translate(pommel.x, pommel.y, pommel.z), gold);
+      }
+    }
+    // Strap: from the left shoulder across the plastron to the right hip, and round the back.
+    const strap = new THREE.CatmullRomCurve3([V(0.2, 1.42, -0.18), V(0.22, 1.4, 0.06), V(0.07, 1.24, 0.25), V(-0.12, 1.02, 0.24), V(-0.24, 0.96, 0.05), V(-0.2, 0.9, -0.2)]);
+    const band = new THREE.TubeGeometry(strap, 40, 0.012, 6);
+    add(band, M.leather);
+    for (const m of back.children) {
+      // Built in model coordinates: move into the chest bone's space.
+      (m as THREE.Mesh).geometry.translate(-world.get("chest")!.x, -world.get("chest")!.y, -world.get("chest")!.z);
+    }
+    bones.get("chest")!.add(back);
+  }
   // Pelvis, and a cloth sash wound twice round the waist, knotted in front, with a
   // long flap hanging between the thighs (as on the reference sheet).
   put("hips", blob(0.2, 0.13, 0.15).translate(0, 0.88, 0), M.skin);
@@ -809,13 +862,14 @@ export function animateTurtle(root: THREE.Object3D): void {
 }
 
 /**
- * Dresses an instance (its materials are its own copies by then): the mask colour, and
- * the face of the chosen expression (fierce by default; calm, wild).
+ * Dresses an instance (its materials are its own copies by then): the mask colour, the
+ * face of the chosen expression (fierce by default; calm, wild), the optional parts.
  */
-export function paintTurtle(root: THREE.Object3D, look: { outfit?: string; expression?: string }): void {
+export function paintTurtle(root: THREE.Object3D, look: { show: string[]; outfit?: string; expression?: string }): void {
   const mood = look.expression ?? "fierce";
   const c = look.outfit ? new THREE.Color(look.outfit) : null;
   root.traverse((o) => {
+    if (OPTIONAL.includes(o.name)) o.visible = look.show.includes(o.name);
     if (o.name.startsWith("expr:")) o.visible = o.name === `expr:${mood}`;
     if (c && o instanceof THREE.Mesh && /^mask/.test((o.material as THREE.Material).name)) (o.material as THREE.MeshPhysicalMaterial).color.copy(c);
   });

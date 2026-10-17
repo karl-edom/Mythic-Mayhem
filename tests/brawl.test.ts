@@ -287,6 +287,7 @@ test("apparence : un look valide est lu, un look invalide est ignoré", async ()
   // Technique presentation: letters only (any script), at most 8; slashes within 0–12.
   const moves = parseCharacter({ moves: { "coup-1": { callout: "龍<b>槌</b>閃", slashes: 40 }, "BAD ID": { callout: "x" } } }, "x").moves;
   assert.deepEqual(moves, { "coup-1": { callout: "龍b槌b閃", slashes: 12 } });
+  assert.deepEqual(parseCharacter({ moves: { tir: { projectile: "pizza" }, autre: { projectile: "<img>" } } }, "x").moves, { tir: { projectile: "pizza" }, autre: {} });
 });
 
 test("dégagement : sous les coups, il repousse l'agresseur sans dégâts et coûte 50 d'énergie", () => {

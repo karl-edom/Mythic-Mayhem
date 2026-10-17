@@ -18,6 +18,7 @@ import { buildEnvironment } from "./environment.ts";
 import { defaultLook, instantiate, proceduralEnv, weaponStyle, type ModelInstance, type ModelLibrary } from "./models.ts";
 import { glowTexture, magicCircleTexture, noOutline, toon } from "./toon.ts";
 import { WeaponTrail } from "./trail.ts";
+import { buildPizza } from "./pizza.ts";
 import { Vfx } from "./vfx.ts";
 
 interface FighterView {
@@ -662,6 +663,15 @@ export class ArenaView {
       if (!g) {
         const ch = this.characters[p.owner]!;
         g = new THREE.Group();
+        const id = this.world.fighters[p.owner]!.kit.specials[p.slot]?.id;
+        const pizzaLook = !!id && ch.moves[id]?.projectile === "pizza";
+        if (pizzaLook) {
+          // A pizza flung like a frisbee: tilted, spinning, a faint glow behind it.
+          const pizza = buildPizza(Math.max(0.4, p.size * 1.4));
+          pizza.rotation.z = 0.25;
+          pizza.userData.spin = true;
+          g.add(pizza);
+        }
         const halo = new THREE.Sprite(
           noOutline(new THREE.SpriteMaterial({ map: this.glow, color: ch.colors.secondary, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })),
         );
@@ -670,11 +680,16 @@ export class ArenaView {
           noOutline(new THREE.SpriteMaterial({ map: this.glow, color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })),
         );
         core.scale.setScalar(p.size * 0.9);
-        g.add(halo, core);
+        // Behind a drawn object, only a faint glow.
+        if (pizzaLook) {
+          halo.material.opacity = 0.18;
+          g.add(halo);
+        } else g.add(halo, core);
         this.scene.add(g);
         this.projectiles.set(p, g);
       }
       g.position.copy(this.drawn(p));
+      for (const c of g.children) if (c.userData.spin) c.rotation.y += 0.45;
       if (this.frame % 2 === 0) this.vfx.speedLines(g.position.clone(), new THREE.Vector3(p.dir.x, p.dir.y, p.dir.z), this.characters[p.owner]!.colors.secondary);
     }
     for (const [p, g] of this.projectiles)

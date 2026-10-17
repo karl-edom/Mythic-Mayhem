@@ -47,5 +47,9 @@ L'épreuve (`--tune`) règle les dégâts de chacun.
 
 ## Limites
 
-- Leonardo n'a qu'un sabre, comme demandé, et pas de second sabre dans le dos.
-- La pizza volante utilise le projectile générique (une sphère) : il n'y a pas encore de modèle de pizza.
+- Leonardo se bat avec un seul sabre. Le second reste au fourreau dans son dos.
+
+## Ajouts : la pizza et le second sabre
+
+- **Apparence des projectiles par technique** : dans `character.json`, `moves.{id}.projectile` choisit un objet dessiné à la place de la boule de lumière. Un seul pour l'instant, `pizza` : croûte dorée, tomate, fromage fondu avec des taches dorées, pepperoni, basilic, coupée en huit. Elle tourne à plat comme un frisbee, avec un léger halo. C'est de l'affichage seul, choisi dans une liste fermée.
+- **Fourreaux dans le dos** (pièce optionnelle `Katana_Back` de la tortue) : deux fourreaux laqués croisés sur la carapace, les poignées au-dessus des épaules. Celui de droite garde le second sabre (garde dorée, poignée tressée bleue, pommeau) ; celui de gauche est vide, son sabre est en main. Une sangle de cuir passe en travers du plastron.

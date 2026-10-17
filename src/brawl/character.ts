@@ -43,7 +43,11 @@ export interface MoveStyle {
   callout?: string;
   /** Number of blade slashes drawn across the target when the special hits (0–12). */
   slashes?: number;
+  /** Look of a projectile special: a ball of light (default) or one of the drawn objects. */
+  projectile?: (typeof PROJECTILE_LOOKS)[number];
 }
+
+export const PROJECTILE_LOOKS = ["pizza"] as const;
 
 const COLOR = /^#[0-9a-fA-F]{6}$/;
 
@@ -79,6 +83,7 @@ function parseMoves(v: unknown): Record<string, MoveStyle> {
       if (t) style.callout = t;
     }
     if (typeof o.slashes === "number" && Number.isFinite(o.slashes)) style.slashes = Math.max(0, Math.min(12, Math.round(o.slashes)));
+    if ((PROJECTILE_LOOKS as readonly unknown[]).includes(o.projectile)) style.projectile = o.projectile as MoveStyle["projectile"];
     out[id] = style;
   }
   return out;
