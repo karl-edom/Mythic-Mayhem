@@ -58,7 +58,6 @@ Kenshin est rapide et léger : 780 PV, vitesse 6,6, poids 0,75. L'épreuve (`--t
 
 ## Limites
 
-- Le hakama est fait de pièces rigides, une par segment de jambe : on voit un raccord au genou dans les grandes fentes.
 - Les kanji dépendent des polices japonaises du système (présentes sur Windows, macOS, Android et iOS).
 - Le ressenti en mouvement reste à juger manette en main.
 
@@ -79,3 +78,4 @@ Kenshin est rapide et léger : 780 PV, vitesse 6,6, poids 0,75. L'épreuve (`--t
   - sourcils fins de la couleur des cheveux, ombre du nez, petite bouche ;
   - cicatrice fine en croix si le pack la demande.
 - **Gi** : un buste tourné (épaules qui tombent vers le cou, poitrine plus pleine), un col plat qui passe derrière la nuque et se croise gauche sur droite, des plis en relief sur le gi et le hakama.
+- **Hakama sans raccord au genou** : chaque jambe est un seul tube de tissu *skinné*. Chaque point suit un mélange de la hanche, de la cuisse et du tibia selon sa hauteur, si bien que le tissu se plie au genou au lieu de se couper en deux pièces rigides.

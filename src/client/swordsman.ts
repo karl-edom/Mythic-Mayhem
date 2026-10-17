@@ -136,9 +136,9 @@ function strawTexture(): THREE.CanvasTexture {
  * A flared, pleated tube of cloth along Y (open at both ends): `rTop` at `yTop`, `rBot`
  * at `yBot`, deep box pleats round it, a little flattened front to back.
  */
-function pleatedTube(yTop: number, yBot: number, rTop: number, rBot: number, pleats: number, depth = 0.85): THREE.BufferGeometry {
+function pleatedTube(yTop: number, yBot: number, rTop: number, rBot: number, pleats: number, depth = 0.85, rows = 8): THREE.BufferGeometry {
   const h = yTop - yBot;
-  const g = new THREE.CylinderGeometry(rTop, rBot, h, pleats * 6, 8, true);
+  const g = new THREE.CylinderGeometry(rTop, rBot, h, pleats * 6, rows, true);
   const p = g.attributes.position!;
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i);
@@ -511,6 +511,35 @@ export function buildSwordsmanRig(): THREE.Group {
     return m;
   };
   const V = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+  /**
+   * Cloth deformed by several bones (skinning), geometry in model coordinates: each
+   * vertex follows a blend of `names`, weighted by `weights` at its rest position, so a
+   * garment bends at a joint instead of splitting into rigid pieces.
+   */
+  const skinned = (geo: THREE.BufferGeometry, mat: THREE.Material, name: string, names: string[], weights: (p: THREE.Vector3) => number[]) => {
+    const pos = geo.attributes.position!;
+    const index = new Uint16Array(pos.count * 4);
+    const weight = new Float32Array(pos.count * 4);
+    const p = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      const w = weights(p.fromBufferAttribute(pos, i));
+      const sum = w.reduce((a, b) => a + b, 0) || 1;
+      w.slice(0, 4).forEach((v, k) => {
+        index[i * 4 + k] = k;
+        weight[i * 4 + k] = v / sum;
+      });
+    }
+    geo.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(index, 4));
+    geo.setAttribute("skinWeight", new THREE.Float32BufferAttribute(weight, 4));
+    const mesh = new THREE.SkinnedMesh(geo, mat);
+    mesh.name = name;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    rig.add(mesh);
+    rig.updateMatrixWorld(true);
+    mesh.bind(new THREE.Skeleton(names.map((n) => bones.get(n)!)));
+    return mesh;
+  };
 
   // --- Gi: the jacket, tucked into the hakama. A turned body (shoulders sloping to the
   // neck, a fuller chest), lower half on the spine, upper on the chest.
@@ -559,8 +588,15 @@ export function buildSwordsmanRig(): THREE.Group {
   put("hips", pleatedTube(1.0, 0.7, 0.215, 0.275, 9, 0.78), M.hakama, "hakama");
   for (const s of [-1, 1]) {
     const side = s > 0 ? "left" : "right";
-    put(`${side}UpperLeg`, pleatedTube(0.86, 0.44, 0.15, 0.2, 6).translate(s * 0.115, 0, 0), M.hakama, "hakama");
-    put(`${side}LowerLeg`, pleatedTube(0.56, 0.05, 0.175, 0.215, 7).translate(s * 0.115, 0, 0), M.hakama, "hakama");
+    // One tube from the hip to the hem, skinned: it follows the thigh, bends round the
+    // knee and follows the shin, with no seam; its top eases into the hips.
+    const leg = pleatedTube(0.9, 0.05, 0.15, 0.222, 7, 0.85, 28).translate(s * 0.115, 0, 0);
+    const S = THREE.MathUtils.smoothstep;
+    skinned(leg, M.hakama, "hakama", ["hips", `${side}UpperLeg`, `${side}LowerLeg`], (p) => {
+      const hip = S(p.y, 0.8, 0.92) * 0.6;
+      const shin = 1 - S(p.y, 0.38, 0.6);
+      return [hip, Math.max(0, 1 - hip - shin), shin];
+    });
   }
   {
     const plate = new RoundedBoxGeometry(0.2, 0.12, 0.02, 2, 0.008);
