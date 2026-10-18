@@ -9,6 +9,7 @@ import { BRAWL_CONFIG, createBrawl, createMatch, step, type BrawlConfig, type Br
 import { Hud } from "./hud.ts";
 import { Input, padIndex, type Controller, type MenuButton } from "./input.ts";
 import { loadModels, type ModelLibrary } from "./models.ts";
+import { PortraitStudio, type PortraitCut } from "./portraits.ts";
 import { loadArenaDefs, loadRoster, propCatalog, type RosterEntry } from "./roster.ts";
 import { ArenaView, createRenderer } from "./scene.ts";
 
@@ -116,6 +117,28 @@ interface Game {
 let game: Game | null = null;
 /** Menu backdrop: the chosen fighters idling in the chosen arena. */
 let showcase: ArenaView | null = null;
+/** Portraits of the fighters, rendered from their models (see portraits.ts). */
+let studio: PortraitStudio | null = null;
+/** The select screen plays its entrance once per visit (not on every redraw). */
+let menuIntro = true;
+/** Fighter shown last in each player panel: a new one slides in. */
+const lastShown: (string | undefined)[] = [];
+
+/** Fills an image with a fighter's portrait, now if ready, else when rendered. */
+function photo(img: HTMLImageElement, r: RosterEntry, cut: PortraitCut): void {
+  img.alt = "";
+  img.decoding = "async";
+  const url = studio?.ready(r.dir, cut);
+  if (url) {
+    img.src = url;
+    return;
+  }
+  img.classList.add("pending");
+  void studio?.get(r.dir, r.character, r.kit!, cut).then((u) => {
+    img.src = u;
+    img.classList.remove("pending");
+  });
+}
 
 function h<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent: HTMLElement, text?: string): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -155,18 +178,22 @@ function buildShowcase(): void {
   if (import.meta.env.DEV) (window as unknown as { __showcase: ArenaView }).__showcase = showcase;
 }
 
-function fighterCard(r: RosterEntry, parent: HTMLElement): void {
+function fighterCard(r: RosterEntry, parent: HTMLElement, index: number): void {
   const tags = activeSlots()
     .map((sl, i) => (sl.entry === r ? i : -1))
     .filter((i) => i >= 0);
   const card = h("button", `card${tags.length ? " picked" : ""}`, parent);
   card.style.setProperty("--primary", r.character.colors.primary);
   card.style.setProperty("--secondary", r.character.colors.secondary);
-  const emblem = h("div", "emblem", card, r.character.name.slice(0, 1).toUpperCase());
+  card.style.setProperty("--i", String(index));
+  if (tags.length) card.style.setProperty("--picked", colorOf(tags[0]!));
+  card.title = `${r.character.name} — ${r.character.universe}`;
+  const frame = h("span", "card-frame", card);
+  const emblem = h("span", "emblem", frame, r.character.name.slice(0, 1).toUpperCase());
   emblem.setAttribute("aria-hidden", "true");
-  h("div", "card-name", card, r.character.name);
-  h("div", "card-universe", card, r.character.universe + (r.local ? " · pack local" : ""));
-  const tagBox = h("div", "slot-tags", card);
+  photo(h("img", "card-photo", frame), r, "bust");
+  h("span", "card-name", card, r.character.name);
+  const tagBox = h("span", "slot-tags", card);
   for (const i of tags) {
     const t = h("span", "slot-tag", tagBox, shortLabel(i));
     t.style.background = colorOf(i);
@@ -179,22 +206,32 @@ function fighterCard(r: RosterEntry, parent: HTMLElement): void {
   });
 }
 
-function plate(i: number, many: boolean): HTMLElement {
+/**
+ * A player's panel, at the bottom of the select screen as in Smash: the fighter's full
+ * figure over the slot's colour, the name large, who plays it, the team. Click: this
+ * player picks next.
+ */
+function plate(i: number): HTMLElement {
   const sl = choice.slots[i]!;
   const r = sl.entry;
   const p = document.createElement("div");
-  const side = many ? "compact" : i === 0 ? "left" : "right";
-  p.className = `plate ${side}${choice.active === i ? " active" : ""}`;
+  const changed = r?.dir !== lastShown[i];
+  lastShown[i] = r?.dir;
+  p.className = `plate${choice.active === i ? " active" : ""}${changed ? " changed" : ""}`;
   p.style.setProperty("--slot", colorOf(i));
+  p.style.setProperty("--n", String(i));
   if (!r) return p;
   p.style.setProperty("--primary", r.character.colors.primary);
   p.style.setProperty("--secondary", r.character.colors.secondary);
-  h("div", "plate-label", p, slotLabel(i));
-  if (ready.has(i) && isHuman(i)) h("span", "ready-tag", p, "PRÊT");
-  h("div", "plate-name", p, r.character.name);
-  if (!many) h("div", "plate-desc", p, r.character.description);
-  if (r.kit && !many) h("div", "plate-kit", p, `${r.kit.archetype} · ${r.kit.light.hits.length} coups · ${r.kit.specials.map((x) => x.id).join(" · ")}`);
-  const c = h("button", "ctrl-chip", p, CTRL_NAMES(sl.ctrl));
+  h("span", "plate-num", p, isHuman(i) ? `${i + 1}P` : "CPU").setAttribute("aria-hidden", "true");
+  photo(h("img", "plate-photo", p), r, "full");
+  const info = h("div", "plate-info", p);
+  const top = h("div", "plate-label", info, slotLabel(i));
+  if (ready.has(i) && isHuman(i)) h("span", "ready-tag", top, "PRÊT");
+  h("div", "plate-name", info, r.character.name);
+  h("div", "plate-universe", info, r.character.universe);
+  const row = h("div", "plate-chips", info);
+  const c = h("button", "ctrl-chip", row, CTRL_NAMES(sl.ctrl));
   c.title = "Qui joue ce combattant (clic pour changer)";
   c.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -203,7 +240,7 @@ function plate(i: number, many: boolean): HTMLElement {
     showMenu();
   });
   if (choice.mode === "teams") {
-    const t = h("button", "team-chip", p, `Équipe ${TEAM_NAMES[sl.team]}`);
+    const t = h("button", "team-chip", row, `Équipe ${TEAM_NAMES[sl.team]}`);
     t.style.background = TEAM_COLORS[sl.team]!;
     t.addEventListener("click", (e) => {
       e.stopPropagation();
@@ -243,28 +280,31 @@ function showMenu(): void {
   hudRoot.replaceChildren();
   menuRoot.replaceChildren();
   menuRoot.classList.remove("hidden");
-  menuRoot.className = "select";
+  menuRoot.className = `select${menuIntro ? " intro" : ""}`;
+  menuIntro = false;
   const top = h("header", "select-top", menuRoot);
   h("div", "logo", top, "MYTHIC MAYHEM");
-  h("div", "logo-sub", top, "Choisis tes combattants");
+  const title = h("div", "select-title", top);
+  h("span", "", title, "Sélection des combattants");
+  h("span", "select-rules", title, `${choice.count} combattants · ${choice.mode === "teams" ? "équipes" : "chacun pour soi"} · ${choice.rule === "stock" ? "3 vies" : "K.-O. au temps"}${choice.arena ? ` · ${choice.arena.name}` : ""}`);
   if (playable.length === 0) {
     h("p", "error", menuRoot, "Aucun combattant valide trouvé.");
     return;
   }
-  const many = choice.count > 2;
-  const stage = h("div", `select-stage${many ? " many" : ""}`, menuRoot);
-  for (let i = 0; i < choice.count; i++) stage.append(plate(i, many));
+  const grid = h("div", "roster", menuRoot);
+  playable.forEach((r, k) => fighterCard(r, grid, k));
+  h("div", "select-stage", menuRoot);
 
   const bottom = h("div", "select-bottom", menuRoot);
+  const panels = h("div", `panels n${choice.count}`, bottom);
+  for (let i = 0; i < choice.count; i++) panels.append(plate(i));
   const pads = input.connectedPads().length;
   const hint = h(
     "div",
     "select-hint",
     bottom,
-    `Clique un personnage pour ${isHuman(choice.active) ? `le Joueur ${choice.active + 1}` : `le CPU ${choice.active + 1}`}` +
-      (pads
-        ? " · Manette : A rejoindre / choisir · X donner à un bot · Y équipe · B annuler · ↓ options · Start combattre"
-        : " · Branche une manette et appuie sur A pour jouer avec"),
+    `Choisis un combattant pour ${isHuman(choice.active) ? `le Joueur ${choice.active + 1}` : `le CPU ${choice.active + 1}`}` +
+      (pads ? " · Manette : A choisir · X donner à un bot · Y équipe · B annuler · ↓ options · Start combattre" : " · Branche une manette et appuie sur A pour jouer avec"),
   );
   hint.setAttribute("role", "status");
   // What the game sees of the gamepads: says plainly when they cannot be read here.
@@ -283,8 +323,6 @@ function showMenu(): void {
   diag.setAttribute("role", "status");
   // A pad is there but nobody has joined with it: say how, big.
   if (st.pads.length && !activeSlots().some((sl) => sl.ctrl.startsWith("pad"))) h("div", "pad-call", bottom, "🎮 Manette détectée : appuie sur A pour jouer");
-  const grid = h("div", "roster", bottom);
-  for (const r of playable) fighterCard(r, grid);
 
   const options = h("div", "options", bottom);
   chips(options, "Combattants", [[2, "2"], [3, "3"], [4, "4"]], choice.count, (v) => {
@@ -295,7 +333,9 @@ function showMenu(): void {
   chips(options, "Victoire", [["stock", "3 vies"], ["kills", "K.-O. au temps"]] as [Rule, string][], choice.rule, (v) => (choice.rule = v));
   chips(options, "Arène", arenas.map((a) => [a.id, a.name] as [string, string]), choice.arena?.id ?? "", (v) => (choice.arena = arenas.find((a) => a.id === v)), true);
   chips(options, "Bots", (Object.keys(BOT_LEVELS) as Level[]).map((l) => [l, LEVEL_NAMES[l]] as [Level, string]), choice.level, (v) => (choice.level = v));
-  const start = h("button", "start", options, "COMBATTRE");
+  const start = h("button", "start", options);
+  h("span", "start-kicker", start, "Prêts ?");
+  h("span", "start-label", start, "COMBATTRE !");
   if (!teamsValid()) {
     start.disabled = true;
     start.title = "Il faut au moins un combattant dans chaque équipe";
@@ -316,10 +356,60 @@ function showMenu(): void {
   }
 }
 
+/** The versus screen is on (the match starts when it ends). */
+let versusOn = false;
+
+/**
+ * Versus screen, before every match: the fighters' figures sweep in from the sides on
+ * their players' colours, « VS » slams down between them, then it all bursts away into
+ * the arena. 1.9 s; a click, a key or A skips it.
+ */
+function versus(then: () => void): void {
+  const slots = activeSlots();
+  versusOn = true;
+  const vs = document.createElement("div");
+  vs.className = `versus n${slots.length}`;
+  slots.forEach((sl, i) => {
+    const side = h("div", "vs-side", vs);
+    side.style.setProperty("--slot", colorOf(i));
+    side.style.setProperty("--primary", sl.entry!.character.colors.primary);
+    side.style.setProperty("--n", String(i));
+    photo(h("img", "vs-photo", side), sl.entry!, "full");
+    const tag = h("div", "vs-tag", side);
+    h("div", "vs-player", tag, isHuman(i) ? `Joueur ${i + 1}` : `CPU ${i + 1}`);
+    h("div", "vs-name", tag, sl.entry!.character.name);
+  });
+  h("div", "vs-mark", vs, "VS");
+  h("div", "vs-flash", vs);
+  document.body.append(vs);
+  let done = false;
+  const finish = () => {
+    if (done) return;
+    done = true;
+    vs.classList.add("out");
+    then();
+    window.removeEventListener("keydown", finish);
+    setTimeout(() => {
+      vs.remove();
+      versusOn = false;
+    }, 450);
+  };
+  vs.addEventListener("click", finish);
+  window.addEventListener("keydown", finish);
+  setTimeout(finish, 1900);
+}
+
 function startGame(): void {
+  if (versusOn) return;
   ready.clear();
   const slots = activeSlots();
   if (slots.some((sl) => !sl.entry?.kit) || !teamsValid()) return;
+  menuRoot.classList.add("hidden");
+  versus(launch);
+}
+
+function launch(): void {
+  const slots = activeSlots();
   menuRoot.classList.add("hidden");
   showcase?.dispose();
   showcase = null;
@@ -369,6 +459,15 @@ function showEnd(g: Game): void {
   menuRoot.replaceChildren();
   menuRoot.className = "end";
   menuRoot.classList.remove("hidden");
+  // The winner's figure, large, sliding in.
+  const champ = w.winner === null ? -1 : w.fighters.findIndex((f) => f.team === w.winner);
+  const entry = champ >= 0 ? choice.slots[champ]?.entry : undefined;
+  if (entry) {
+    const hero = h("div", "end-hero", menuRoot);
+    hero.style.setProperty("--slot", colorOf(champ));
+    hero.style.setProperty("--primary", entry.character.colors.primary);
+    photo(h("img", "end-photo", hero), entry, "full");
+  }
   const box = h("div", "end-box", menuRoot);
   const teams = [...new Set(w.fighters.map((f) => f.team))];
   const line = teams
@@ -576,6 +675,7 @@ function showPause(g: Game): void {
 function quitMatch(): void {
   game?.view.dispose();
   game = null;
+  menuIntro = true;
   buildShowcase();
   showMenu();
 }
@@ -616,7 +716,7 @@ function padMenus(): void {
       else if (button === "b") quitMatch();
       return;
     }
-    if (!game && menuRoot.className.startsWith("select")) {
+    if (!game && !versusOn && menuRoot.className.startsWith("select")) {
       const picked = padSelect(pad, button);
       if (game) return; // Start launched the match
       reshow = true;
@@ -694,6 +794,13 @@ async function boot(): Promise<void> {
     label.textContent = `Modèles 3D indisponibles : affichage simplifié. (${e instanceof Error ? e.message : String(e)})`;
     console.error(e);
     await new Promise((r) => setTimeout(r, 4000));
+  }
+  if (library) {
+    studio = new PortraitStudio(library);
+    if (import.meta.env.DEV) (window as unknown as { __studio: PortraitStudio }).__studio = studio;
+    // Busts for the roster first, then the full figures, rendered in the background.
+    for (const r of playable) void studio.get(r.dir, r.character, r.kit!, "bust");
+    for (const r of playable) void studio.get(r.dir, r.character, r.kit!, "full");
   }
   buildShowcase();
   showMenu();

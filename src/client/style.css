@@ -45,65 +45,22 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 }
 .logo-sub { font-weight: 700; letter-spacing: 0.3em; text-transform: uppercase; font-size: 14px; opacity: 0.9; margin-top: 6px; text-shadow: 0 2px 4px #000; }
 
-/* ---------- Select screen ---------- */
-#menu.select { display: grid; grid-template-rows: auto 1fr auto; pointer-events: none; }
-#menu.select > * { pointer-events: auto; }
-.select-top { padding: max(18px, env(safe-area-inset-top)) max(24px, env(safe-area-inset-left)) 0; }
-.select-stage { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 0 max(16px, env(safe-area-inset-left)); pointer-events: none; }
-.plate {
-  pointer-events: auto; width: min(340px, 40vw); text-align: left; border: 0; padding: 16px 20px 18px;
-  background: linear-gradient(135deg, var(--ink-soft), rgba(21, 18, 31, 0.55));
-  border-left: 6px solid var(--primary, #888); clip-path: polygon(0 0, 100% 0, 94% 100%, 0 100%);
-  backdrop-filter: blur(6px); opacity: 0.85; transition: opacity 0.15s, transform 0.15s;
-}
-.plate.right { text-align: right; border-left: 0; border-right: 6px solid var(--primary, #888); clip-path: polygon(0 0, 100% 0, 100% 100%, 6% 100%); }
-.plate.active { opacity: 1; transform: translateY(-4px); box-shadow: 0 0 0 2px var(--gold) inset; }
-.plate-label { font-weight: 700; letter-spacing: 0.25em; font-size: 12px; color: var(--gold); }
-.plate-name { font-family: var(--display); font-size: clamp(30px, 4vw, 46px); letter-spacing: 0.03em; line-height: 1; margin: 4px 0 6px; text-shadow: 0 3px 0 var(--ink); }
-.plate-desc { font-size: 15px; font-weight: 500; line-height: 1.25; opacity: 0.9; }
-.plate-kit { font-size: 12px; margin-top: 8px; letter-spacing: 0.06em; text-transform: uppercase; opacity: 0.7; }
-
-.select-bottom {
-  padding: 14px max(16px, env(safe-area-inset-right)) max(16px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
-  background: linear-gradient(0deg, rgba(14, 12, 22, 0.92) 40%, rgba(14, 12, 22, 0));
-  display: grid; gap: 12px;
-}
-.select-hint { text-align: center; font-weight: 600; letter-spacing: 0.08em; opacity: 0.85; font-size: 14px; }
-.roster { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
-.card {
-  position: relative; width: 150px; padding: 10px 10px 12px; border: 2px solid rgba(255, 255, 255, 0.15); border-radius: 4px;
-  background: linear-gradient(160deg, color-mix(in srgb, var(--primary) 35%, #1c1830), #15121f);
-  text-align: left; transition: transform 0.12s, border-color 0.12s;
-}
-.card:hover { transform: translateY(-3px); border-color: var(--gold); }
-.card.p1, .card.p2 { border-color: var(--gold); }
-.emblem {
-  width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; margin-bottom: 6px;
-  font-family: var(--display); font-size: 28px; color: var(--ink);
-  background: radial-gradient(circle at 35% 30%, #fff, var(--secondary) 45%, var(--primary));
-  border: 3px solid var(--ink);
-}
-.card-name { font-family: var(--display); font-size: 22px; letter-spacing: 0.03em; line-height: 1; }
-.card-universe { font-size: 12px; opacity: 0.7; margin-top: 2px; }
-.slot-tag { position: absolute; top: 8px; right: 8px; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 3px; background: var(--gold); color: var(--ink); }
-.slot-tag.p2 { background: var(--danger); color: white; top: 30px; }
-
-.options { display: flex; gap: 18px; align-items: center; justify-content: center; flex-wrap: wrap; }
+/* ---------- Select screen: see « Menus v2 » at the end ---------- */
+.select-hint { text-align: center; font-weight: 600; letter-spacing: 0.08em; opacity: 0.85; }
+.options { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; }
 .option-group { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 .option-label { font-weight: 700; letter-spacing: 0.2em; font-size: 12px; text-transform: uppercase; opacity: 0.7; margin-right: 4px; }
-.chip { border: 2px solid rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.06); padding: 6px 14px; font-weight: 700; border-radius: 3px; transform: skewX(-8deg); }
+.chip { border: 2px solid rgba(255, 255, 255, 0.25); font-weight: 700; border-radius: 3px; transform: skewX(-8deg); transition: border-color 0.12s, background 0.12s; }
 .chip.selected { background: var(--paper); color: var(--ink); border-color: var(--paper); }
 .start {
-  font-family: var(--display); font-size: 30px; letter-spacing: 0.06em; padding: 8px 34px; border: 0;
-  color: var(--ink); background: linear-gradient(180deg, #ffe27a, var(--gold) 55%, #ff9f2e);
-  clip-path: polygon(8% 0, 100% 0, 92% 100%, 0 100%); text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6);
-  transition: transform 0.1s, filter 0.1s;
+  font-family: var(--display); letter-spacing: 0.06em; border: 0; color: var(--ink);
+  background: linear-gradient(180deg, #ffe27a, var(--gold) 55%, #ff9f2e);
+  clip-path: polygon(6% 0, 100% 0, 94% 100%, 0 100%); text-shadow: 0 1px 0 rgba(255, 255, 255, 0.6); transition: transform 0.1s;
 }
-.start:hover { transform: scale(1.05); filter: brightness(1.08); }
+.start:hover { transform: scale(1.05); }
 .invalid { font-size: 13px; opacity: 0.85; max-width: 760px; justify-self: center; }
 .invalid-name { font-weight: 700; margin-top: 6px; }
 .error { color: var(--danger); font-weight: 700; text-align: center; }
-
 /* ---------- End screen ---------- */
 #menu.end { display: flex; align-items: flex-end; justify-content: center; padding-bottom: max(40px, env(safe-area-inset-bottom)); pointer-events: none; }
 /* ---------- Gamepads in menus (decision 0019) ---------- */
@@ -113,7 +70,6 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
   animation: cursor-bob 0.8s ease-in-out infinite alternate;
 }
 @keyframes cursor-bob { from { transform: translate(-50%, 0); } to { transform: translate(-50%, -4px); } }
-.card.hovered { transform: translateY(-3px); }
 .pad-focus { outline: 4px solid var(--focus, var(--gold)); outline-offset: 2px; }
 .pad-call {
   justify-self: center; text-align: center; font-family: var(--display); font-size: 26px; letter-spacing: 0.05em; color: var(--ink);
@@ -128,7 +84,7 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 .pause-item { text-align: left; font-family: var(--display); font-size: 24px; letter-spacing: 0.04em; padding: 6px 12px; border: 0; background: rgba(255, 255, 255, 0.06); color: var(--paper); cursor: pointer; }
 .pause-item.pad-focus, .pause-item:hover { background: var(--gold); color: var(--ink); }
 .pause-hint { font-size: 12px; opacity: 0.7; letter-spacing: 0.05em; }
-.end-box { pointer-events: auto; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; justify-content: center; padding: 14px 22px; background: var(--ink-soft); }
+.end-box { position: relative; z-index: 1; pointer-events: auto; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; justify-content: center; padding: 14px 22px; background: var(--ink-soft); }
 .end-score { font-weight: 700; letter-spacing: 0.1em; }
 
 /* ---------- In-match HUD ---------- */
@@ -206,16 +162,9 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 .hud-help b { min-width: 130px; color: var(--gold); }
 
 /* ---------- Matches of 3 or 4 (decision 0017) ---------- */
-.plate { border-top: 4px solid var(--slot, transparent); }
-.select-stage.many { justify-content: center; align-items: flex-end; }
-.plate.compact { width: min(230px, 23vw); padding: 10px 14px 12px; clip-path: polygon(0 0, 100% 0, 95% 100%, 0 100%); }
-.plate.compact .plate-name { font-size: clamp(20px, 2.4vw, 30px); }
 .ctrl-chip { margin-top: 8px; margin-right: 6px; border: 2px solid var(--ink); background: var(--paper); color: var(--ink); font-weight: 700; font-size: 12px; letter-spacing: 0.06em; padding: 3px 10px; cursor: pointer; transform: skewX(-10deg); }
 .help-title { font-family: var(--display); font-size: 18px; letter-spacing: 0.06em; color: var(--gold); }
 .team-chip { margin-top: 8px; border: 2px solid var(--ink); color: white; font-weight: 700; font-size: 12px; letter-spacing: 0.08em; padding: 3px 10px; cursor: pointer; transform: skewX(-10deg); }
-.slot-tags { position: absolute; top: 8px; right: 8px; display: flex; flex-direction: column; gap: 3px; }
-.slot-tags .slot-tag { position: static; color: var(--ink); }
-.card.picked { box-shadow: 0 0 0 2px var(--gold) inset; }
 .start:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .hud-top.many { grid-template-columns: 1fr; justify-items: center; }
@@ -241,10 +190,8 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 .ko-count { font-family: var(--display); font-size: 18px; letter-spacing: 0.04em; text-shadow: 0 2px 0 var(--ink); }
 
 @media (max-width: 760px) {
-  .plate.compact, .hud-panel.compact { width: 100%; }
+  .hud-panel.compact { width: 100%; }
   .hud-bottom { flex-wrap: wrap; }
-  .select-stage { flex-direction: column; justify-content: flex-start; }
-  .plate { width: 100%; }
   .hud-top { grid-template-columns: 1fr 1fr; }
   .hud-center { grid-column: 1 / -1; grid-row: 2; justify-content: center; }
   .hud-help { display: none; }
@@ -252,4 +199,222 @@ button:focus-visible { outline: 3px solid var(--gold); outline-offset: 2px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .hud-banner.show, .hud-combo.pop { animation: none; }
+}
+
+/* ======================================================================
+   Menus v2 (decision 0022): a fighting-game select screen.
+   Portrait tiles cut on the slant, player panels with full figures, a
+   « fight » band; motion: staggered entrances, new fighters sliding in,
+   a versus screen, the winner's figure at the end.
+   ====================================================================== */
+#menu.select {
+  display: grid; grid-template-rows: auto auto 1fr auto; pointer-events: none;
+  background:
+    radial-gradient(ellipse 120% 70% at 50% 0%, rgba(14, 12, 22, 0.9) 0%, rgba(14, 12, 22, 0.55) 45%, rgba(14, 12, 22, 0) 70%),
+    linear-gradient(0deg, rgba(14, 12, 22, 0.95) 0%, rgba(14, 12, 22, 0) 45%);
+}
+#menu.select > * { pointer-events: auto; }
+/* Diagonal speed lines drifting across the backdrop. */
+#menu.select::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0.18; mix-blend-mode: screen;
+  background: repeating-linear-gradient(-62deg, transparent 0 46px, rgba(255, 255, 255, 0.5) 46px 48px, transparent 48px 120px);
+  animation: lines-drift 9s linear infinite;
+}
+@keyframes lines-drift { from { background-position: 0 0; } to { background-position: 480px 0; } }
+
+.select-top {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; flex-wrap: wrap;
+  padding: max(14px, env(safe-area-inset-top)) max(26px, env(safe-area-inset-right)) 8px max(26px, env(safe-area-inset-left));
+}
+.select-top .logo { font-size: clamp(30px, 4.2vw, 54px); -webkit-text-stroke: 2px var(--ink); text-shadow: 0 4px 0 var(--ink), 0 0 24px rgba(255, 180, 60, 0.35); }
+.select-title {
+  display: grid; justify-items: end; gap: 2px; text-align: right; font-family: var(--display); font-size: clamp(20px, 2.4vw, 32px);
+  letter-spacing: 0.05em; text-transform: uppercase; transform: skewX(-8deg); text-shadow: 0 3px 0 var(--ink);
+}
+.select-title::after { content: ""; width: 100%; height: 4px; background: linear-gradient(90deg, transparent, var(--gold)); }
+.select-rules { font-family: var(--ui); font-size: 13px; font-weight: 700; letter-spacing: 0.14em; opacity: 0.75; text-shadow: none; }
+
+/* Roster: portrait tiles on the slant. */
+.roster { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px 8px; padding: 6px max(16px, env(safe-area-inset-left)) 0; }
+.card {
+  --w: clamp(68px, 7.3vw, 104px);
+  position: relative; width: var(--w); height: calc(var(--w) * 1.08); padding: 0; border: 0; background: none;
+  transform: skewX(-9deg); transition: transform 0.16s cubic-bezier(0.2, 1.5, 0.4, 1), filter 0.16s;
+}
+.card-frame {
+  position: absolute; inset: 0; overflow: hidden; border: 3px solid var(--ink);
+  background:
+    radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--primary) 70%, #fff 0%) 0%, transparent 62%),
+    linear-gradient(160deg, color-mix(in srgb, var(--primary) 85%, #000), color-mix(in srgb, var(--primary) 35%, #0c0a14) 70%);
+  box-shadow: 0 4px 0 var(--ink), 0 0 0 1px rgba(255, 255, 255, 0.12) inset;
+}
+/* Halftone dots and a light sweep, over the colour. */
+.card-frame::before {
+  content: ""; position: absolute; inset: 0; opacity: 0.25;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.55) 1px, transparent 1.6px) 0 0 / 7px 7px;
+  -webkit-mask: linear-gradient(200deg, #000 0%, transparent 55%); mask: linear-gradient(200deg, #000 0%, transparent 55%);
+}
+.card-frame::after {
+  content: ""; position: absolute; inset: -20% -60%; transform: translateX(-120%) skewX(-20deg);
+  background: linear-gradient(90deg, transparent 40%, rgba(255, 255, 255, 0.55) 50%, transparent 60%);
+}
+.card:hover .card-frame::after, .card.hovered .card-frame::after { animation: sweep 0.6s ease-out; }
+@keyframes sweep { to { transform: translateX(120%) skewX(-20deg); } }
+.card-photo, .emblem { position: absolute; transform: skewX(9deg); }
+.card-photo { left: -14%; width: 128%; bottom: 0; height: 100%; object-fit: cover; object-position: 50% 30%; transition: transform 0.25s, opacity 0.3s; }
+.card-photo.pending { opacity: 0; }
+.emblem {
+  left: 50%; top: 42%; translate: -50% -50%; width: 46%; aspect-ratio: 1; border-radius: 50%; display: grid; place-items: center;
+  font-family: var(--display); font-size: calc(var(--w) * 0.26); color: var(--ink); border: 3px solid var(--ink);
+  background: radial-gradient(circle at 35% 30%, #fff, var(--secondary) 45%, var(--primary));
+}
+.card-photo:not(.pending) ~ .emblem, .card-frame:has(.card-photo:not(.pending)) .emblem { display: none; }
+.card-name {
+  position: absolute; left: -3px; right: -3px; bottom: -3px; padding: 3px 6px 1px; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-family: var(--display); font-size: calc(var(--w) * 0.17); letter-spacing: 0.03em; line-height: 1.05;
+  background: linear-gradient(90deg, var(--ink) 60%, rgba(21, 18, 31, 0.6)); border-top: 3px solid var(--primary);
+}
+.card:hover, .card.hovered { transform: skewX(-9deg) translateY(-6px) scale(1.07); z-index: 2; filter: drop-shadow(0 8px 14px rgba(0, 0, 0, 0.6)); }
+.card:hover .card-photo, .card.hovered .card-photo { transform: skewX(9deg) scale(1.08); }
+.card:hover .card-frame, .card.hovered .card-frame { border-color: var(--gold); }
+.card.picked .card-frame { border-color: var(--picked, var(--gold)); box-shadow: 0 4px 0 var(--ink), 0 0 16px var(--picked, var(--gold)); }
+.slot-tags { position: absolute; top: -8px; right: -6px; display: flex; flex-direction: column; gap: 3px; transform: skewX(9deg); z-index: 3; }
+.slot-tag {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em; padding: 1px 6px; border: 2px solid var(--ink); color: var(--ink);
+  box-shadow: 0 2px 0 var(--ink); transform: skewX(-9deg);
+}
+.pad-cursor { bottom: -12px; z-index: 4; }
+
+.select-stage { pointer-events: none; }
+
+/* Player panels, as in Smash: the figure over the slot's colour. */
+.select-bottom {
+  padding: 0 max(16px, env(safe-area-inset-right)) max(12px, env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+  display: grid; gap: 8px;
+}
+.panels { display: flex; justify-content: center; gap: 14px; }
+.plate {
+  position: relative; flex: 0 1 300px; height: clamp(132px, 19vh, 176px); padding: 0; text-align: left; overflow: visible; cursor: pointer;
+  transform: skewX(-8deg); transition: transform 0.16s, filter 0.16s;
+}
+.plate::before {
+  content: ""; position: absolute; inset: 0; border: 3px solid var(--ink); box-shadow: 0 5px 0 var(--ink);
+  background:
+    repeating-linear-gradient(-55deg, rgba(255, 255, 255, 0.07) 0 10px, transparent 10px 22px),
+    linear-gradient(115deg, color-mix(in srgb, var(--slot) 92%, #fff) 0%, var(--slot) 35%, color-mix(in srgb, var(--slot) 45%, #0c0a14) 100%);
+}
+.plate.active { transform: skewX(-8deg) translateY(-8px); filter: drop-shadow(0 0 14px var(--slot)); }
+.plate.active::before { border-color: #fff; }
+.plate-num {
+  position: absolute; left: 8px; top: -6px; font-family: var(--display); font-size: clamp(54px, 7vh, 78px); line-height: 1; color: rgba(255, 255, 255, 0.22);
+  -webkit-text-stroke: 2px rgba(21, 18, 31, 0.35); pointer-events: none;
+}
+.plate-photo {
+  position: absolute; right: 2%; bottom: 3px; height: 128%; max-width: 62%; object-fit: contain; object-position: 50% 100%;
+  transform: skewX(8deg); filter: drop-shadow(-6px 6px 0 rgba(21, 18, 31, 0.55)); pointer-events: none; transition: opacity 0.3s;
+}
+.plate-photo.pending { opacity: 0; }
+.plate-info { position: absolute; left: 14px; right: 36%; bottom: 10px; transform: skewX(8deg); display: grid; gap: 1px; }
+.plate-label { font-size: 11px; font-weight: 700; letter-spacing: 0.18em; color: var(--paper); text-shadow: 0 1px 2px #000; text-transform: uppercase; }
+.plate-name {
+  font-family: var(--display); font-size: clamp(24px, 2.6vw, 38px); letter-spacing: 0.03em; line-height: 0.95; white-space: nowrap;
+  color: #fff; -webkit-text-stroke: 1.5px var(--ink); text-shadow: 0 3px 0 var(--ink);
+}
+.plate-universe { font-size: 11px; font-weight: 600; opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-shadow: 0 1px 2px #000; }
+.plate-chips { display: flex; gap: 6px; margin-top: 4px; }
+.ctrl-chip, .team-chip { margin: 0; }
+.plate.changed .plate-photo { animation: photo-in 0.42s cubic-bezier(0.2, 1.2, 0.4, 1) both; }
+.plate.changed .plate-name { animation: name-slam 0.36s cubic-bezier(0.2, 1.6, 0.4, 1) both; }
+@keyframes photo-in { from { opacity: 0; translate: 40% 0; filter: blur(6px) drop-shadow(-6px 6px 0 rgba(21, 18, 31, 0.55)); } }
+@keyframes name-slam { from { opacity: 0; scale: 1.6; } }
+
+.select-hint { font-size: 13px; }
+.options { gap: 12px 16px; }
+.chip { padding: 5px 12px; font-size: 14px; background: rgba(21, 18, 31, 0.7); }
+.chip:hover { border-color: var(--gold); }
+
+/* The fight band. */
+.start {
+  position: relative; display: inline-flex; align-items: baseline; gap: 12px; padding: 6px 40px 4px; overflow: hidden;
+  font-size: clamp(26px, 3vw, 38px); box-shadow: 0 5px 0 var(--ink); animation: start-pulse 1.6s ease-in-out infinite;
+}
+.start-kicker { font-family: var(--ui); font-weight: 700; font-size: 0.45em; letter-spacing: 0.25em; text-transform: uppercase; }
+.start::after {
+  content: ""; position: absolute; inset: 0; transform: translateX(-120%) skewX(-20deg);
+  background: linear-gradient(90deg, transparent 35%, rgba(255, 255, 255, 0.75) 50%, transparent 65%); animation: sweep 2.4s ease-in-out infinite;
+}
+@keyframes start-pulse { 50% { filter: brightness(1.12) drop-shadow(0 0 14px rgba(255, 190, 60, 0.7)); } }
+.start:disabled { animation: none; }
+
+/* Entrance (once per visit). */
+.select.intro .select-top { animation: drop-in 0.45s cubic-bezier(0.2, 1.3, 0.4, 1) both; }
+.select.intro .card { animation: tile-in 0.42s cubic-bezier(0.2, 1.5, 0.4, 1) both; animation-delay: calc(0.12s + var(--i) * 32ms); }
+.select.intro .plate { animation: panel-in 0.5s cubic-bezier(0.2, 1.2, 0.4, 1) both; animation-delay: calc(0.3s + var(--n) * 90ms); }
+.select.intro .options { animation: drop-in 0.4s 0.5s both reverse; }
+@keyframes drop-in { from { opacity: 0; translate: 0 -30px; } }
+@keyframes tile-in { from { opacity: 0; scale: 0.4; rotate: -8deg; } }
+@keyframes panel-in { from { opacity: 0; translate: 0 70px; } }
+
+/* ---------- Versus screen ---------- */
+.versus { position: fixed; inset: 0; z-index: 20; display: flex; overflow: hidden; background: #0c0a14; cursor: pointer; }
+.vs-side {
+  position: relative; flex: 1; overflow: hidden; margin: 0 -4vw; clip-path: polygon(14% 0, 100% 0, 86% 100%, 0 100%);
+  background:
+    repeating-linear-gradient(-62deg, rgba(255, 255, 255, 0.08) 0 14px, transparent 14px 34px),
+    radial-gradient(ellipse at 50% 40%, color-mix(in srgb, var(--primary) 60%, #fff), transparent 60%),
+    linear-gradient(160deg, var(--slot), color-mix(in srgb, var(--slot) 35%, #000));
+  animation: vs-in 0.4s cubic-bezier(0.2, 1.1, 0.4, 1) both; animation-delay: calc(var(--n) * 70ms);
+}
+.vs-side:nth-child(odd) { --from: -100%; }
+.vs-side:nth-child(even) { --from: 100%; }
+.versus.n2 .vs-side:first-child { margin-left: 0; clip-path: polygon(0 0, 100% 0, 86% 100%, 0 100%); }
+.versus.n2 .vs-side:nth-child(2) { margin-right: 0; clip-path: polygon(14% 0, 100% 0, 100% 100%, 0 100%); }
+@keyframes vs-in { from { translate: var(--from) 0; } }
+.vs-photo {
+  position: absolute; left: 50%; bottom: 0; height: 92%; translate: -50% 0; object-fit: contain; object-position: 50% 100%;
+  filter: drop-shadow(0 0 30px rgba(0, 0, 0, 0.5)); animation: vs-zoom 1.9s ease-out both;
+}
+.vs-photo.pending { opacity: 0; }
+@keyframes vs-zoom { from { scale: 1.15; } to { scale: 1; } }
+.vs-tag { position: absolute; left: 0; right: 0; bottom: 6%; text-align: center; transform: skewX(-8deg); }
+.vs-player { font-weight: 700; letter-spacing: 0.3em; font-size: 14px; text-transform: uppercase; text-shadow: 0 2px 3px #000; }
+.vs-name {
+  font-family: var(--display); font-size: clamp(36px, 6vw, 84px); line-height: 0.95; letter-spacing: 0.03em; color: #fff;
+  -webkit-text-stroke: 3px var(--ink); text-shadow: 0 6px 0 var(--ink);
+}
+.versus:not(.n2) .vs-name { font-size: clamp(26px, 3.4vw, 50px); }
+.vs-mark {
+  position: absolute; left: 50%; top: 42%; translate: -50% -50%; font-family: var(--display); font-size: clamp(90px, 16vw, 220px); line-height: 1;
+  color: var(--gold); -webkit-text-stroke: 6px var(--ink); text-shadow: 0 10px 0 var(--ink), 0 0 60px rgba(255, 150, 40, 0.8);
+  transform: skewX(-10deg); animation: vs-slam 0.4s 0.38s cubic-bezier(0.2, 1.8, 0.4, 1) both;
+}
+@keyframes vs-slam { from { opacity: 0; scale: 3; } }
+.vs-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; animation: vs-flash 0.35s 0.42s ease-out; }
+@keyframes vs-flash { 0% { opacity: 0.8; } 100% { opacity: 0; } }
+.versus.out { animation: vs-out 0.45s ease-in both; }
+@keyframes vs-out { to { opacity: 0; scale: 1.15; } }
+
+/* ---------- End: the winner ---------- */
+.end-hero {
+  position: absolute; left: 1vw; bottom: 0; width: min(38vw, 460px); height: 74vh; pointer-events: none; z-index: 0;
+  background: radial-gradient(ellipse 60% 55% at 45% 60%, color-mix(in srgb, var(--slot) 55%, transparent), transparent 70%);
+  animation: hero-in 0.6s 0.3s cubic-bezier(0.2, 1.1, 0.4, 1) both;
+}
+.end-photo { position: absolute; left: 8%; bottom: 0; height: 100%; object-fit: contain; object-position: 50% 100%; filter: drop-shadow(0 0 24px rgba(0, 0, 0, 0.6)); }
+@keyframes hero-in { from { opacity: 0; translate: -40% 0; } }
+
+/* ---------- Loading ---------- */
+.loading::before {
+  content: ""; position: absolute; inset: 0; opacity: 0.12; pointer-events: none;
+  background: repeating-linear-gradient(-62deg, transparent 0 46px, #fff 46px 48px, transparent 48px 120px); animation: lines-drift 6s linear infinite;
+}
+
+@media (max-width: 760px) {
+  .panels { flex-wrap: wrap; }
+  .plate { flex-basis: 46%; }
+  .select-title { display: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #menu.select::before, .loading::before, .start, .start::after, .card-frame::after,
+  .select.intro *, .plate.changed *, .versus *, .versus.out, .end-hero { animation: none !important; }
 }
