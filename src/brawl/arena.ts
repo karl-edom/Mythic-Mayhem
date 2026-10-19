@@ -30,6 +30,44 @@ export interface PropKind {
 
 export type PropCatalog = Record<string, PropKind>;
 
+/**
+ * One prop placed in an arena. `y` lifts it off the floor (a floor upstairs, a roof, a
+ * beam): bodies pass under it and stand on it. `w`, `d`, `h` override the catalogue
+ * shape's sizes (width across x, depth along z, height; a cylinder's diameter is `w`;
+ * a ramp's length runs along its direction), so one kind serves many pieces.
+ */
+export interface PropPlacement {
+  kind: string;
+  x: number;
+  z: number;
+  y?: number;
+  w?: number;
+  d?: number;
+  h?: number;
+  rotated?: boolean;
+  dir?: RampDir;
+}
+
+/**
+ * Scenery drawn only (the engine ignores it): eaves overhanging the walls, lanterns,
+ * shop curtains, petals… `look` names a drawing known to the renderer; unknown ones are
+ * skipped. `yaw` turns it (radians), `s` scales it, `color` tints it when it can be.
+ */
+export interface DecorPlacement {
+  look: string;
+  x: number;
+  z: number;
+  y?: number;
+  w?: number;
+  d?: number;
+  h?: number;
+  yaw?: number;
+  s?: number;
+  color?: string;
+  /** Index of the prop it belongs to (an eave on its roof): drawn with it, faded and broken with it. */
+  on?: number;
+}
+
 export interface ArenaDef {
   schemaVersion: 1;
   id: string;
@@ -39,8 +77,11 @@ export interface ArenaDef {
   depth: number;
   /** Floor colour, display only. */
   ground: string;
+  /** A painted floor (paths, paving, grass) the renderer knows by this name; display only. */
+  floor?: string;
   spawns: { x: number; z: number }[];
-  props: { kind: string; x: number; z: number; rotated?: boolean; dir?: RampDir }[];
+  props: PropPlacement[];
+  decor?: DecorPlacement[];
 }
 
 export interface Prop {
@@ -51,7 +92,10 @@ export interface Prop {
   /** Footprint half-sizes for boxes (rotation swaps width and depth). */
   halfW: number;
   halfD: number;
+  /** Height of the volume (a ramp's rise), from its bottom. */
   height: number;
+  /** Height of its bottom above the floor (0: it stands on the floor). */
+  base: number;
   /** For ramps: the axis and sign it rises along; null for flat tops. */
   rise: { axis: "x" | "z"; sign: 1 | -1 } | null;
   hp: number;
@@ -98,15 +142,25 @@ export function buildArena(def: ArenaDef, catalog: PropCatalog): Arena {
       const s = kind.shape;
       let rise: Prop["rise"] = null;
       let [w, d] = [0, 0];
-      if (s.type === "box") [w, d] = p.rotated ? [s.depth, s.width] : [s.width, s.depth];
-      else if (s.type === "cylinder") [w, d] = [s.radius * 2, s.radius * 2];
-      else {
+      let height: number;
+      if (s.type === "box") {
+        const [bw, bd] = [p.w ?? s.width, p.d ?? s.depth];
+        [w, d] = p.rotated ? [bd, bw] : [bw, bd];
+        height = p.h ?? s.height;
+      } else if (s.type === "cylinder") {
+        const dia = p.w ?? s.radius * 2;
+        [w, d] = [dia, dia];
+        height = p.h ?? s.height;
+      } else {
         const dir = p.dir ?? "+z";
         rise = { axis: dir[1] as "x" | "z", sign: dir[0] === "+" ? 1 : -1 };
-        [w, d] = rise.axis === "x" ? [s.length, s.width] : [s.width, s.length];
+        // A ramp: `w` is its width across, `d` its length along the slope.
+        const [across, along] = [p.w ?? s.width, p.d ?? s.length];
+        [w, d] = rise.axis === "x" ? [along, across] : [across, along];
+        height = p.h ?? s.height;
       }
       return {
-        id, kind, x: p.x, z: p.z, halfW: w / 2, halfD: d / 2, height: s.height, rise,
+        id, kind, x: p.x, z: p.z, halfW: w / 2, halfD: d / 2, height, base: p.y ?? 0, rise,
         hp: kind.hp ?? Infinity, alive: true, held: null, flying: false,
       };
     }),
@@ -118,17 +172,29 @@ export function buildArena(def: ArenaDef, catalog: PropCatalog): Arena {
  * Flat for boxes and cylinders, a slope for ramps.
  */
 export function surfaceAt(p: Prop, x: number, z: number): number {
-  if (!p.rise) return p.height;
+  if (!p.rise) return p.base + p.height;
   const half = p.rise.axis === "x" ? p.halfW : p.halfD;
   const along = p.rise.sign * ((p.rise.axis === "x" ? x - p.x : z - p.z));
   const t = (Math.max(-half, Math.min(half, along)) + half) / (2 * half);
-  return p.height * t;
+  return p.base + p.height * t;
 }
 
-/** Height of the walkable ground at (x, z): the highest prop top covering that point, or the floor. */
-export function groundHeight(arena: Arena, x: number, z: number): number {
+/** True if the prop's volume, at (x, z), overlaps the heights from y0 to y1. */
+export function spansHeight(p: Prop, x: number, z: number, y0: number, y1: number): boolean {
+  return y1 > p.base && y0 < surfaceAt(p, x, z);
+}
+
+/**
+ * Height of the walkable ground at (x, z): the highest prop top covering that point
+ * and not above `below` (a floor upstairs does not count for someone under it), or the floor.
+ */
+export function groundHeight(arena: Arena, x: number, z: number, below = Infinity): number {
   let h = 0;
-  for (const p of arena.props) if (p.alive && distToProp(p, x, z) === 0) h = Math.max(h, surfaceAt(p, x, z));
+  for (const p of arena.props) {
+    if (!p.alive || distToProp(p, x, z) !== 0) continue;
+    const top = surfaceAt(p, x, z);
+    if (top <= below + 1e-6) h = Math.max(h, top);
+  }
   return h;
 }
 
@@ -236,7 +302,8 @@ export function sightBlocked(arena: Arena, a: P3, b: P3): boolean {
     return iv.some((t) => {
       const x = a.x + (b.x - a.x) * t;
       const z = a.z + (b.z - a.z) * t;
-      return a.y + (b.y - a.y) * t < surfaceAt(p, x, z);
+      const y = a.y + (b.y - a.y) * t;
+      return y < surfaceAt(p, x, z) && y > p.base;
     });
   });
 }
@@ -245,8 +312,12 @@ export function sightBlocked(arena: Arena, a: P3, b: P3): boolean {
 const LIMITS = {
   size: [20, 120],
   coord: [-60, 60],
+  /** Lift off the floor, and sizes of a placed piece, metres. */
+  lift: [0, 30],
+  piece: [0.05, 120],
 } as const;
-export const MAX_PROPS = 200;
+export const MAX_PROPS = 800;
+export const MAX_DECOR = 3000;
 
 export type ArenaValidation = { ok: true; def: ArenaDef } | { ok: false; errors: string[] };
 
@@ -282,8 +353,33 @@ export function validateArena(data: unknown, catalog: PropCatalog): ArenaValidat
     const dir = p.raw.dir;
     if (isRamp && !RAMP_DIRS.includes(dir as RampDir))
       r.errors.push(`arena.props[${i}].dir: une rampe indique vers où elle monte (${RAMP_DIRS.join(", ")})`);
-    return { kind, x: p.x, z: p.z, rotated: p.raw.rotated === true, ...(isRamp ? { dir: dir as RampDir } : {}) };
+    const extra: Partial<PropPlacement> = {};
+    for (const [k, range] of [["y", LIMITS.lift], ["w", LIMITS.piece], ["d", LIMITS.piece], ["h", LIMITS.piece]] as const)
+      if (p.raw[k] !== undefined) extra[k] = r.num(p.raw, k, `arena.props[${i}]`, range);
+    return { kind, x: p.x, z: p.z, rotated: p.raw.rotated === true, ...(isRamp ? { dir: dir as RampDir } : {}), ...extra };
   });
+  // Decor: drawn only, so only shape-checked (numbers in range, a known kind of name).
+  const decor: DecorPlacement[] = [];
+  if (o.decor !== undefined) {
+    if (!Array.isArray(o.decor)) r.errors.push("arena.decor: liste attendue");
+    else if (o.decor.length > MAX_DECOR) r.errors.push(`arena.decor: au plus ${MAX_DECOR} éléments`);
+    else
+      o.decor.forEach((v, i) => {
+        const dv = r.obj(v, `arena.decor[${i}]`);
+        if (!dv) return;
+        const look = typeof dv.look === "string" && /^[a-z0-9-]{1,40}$/.test(dv.look) ? dv.look : null;
+        if (!look) return r.errors.push(`arena.decor[${i}].look: nom de dessin attendu (a-z, 0-9, -)`);
+        const d: DecorPlacement = { look, x: r.num(dv, "x", `arena.decor[${i}]`, LIMITS.coord), z: r.num(dv, "z", `arena.decor[${i}]`, LIMITS.coord) };
+        for (const [k, range] of [["y", LIMITS.lift], ["w", LIMITS.piece], ["d", LIMITS.piece], ["h", LIMITS.piece], ["s", [0.05, 20]], ["yaw", [-7, 7]]] as const)
+          if (dv[k] !== undefined) d[k] = r.num(dv, k, `arena.decor[${i}]`, range);
+        if (typeof dv.color === "string" && /^#[0-9a-fA-F]{6}$/.test(dv.color)) d.color = dv.color;
+        if (dv.on !== undefined) {
+          if (Number.isInteger(dv.on) && (dv.on as number) >= 0 && (dv.on as number) < rawProps.length) d.on = dv.on as number;
+          else r.errors.push(`arena.decor[${i}].on: index d'élément attendu (0 à ${rawProps.length - 1})`);
+        }
+        decor.push(d);
+      });
+  }
   if (r.errors.length > 0) return { ok: false, errors: r.errors };
 
   const def: ArenaDef = {
@@ -295,6 +391,8 @@ export function validateArena(data: unknown, catalog: PropCatalog): ArenaValidat
     ground,
     spawns: spawns.map((s) => ({ x: s!.x, z: s!.z })),
     props: props.map((p) => p!),
+    ...(decor.length ? { decor } : {}),
+    ...(typeof o.floor === "string" && /^[a-z0-9-]{1,40}$/.test(o.floor) ? { floor: o.floor } : {}),
   };
   // Geometry: every prop inside the walls, every spawn point clear of props.
   const arena = buildArena(def, catalog);
@@ -305,7 +403,8 @@ export function validateArena(data: unknown, catalog: PropCatalog): ArenaValidat
   });
   def.spawns.forEach((s, i) => {
     if (Math.abs(s.x) > arena.halfW - 1 || Math.abs(s.z) > arena.halfD - 1) errors.push(`arena.spawns[${i}] : trop près des murs`);
-    const blocking = arena.props.find((p) => distToProp(p, s.x, s.z) < 1.5);
+    // Clear around a spawn point on the floor (what hangs high above it does not matter).
+    const blocking = arena.props.find((p) => distToProp(p, s.x, s.z) < 1.5 && p.base < 2.2);
     if (blocking) errors.push(`arena.spawns[${i}] : trop près de props[${blocking.id}] (${blocking.kind.id})`);
   });
   return errors.length > 0 ? { ok: false, errors } : { ok: true, def };

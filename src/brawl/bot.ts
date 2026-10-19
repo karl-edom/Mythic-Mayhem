@@ -2,7 +2,8 @@
 // player produces. One personality for every kit; parameters tune its level.
 
 import { distToProp, segmentInterval, surfaceAt, type Arena } from "./arena.ts";
-import { canBreak, canSee, grabbable, grounded, hdist, lockTarget, type BrawlWorld, type Command, type Fighter } from "./world.ts";
+import { findPath, walkClear } from "./nav.ts";
+import { STEP_UP, canBreak, canSee, grabbable, grounded, hdist, lockTarget, type BrawlWorld, type Command, type Fighter } from "./world.ts";
 
 export interface BrawlBotParams {
   /** Chance per decision to react to an incoming heavy or special (dodge or guard). */
@@ -50,13 +51,15 @@ export interface BrawlBot {
   fullHop: boolean;
   /** When to reconsider which enemy to focus (matches of 3 or more). */
   retargetAt: number;
+  /** Way found on the navigation grid, its goal, and when to look again. */
+  path: { points: { x: number; z: number }[]; goal: { x: number; z: number }; until: number } | null;
 }
 
 export function createBot(random: () => number, params: BrawlBotParams = BOT_LEVELS.normal): BrawlBot {
   return {
     params, random, nextThinkAt: 0, guardUntil: 0, chargeHeavyUntil: 0, strafe: random() < 0.5 ? 1 : -1,
     lastSeen: null, lastSeenAt: -Infinity, wander: null, prevPos: { x: 0, z: 0 }, stuckTicks: 0, detourUntil: 0, fetch: null, route: null,
-    backoffUntil: 0, lastAction: null, fullHop: true, retargetAt: 0,
+    backoffUntil: 0, lastAction: null, fullHop: true, retargetAt: 0, path: null,
   };
 }
 
@@ -67,7 +70,7 @@ const CLIMB_NEEDED = 1.2;
 function routeUp(arena: Arena, to: { x: number; z: number }, minTop: number): { x: number; z: number }[] | null {
   let best: { pts: { x: number; z: number }[]; d: number } | null = null;
   for (const p of arena.props) {
-    if (!p.alive || !p.rise || p.height < minTop) continue;
+    if (!p.alive || !p.rise || p.base + p.height < minTop) continue;
     const half = p.rise.axis === "x" ? p.halfW : p.halfD;
     const at = (k: number) =>
       p.rise!.axis === "x" ? { x: p.x + p.rise!.sign * k, z: p.z } : { x: p.x, z: p.z + p.rise!.sign * k };
@@ -107,6 +110,7 @@ function steerAround(w: BrawlWorld, me: Fighter, goal: { x: number; z: number })
     const x = me.pos.x + (goal.x - me.pos.x) * iv[0];
     const z = me.pos.z + (goal.z - me.pos.z) * iv[0];
     if (surfaceAt(p, x, z) <= me.pos.y + 0.45) continue; // can walk onto it
+    if (p.base > me.pos.y + 1.8) continue; // hangs above the head
     if (!first || iv[0] < first.t) first = { p, t: iv[0] };
   }
   if (!first) return goal;
@@ -125,6 +129,29 @@ function steerAround(w: BrawlWorld, me: Fighter, goal: { x: number; z: number })
   return (usable.length ? usable : corners).sort((a, b) => cost(a) - cost(b))[0]!;
 }
 
+/**
+ * Next point to walk to on the way to `goal`. On the floor of a crowded arena (walls,
+ * houses with doors), the bot follows a path found on the navigation grid, renewed
+ * every few tenths of a second; with a clear straight line, or up on a roof, it heads
+ * straight there (and goes round a lone prop as before).
+ */
+function navigate(w: BrawlWorld, me: Fighter, bot: BrawlBot, goal: { x: number; z: number }): { x: number; z: number } {
+  // Up high, on the way up a ramp, or with a clear line: straight on.
+  if (me.pos.y > STEP_UP || bot.route || walkClear(w.arena, me.pos, goal)) {
+    bot.path = null;
+    return steerAround(w, me, goal);
+  }
+  const p = bot.path;
+  if (!p || w.time > p.until || Math.hypot(p.goal.x - goal.x, p.goal.z - goal.z) > 1.5) {
+    const pts = findPath(w.arena, me.pos, goal);
+    bot.path = pts ? { points: pts, goal: { ...goal }, until: w.time + 0.4 } : null;
+  }
+  const path = bot.path;
+  if (!path) return steerAround(w, me, goal);
+  while (path.points.length > 1 && Math.hypot(me.pos.x - path.points[0]!.x, me.pos.z - path.points[0]!.z) < 0.5) path.points.shift();
+  return path.points[0] ?? goal;
+}
+
 /** Seconds the bot keeps heading for the last place it saw its opponent. */
 const TRAIL_MEMORY = 4;
 
@@ -133,7 +160,7 @@ const TRAIL_MEMORY = 4;
  * progress it sidesteps for a moment, and jumps (low props can be cleared).
  */
 function walkTo(w: BrawlWorld, me: Fighter, bot: BrawlBot, goal: { x: number; z: number }, cmd: Command): void {
-  const to = steerAround(w, me, goal);
+  const to = navigate(w, me, bot, goal);
   const dx = to.x - me.pos.x;
   const dz = to.z - me.pos.z;
   const d = Math.hypot(dx, dz) || 1;

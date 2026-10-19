@@ -254,3 +254,64 @@ test("une plateforme détruite fait tomber ceux qui sont dessus", () => {
   run(w, 1.5);
   assert.equal(f.pos.y, 0);
 });
+
+// Décision 0024 : volumes surélevés (planchers, toits), dimensions par placement, décor.
+
+test("un plancher surélevé : on passe dessous, on retombe dessus, on y tient debout", () => {
+  const floor = { kind: "platform", x: 0, z: 0, y: 2.2, w: 4, d: 4, h: 0.3 };
+  // Dessous : on traverse de part en part.
+  const w = world([floor], -4, 12);
+  run(w, 1.6, () => [{ unit: 0, move: { x: 1, z: 0 } }]);
+  assert.ok(w.fighters[0]!.pos.x > 2.5, `passé dessous (x = ${w.fighters[0]!.pos.x.toFixed(2)})`);
+  assert.equal(w.fighters[0]!.pos.y, 0);
+  // Dessus : on y retombe et on y reste.
+  const w2 = world([floor], -4, 12);
+  w2.fighters[0]!.pos = { x: 0, y: 4, z: 0 };
+  run(w2, 1);
+  assert.ok(Math.abs(w2.fighters[0]!.pos.y - 2.5) < 1e-6, `debout sur le plancher (y = ${w2.fighters[0]!.pos.y})`);
+});
+
+test("dimensions par placement : un mur long et fin bloque, sa porte laisse passer", () => {
+  const wall = (z: number, d: number) => ({ kind: "wall", x: 0, z, w: 0.3, d, h: 3 });
+  const w = world([wall(-8, 14), wall(8, 14)], -3, 12);
+  w.fighters[0]!.pos.z = -5;
+  run(w, 1.2, () => [{ unit: 0, move: { x: 1, z: 0 } }]);
+  assert.ok(w.fighters[0]!.pos.x < 0, "le mur arrête");
+  // La porte (z entre -1 et 1) : on passe.
+  const w2 = world([wall(-8, 14), wall(8, 14)], -3, 12);
+  w2.fighters[0]!.pos.z = 0;
+  run(w2, 1.2, () => [{ unit: 0, move: { x: 1, z: 0 } }]);
+  assert.ok(w2.fighters[0]!.pos.x > 1.5, "la porte laisse passer");
+});
+
+test("la vue passe sous un toit, pas à travers un mur", () => {
+  const roof = { kind: "platform", x: 0, z: 0, y: 2.6, w: 4, d: 4, h: 0.4 };
+  const w = world([roof]);
+  assert.ok(canSee(w, w.fighters[0]!, w.fighters[1]!), "sous le toit, on se voit");
+  const w2 = world([{ kind: "wall", x: 0, z: 0, w: 0.3, d: 20, h: 3 }]);
+  w2.fighters[0]!.pos.x = -10;
+  w2.fighters[1]!.pos.x = 10;
+  assert.equal(canSee(w2, w2.fighters[0]!, w2.fighters[1]!), false);
+});
+
+test("navigation : le chemin contourne un mur par sa porte", async () => {
+  const { findPath } = await import("../src/brawl/nav.ts");
+  const a = buildArena(arena([{ kind: "wall", x: 0, z: -8, w: 0.3, d: 14, h: 3 }, { kind: "wall", x: 0, z: 8, w: 0.3, d: 14, h: 3 }]), catalog);
+  const path = findPath(a, { x: -4, z: -6 }, { x: 4, z: -6 });
+  assert.ok(path && path.length >= 2, "un chemin existe");
+  assert.ok(path!.some((p) => Math.abs(p.x) < 1 && Math.abs(p.z) < 1.2), "il passe par la porte");
+  const shut = buildArena(arena([{ kind: "wall", x: 0, z: 0, w: 0.3, d: 30, h: 3 }]), catalog);
+  assert.equal(findPath(shut, { x: -4, z: 0 }, { x: 4, z: 0 }), null);
+});
+
+test("le validateur lit hauteurs, dimensions et décor, et refuse les valeurs hors bornes", () => {
+  const ok = validateArena({ ...arena([{ kind: "platform", x: 0, z: 0, y: 2, w: 3, d: 2, h: 0.3 }]), decor: [{ look: "lantern-hang", x: 1, z: 2, y: 3, yaw: 1 }], floor: "village" }, catalog);
+  assert.ok(ok.ok);
+  if (ok.ok) {
+    assert.deepEqual(ok.def.props[0], { kind: "platform", x: 0, z: 0, rotated: false, y: 2, w: 3, d: 2, h: 0.3 });
+    assert.equal(ok.def.decor?.length, 1);
+    assert.equal(ok.def.floor, "village");
+  }
+  assert.equal(validateArena(arena([{ kind: "platform", x: 0, z: 0, y: -1 }]), catalog).ok, false);
+  assert.equal(validateArena({ ...arena([]), decor: [{ look: "<script>", x: 0, z: 0 }] }, catalog).ok, false);
+});

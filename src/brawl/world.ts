@@ -4,7 +4,7 @@
 // the same Command type. Positions are metres, y is up, the floor is y = 0.
 
 import {
-  EYE_HEIGHT, OPEN_ARENA, buildArena, distToProp, groundHeight, pushOut, sightBlocked, surfaceAt, type Arena, type Prop,
+  EYE_HEIGHT, OPEN_ARENA, buildArena, distToProp, groundHeight, pushOut, sightBlocked, spansHeight, surfaceAt, type Arena, type Prop,
 } from "./arena.ts";
 import { leapFlightTime, type FighterKit, type Special, type Strike } from "./kit.ts";
 
@@ -591,7 +591,9 @@ function clampToArena(w: BrawlWorld, f: Fighter): void {
   const speed = Math.hypot(f.vel.x, f.vel.z);
   let struck: Prop | null | undefined; // undefined = nothing, null = arena wall
   for (const p of props)
-    if (p.alive && f.pos.y + STEP_UP < topAtContact(p, f) && pushOut(p, f.pos, r)) struck = p;
+    // Blocked by a volume the body overlaps in height: not one it stands on (or steps
+    // onto), not one hanging above its head.
+    if (p.alive && f.pos.y + STEP_UP < topAtContact(p, f) && f.pos.y + FIGHTER_HEIGHT > p.base && pushOut(p, f.pos, r)) struck = p;
   const x = Math.max(-halfW + r, Math.min(halfW - r, f.pos.x));
   const z = Math.max(-halfD + r, Math.min(halfD - r, f.pos.z));
   if (x !== f.pos.x || z !== f.pos.z) struck ??= null;
@@ -839,7 +841,7 @@ function resolveStrike(w: BrawlWorld, f: Fighter, s: Strike, by: HitKind, dmg: n
   let hitAny = false;
   if (firstTick)
     for (const p of w.arena.props)
-      if (p.alive && p.kind.hp !== null && c.y - s.size < p.height && distToProp(p, c.x, c.z) <= s.size) {
+      if (p.alive && p.kind.hp !== null && spansHeight(p, c.x, c.z, c.y - s.size, c.y + s.size) && distToProp(p, c.x, c.z) <= s.size) {
         damageProp(w, f, p, dmg);
         hitAny = true;
       }
@@ -1424,7 +1426,7 @@ function stepProjectiles(w: BrawlWorld): void {
     }
     // Props stop projectiles (and take the damage if they can break).
     const wall = w.arena.props.find(
-      (pr) => pr.alive && p.pos.y < surfaceAt(pr, p.pos.x, p.pos.z) && distToProp(pr, p.pos.x, p.pos.z) <= p.size * 0.5,
+      (pr) => pr.alive && spansHeight(pr, p.pos.x, p.pos.z, p.pos.y, p.pos.y) && distToProp(pr, p.pos.x, p.pos.z) <= p.size * 0.5,
     );
     if (wall) {
       damageProp(w, owner, wall, hit.damage);
