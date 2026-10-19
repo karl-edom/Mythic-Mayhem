@@ -10,7 +10,7 @@ import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { ANIME_MODELS, MODELS, isAnime, type Look, type ModelId } from "../brawl/character.ts";
 import { turtlePoses } from "./poses.ts";
 import { fistPoses } from "./fistPoses.ts";
-import { signaturePoses } from "./signaturePoses.ts";
+import { fistSignatures, signaturePoses } from "./signaturePoses.ts";
 import { staffPoses, swordsmanPoses } from "./swordPoses.ts";
 import { SWORDSMAN_HEIGHT, animateSwordsman, buildSwordsmanRig, paintSwordsman } from "./swordsman.ts";
 import "./humanParts.ts";
@@ -146,7 +146,7 @@ export async function loadModels(base: string, onProgress?: (done: number, total
       style === "sword" ? new Map([...swordsmanPoses(hipsRest, TURTLE_BONES), ...signaturePoses(hipsRest, TURTLE_BONES)])
       : style === "staff" ? staffPoses(hipsRest, TURTLE_BONES)
       : style === "club" ? swordsmanPoses(hipsRest, TURTLE_BONES, { oneHand: true })
-      : style === "fist" ? fistPoses(hipsRest, TURTLE_BONES)
+      : style === "fist" ? new Map([...fistPoses(hipsRest, TURTLE_BONES), ...fistSignatures(hipsRest, TURTLE_BONES)])
       : turtlePoses(hipsRest),
     dress: (rig, look) => {
       paintTurtle(rig, look);
@@ -159,7 +159,7 @@ export async function loadModels(base: string, onProgress?: (done: number, total
     rig: swordsman, height: SWORDSMAN_HEIGHT, procedural: true, poses: (style) =>
       style === "staff" ? staffPoses(swordsmanHips)
       : style === "club" ? swordsmanPoses(swordsmanHips, undefined, { oneHand: true })
-      : style === "fist" ? fistPoses(swordsmanHips)
+      : style === "fist" ? new Map([...fistPoses(swordsmanHips), ...fistSignatures(swordsmanHips)])
       : style === "dual" ? turtlePoses(swordsmanHips)
       : new Map([...swordsmanPoses(swordsmanHips), ...signaturePoses(swordsmanHips)]),
     dress: (rig, look) => {

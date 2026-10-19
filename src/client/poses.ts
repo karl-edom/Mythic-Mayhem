@@ -191,6 +191,25 @@ export const over = (base: Pose, bones: Pose["bones"], hips?: Pose["hips"]): Pos
   return p;
 };
 
+/**
+ * A pose with the whole body turned by `angle` about the hips' X axis (a somersault), as
+ * a quaternion: keys a third of a turn apart spin the right way, and a whole number of
+ * turns lands back upright without unwinding (Euler angles would be interpolated back).
+ */
+export function spun(p: Pose, angle: number): Pose {
+  const [x, y, z] = p.bones.hips ?? [0, 0, 0];
+  const r = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), angle).multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(x, y, z, "XYZ")));
+  const bones = { ...p.bones };
+  delete bones.hips;
+  return { ...p, bones, q: { ...(p.q ?? {}), hips: [r.x, r.y, r.z, r.w] } };
+}
+
+/** Keys of a somersault: `turns` whole turns from `t0` to `t1`, a third of a turn per key. */
+export function somersault(p: Pose, t0: number, t1: number, turns: number, dir: 1 | -1 = 1): Key[] {
+  const n = turns * 3;
+  return Array.from({ length: n + 1 }, (_, i) => [t0 + ((t1 - t0) * i) / n, spun(p, (dir * i * Math.PI * 2) / 3)] as Key);
+}
+
 const still = (p: Pose): Pose => p;
 
 /**
@@ -504,7 +523,7 @@ export function reactionClips(hipsRest: THREE.Vector3, stance: Pose, guard: Pose
   const rollDodge = (dir: 1 | -1) =>
     keyClip(
       dir > 0 ? "Dodge_Forward" : "Dodge_Backward",
-      [[0, stance], [0.2, ball, "out"], [0.75, over(ball, { hips: [dir * Math.PI * 2, 0, 0] })], [1, stance, "out"]],
+      [[0, stance], ...somersault(ball, 0.2, 0.75, 1, dir), [1, stance, "out"]],
       0.7,
       hipsRest,
     );

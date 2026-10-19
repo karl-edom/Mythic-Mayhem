@@ -142,3 +142,23 @@ Aucun nouveau type de technique. Les rayons sont des projectiles, les explosions
 | | Bond du ninja | un salto avant en l'air, le sabre replié, puis la coupe à l'atterrissage |
 
 Kenshin garde les siennes (ce sont celles du style sabre). Les contre-jeux ne changent pas : ce sont les mêmes types de techniques, avec la même préparation.
+
+## Ajout : des techniques propres à Goku, Vegeta et Naruto
+
+> « Fais pareil pour Goku, Vegeta et Naruto. »
+
+Même principe que pour les épéistes : leurs coups de base restent ceux du style mains nues, et chaque technique a son animation.
+
+| Personnage | Technique | Animation |
+| --- | --- | --- |
+| Goku | Kamehameha | « Ka-me » : les mains jointes ramenées loin en arrière à la hanche droite, accroupi ; « ha-me » : il tient ; « HA ! » : les bras tendus, paumes vers l'adversaire, d'où part le rayon |
+| | Kaiō-ken | un cri, poings serrés aux hanches et torse bombé (l'aura rouge éclate), puis il vole tête la première, le poing devant |
+| | Genkidama | les deux bras levés vers le ciel, puis la sphère ramenée et lancée par-dessus la tête |
+| Vegeta | Galick Ho | de profil, les deux paumes jointes ramenées près de l'épaule droite, puis pivot et bras tendus vers l'adversaire |
+| | Big Bang Attack | le bras droit tendu, main ouverte vers l'adversaire, le poing gauche en bas |
+| | Final Flash | les bras grands ouverts sur les côtés pendant la longue préparation, puis réunis droit devant, paumes en avant |
+| Naruto | Rasengan | accroupi, la main droite tendue paume vers le haut, la gauche qui tourne au-dessus pour former la sphère ; puis la course, la sphère tenue devant |
+| | Kawarimi | le mudra tenu devant la poitrine ; touché, il est déjà dans le dos de l'attaquant et enchaîne un coup de pied circulaire |
+| | Uzumaki Rendan | accroupi, un saut avec deux saltos avant, la jambe droite levée au-dessus de la tête, puis le talon abattu sur l'adversaire |
+
+**Correction des saltos** : un salto était décrit par des angles, et l'interpolation les faisait revenir à zéro en tournant à l'envers à la fin (salto de Leonardo, roulades d'esquive). Les rotations complètes passent maintenant par des quaternions, un tiers de tour par étape : le corps tourne dans le bon sens et se retrouve droit.

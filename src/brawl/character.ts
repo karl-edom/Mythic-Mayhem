@@ -70,6 +70,9 @@ export const SIGNATURE_POSES = [
   "homura-dama", "guren-kaina", "kagutsuchi",
   "chidori", "katon", "sharingan",
   "leo-dragon", "leo-guard", "leo-flip",
+  "kamehameha", "kaioken", "genkidama",
+  "galick-ho", "big-bang", "final-flash",
+  "rasengan", "kawarimi", "uzumaki-rendan",
 ] as const;
 
 export const PROJECTILE_LOOKS = ["pizza", "beam", "fire", "bullet", "rocket"] as const;

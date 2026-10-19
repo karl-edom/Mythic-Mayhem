@@ -296,6 +296,7 @@ test("apparence : un look valide est lu, un look invalide est ignoré", async ()
       tir: { projectile: "bullet", weapon: "Sniper" },
       faux: { zone: "lava", hand: "<b>", weapon: "../x", pose: "dance" },
       estoc: { pose: "gatotsu", weapon: "None" },
+      rayon: { pose: "kamehameha", projectile: "beam" },
     },
   }, "x").moves;
   assert.deepEqual(fx, {
@@ -304,6 +305,7 @@ test("apparence : un look valide est lu, un look invalide est ignoré", async ()
     tir: { projectile: "bullet", weapon: "Sniper" },
     faux: {},
     estoc: { pose: "gatotsu", weapon: "None" },
+    rayon: { pose: "kamehameha", projectile: "beam" },
   });
 });
 
