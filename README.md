@@ -2,7 +2,7 @@
 
 Jeu d'arène en équipe (MOBA court), lumineux et lisible. On peut y faire s'affronter des personnages venus de n'importe quel univers, tous soumis à un même cadre de règles et à un budget de puissance commun.
 
-> **Branche `claude/jstars-custom-characters-fiqi08` : adaptation « J-Stars »** — brawler d'arène 3D, jouable en **1v1 contre un bot** dans le navigateur. Cartes avec décors cassables (`data/arenas/`), tes personnages dans `packs/local/` (jamais commités) ; les premiers personnages d'exemple ont été retirés (décision 0024).
+> **Branche `claude/jstars-custom-characters-fiqi08` : adaptation « J-Stars »** — brawler d'arène 3D, jouable en **1v1 contre un bot** dans le navigateur. Carte par défaut : **un village japonais** à étages (maisons traversables, toits grimpables, sanctuaire, pont ; décision 0025), décors cassables (`data/arenas/`, village généré par `node tools/village.ts`), tes personnages dans `packs/local/` (jamais commités) ; les premiers personnages d'exemple ont été retirés (décision 0024).
 >
 > ```bash
 > npm install
@@ -11,7 +11,7 @@ Jeu d'arène en équipe (MOBA court), lumineux et lisible. On peut y faire s'aff
 > npm run brawl -- --tune                          # équilibre chaque personnage contre le panel de référence
 > ```
 >
-> Cadrage : `docs/decisions/0005-adaptation-jstars.md` · contrat de combat : `docs/design/combat-contract-v2.md` · arènes : `docs/decisions/0006-arenes-chantier-dedie.md` · équilibrage : `docs/decisions/0007-equilibrage-par-epreuve.md` · visuels : `docs/decisions/0008-direction-artistique-anime.md`
+> Cadrage : `docs/decisions/0005-adaptation-jstars.md` · contrat de combat : `docs/design/combat-contract-v2.md` · arènes : `docs/decisions/0006-arenes-chantier-dedie.md` · équilibrage : `docs/decisions/0007-equilibrage-par-epreuve.md` · visuels : `docs/decisions/0008-direction-artistique-anime.md` · village et rendu : `docs/decisions/0025-village-japonais-et-nouveau-rendu.md`
 >
 > Personnages anime : avatars d'exemple VRoid Studio par pixiv (CC0). Animations et chibis : KayKit Adventurers par Kay Lousberg (CC0). · packs : `docs/design/fan-packs.md` · recherche : `docs/research/jstars-reverse-engineering.md`. Le reste du dépôt (`src/sim`, `src/bots`, `src/balance`) est la piste MOBA, conservée.
 

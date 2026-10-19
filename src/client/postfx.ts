@@ -83,6 +83,21 @@ export class PostFX {
     this.ao = new GTAOPass(scene, camera, size.x, size.y);
     this.ao.blendIntensity = 0.85;
     this.ao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.2, thickness: 1, scale: 1, samples: 12, distanceFallOff: 1 });
+    // The occlusion pass draws the scene again (depth and normals) with every object
+    // opaque: glows, billboards and faded walls would cast dark shadows. It already
+    // leaves out points and lines; leave out see-through things and sprites too.
+    const pass = this.ao as unknown as { scene: THREE.Scene; _visibilityCache: THREE.Object3D[]; _overrideVisibility: () => void };
+    pass._overrideVisibility = () => {
+      pass.scene.traverse((o) => {
+        if (!o.visible) return;
+        const see = o instanceof THREE.Points || o instanceof THREE.Line || o instanceof THREE.Sprite ||
+          (o instanceof THREE.Mesh && ([o.material].flat() as THREE.Material[]).some((m) => m.transparent || m.blending !== THREE.NormalBlending));
+        if (see) {
+          o.visible = false;
+          pass._visibilityCache.push(o);
+        }
+      });
+    };
     this.composer.addPass(this.ao);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.42, 0.55, 0.92);
     this.composer.addPass(this.bloom);
