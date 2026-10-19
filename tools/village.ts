@@ -101,18 +101,16 @@ function machiya(cx: number, cz: number, w: number, d: number, face: 1 | -1, n: 
   box("machiya-wall", bc + 1, x1, back, back + face * T, STOREY);
   box("machiya-wall", x0, x0 + T, front, back, STOREY);
   box("machiya-wall", x1 - T, x1, front, back, STOREY);
-  // Lattice fronts (kōshi) on the shop front, curtain (noren) in the door, a lantern.
+  // Lattice fronts (kōshi) on the shop front.
   for (const [a, b, on] of [[x0 + 0.3, dc - door / 2 - 0.2, fw1], [dc + door / 2 + 0.2, x1 - 0.3, fw2]] as const)
     if (b - a > 0.6) deco({ look: "koshi", x: (a + b) / 2, z: front + face * 0.06, y: 0.35, w: b - a, h: 1.7, yaw: face > 0 ? 0 : Math.PI, on });
-  deco({ look: "noren", x: dc, z: front + face * 0.08, y: 2.45, w: door - 0.2, h: 0.9, yaw: face > 0 ? 0 : Math.PI, color: pick(["#23395b", "#7a1f2b", "#2f4f3a", "#3a2a4a"]) });
-  deco({ look: "chochin", x: dc + (door / 2 + 0.35) * (n % 2 ? 1 : -1), z: front + face * 0.45, y: 2.25, s: 1 });
   // Stairs up along the back wall (x0 side), the upstairs floor beside them.
   const stairLen = 4.2;
   const sw = 1.1;
   const sz0 = back + face * T;
   const sz1 = back + face * (T + sw);
   ramp("wood-stairs", x0 + T, x0 + T + stairLen, sz0, sz1, UP - FLOOR1, "+x", FLOOR1);
-  box("wood-floor", x0 + T, x1 - T, sz1, fz(T), 0.25, STOREY);
+  const upstairs = box("wood-floor", x0 + T, x1 - T, sz1, fz(T), 0.25, STOREY);
   box("wood-floor", x0 + T + stairLen, x1 - T, sz0, sz1, 0.25, STOREY);
   // Upstairs walls: a wide window at the front (a low sill), opening onto the canopy.
   const win = 2.6;
@@ -128,6 +126,10 @@ function machiya(cx: number, cz: number, w: number, d: number, face: 1 | -1, n: 
   const canopy = ramp("roof-tile", x0 - 0.2, x1 + 0.2, front, front + face * 1.3, 0.45, face > 0 ? "-z" : "+z", STOREY - 0.05);
   deco({ look: "kanban", x: dc, z: front + face * 1.32, y: STOREY - 0.35, w: 1.6, h: 0.42, yaw: face > 0 ? 0 : Math.PI, color: "#2a1d14", on: canopy });
   decorText.push({ i: decor.length - 1, text: SHOPS[n % SHOPS.length]! });
+  // The curtain (noren) in the door and a lantern hang from the canopy: they fade
+  // and fall with it.
+  deco({ look: "noren", x: dc, z: front + face * 0.08, y: 2.45, w: door - 0.2, h: 0.9, yaw: face > 0 ? 0 : Math.PI, color: pick(["#23395b", "#7a1f2b", "#2f4f3a", "#3a2a4a"]), on: canopy });
+  deco({ look: "chochin", x: dc + (door / 2 + 0.35) * (n % 2 ? 1 : -1), z: front + face * 0.45, y: 2.25, s: 1, on: canopy });
   // The roof: two tiled slopes to a ridge along the street, overhanging all round.
   const ov = 0.7;
   const roofFront = ramp("roof-tile", x0 - 0.4, x1 + 0.4, cz, front + face * ov, RISE, face > 0 ? "-z" : "+z", EAVE);
@@ -135,7 +137,7 @@ function machiya(cx: number, cz: number, w: number, d: number, face: 1 | -1, n: 
   deco({ look: "ridge", x: cx, z: cz, y: EAVE + RISE, w: w + 1.0, on: roofFront });
   for (const [x, on] of [[x0 - 0.02, roofBack], [x1 + 0.02, roofFront]] as const)
     deco({ look: "gable", x, z: cz, y: EAVE, w: d, h: RISE, yaw: Math.PI / 2, color: wallCol, on });
-  deco({ look: "beams", x: cx, z: cz, y: STOREY, w, d, h: 0.25 });
+  deco({ look: "beams", x: cx, z: cz, y: STOREY, w, d, h: 0.25, on: upstairs });
 }
 
 const decorText: { i: number; text: string }[] = [];
@@ -180,7 +182,7 @@ deco({ look: "ridge", x: 0, z: (hz0 + hz1) / 2, y: HW + HR, w: hx1 - hx0 + 3.0, 
 for (const x of [hx0 - 0.02, hx1 + 0.02]) deco({ look: "gable", x, z: (hz0 + hz1) / 2, y: HW, w: hz0 - hz1, h: HR, yaw: Math.PI / 2, color: "#f1e8d6", on: hallRoof });
 deco({ look: "shimenawa", x: 0, z: hz0 + 0.15, y: 1.55 + 2.7, w: 7.5 });
 deco({ look: "offering-box", x: 0, z: hz0 - 0.6, y: 1.55 });
-deco({ look: "beams", x: 0, z: (hz0 + hz1) / 2, y: 1.55 + 3.0, w: hx1 - hx0, d: hz0 - hz1, h: 0.3 });
+deco({ look: "beams", x: 0, z: (hz0 + hz1) / 2, y: 1.55 + 3.0, w: hx1 - hx0, d: hz0 - hz1, h: 0.3, on: hallRoof });
 // Cherry trees and lanterns on the terrace, pines and bamboo round it.
 for (const [x, z] of [[-11.5, -19.5], [11.5, -19.5]] as const) {
   const t = prop({ kind: "sakura", x, z, y: 1.2 });

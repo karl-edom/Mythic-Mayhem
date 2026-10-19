@@ -110,8 +110,8 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
           const r = size * (0.55 + 0.06 * Math.sin(t * 40));
           sheath.scale.set(r, len, r);
           core.scale.set(r * 0.3, len, r * 0.3);
-          head.scale.setScalar(size * (2.6 + 0.3 * Math.sin(t * 33)));
-          headCore.scale.setScalar(size * 1.1);
+          head.scale.setScalar(size * (2.1 + 0.25 * Math.sin(t * 33)));
+          headCore.scale.setScalar(size * 0.8);
         },
         // The column stays a moment after the impact, thinning out, so the beam reads.
         dispose() {
