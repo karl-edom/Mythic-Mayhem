@@ -1079,32 +1079,21 @@ defineParts({
   },
   Head_Human: (c) => {
     const { M, put } = c;
-    // One smooth head, sculpted from a sphere: a full cranium, a jaw that narrows to a
-    // small pointed chin (anime proportions), a faint nose ridge.
-    const g = new THREE.SphereGeometry(1, 64, 48);
-    const p = g.attributes.position!;
-    for (let i = 0; i < p.count; i++) {
-      const x = p.getX(i);
-      const y = p.getY(i);
-      const z = p.getZ(i);
-      const low = Math.max(0, -y);
-      const front = Math.max(0, z);
-      const X = x * 0.088 * (1 - 0.45 * Math.pow(low, 1.5) * (0.4 + 0.6 * front));
-      const Y = y * 0.108 - 0.022 * low * low * front * front;
-      let Z = z * (z < 0 ? 0.102 : 0.095) + 0.01 * front * low;
-      // Nose: a soft ridge down the middle of the face, ending in a small tip.
-      Z += 0.011 * Math.exp(-((x / 0.1) ** 2)) * Math.exp(-(((y + 0.13) / 0.11) ** 2)) * front ** 4;
-      // Cheekbones, barely.
-      Z += 0.003 * Math.exp(-(((Math.abs(x) - 0.45) / 0.15) ** 2) - ((y + 0.15) / 0.15) ** 2) * front;
-      p.setXYZ(i, X, Y, Z);
-    }
-    g.computeVertexNormals();
-    g.translate(0, 1.59, 0);
-    const skull = put("head", g, M.skin, "skull");
+    const skull = put("head", sculptedHead(), M.skin, "skull");
+    // Ears: a thin shell, wider at the top, set back and tilted like the jaw.
     for (const s of [-1, 1]) {
-      const ear = blob(0.009, 0.022, 0.014);
-      ear.rotateY(s * 0.35);
-      put("head", ear.translate(s * 0.087, 1.578, -0.008), M.skin);
+      const ear = blob(0.007, 0.022, 0.015, 24);
+      const ep = ear.attributes.position!;
+      for (let i = 0; i < ep.count; i++) {
+        const y = ep.getY(i);
+        ep.setZ(i, ep.getZ(i) * (0.75 + 0.45 * Math.max(0, y / 0.022)));
+        if (ep.getX(i) * s < 0) ep.setX(i, ep.getX(i) * 0.4);
+      }
+      ear.computeVertexNormals();
+      ear.rotateZ(s * 0.12);
+      ear.rotateY(s * 0.3);
+      ear.rotateX(-0.15);
+      put("head", ear.translate(s * 0.084, 1.567, -0.012), M.skin);
     }
     // Face: the features are painted (see faceTexture) on a thin skin laid over the front
     // of the head, vertex by vertex, so they follow its curves exactly.
@@ -1113,6 +1102,98 @@ defineParts({
   },
   Hair_Kenshin: (c) => buildKenshinHair(c),
 });
+
+/**
+ * The head, sculpted rather than a squashed sphere: lofted through horizontal cross-
+ * sections from the crown to the chin. Each section is a superellipse with its own
+ * half-width, front and back depth (rounder at the cranium, flatter planes on the face,
+ * a V of a jaw closing to a small chin), then the features are modelled on its front:
+ * brow ridge, eye sockets, a nose with a bridge and a tip, cheekbones, lips, chin.
+ */
+function sculptedHead(): THREE.BufferGeometry {
+  // y, half-width, front depth, back depth, centre z, squareness (2: ellipse).
+  const KEYS: [number, number, number, number, number, number][] = [
+    [1.455, 0.004, 0.004, 0.004, 0.052, 2],
+    [1.462, 0.017, 0.012, 0.012, 0.05, 2.1],
+    [1.474, 0.031, 0.027, 0.03, 0.036, 2.2],
+    [1.49, 0.054, 0.052, 0.047, 0.018, 2.3],
+    [1.51, 0.07, 0.074, 0.066, 0.006, 2.4],
+    [1.53, 0.08, 0.087, 0.082, 0.0, 2.5],
+    [1.555, 0.086, 0.091, 0.093, -0.004, 2.5],
+    [1.58, 0.088, 0.09, 0.099, -0.006, 2.4],
+    [1.605, 0.089, 0.091, 0.101, -0.007, 2.3],
+    [1.635, 0.085, 0.084, 0.098, -0.008, 2.15],
+    [1.665, 0.072, 0.066, 0.084, -0.009, 2.05],
+    [1.688, 0.05, 0.042, 0.058, -0.01, 2],
+    [1.702, 0.02, 0.016, 0.022, -0.01, 2],
+    [1.706, 0.001, 0.001, 0.001, -0.01, 2],
+  ];
+  const at = (y: number): number[] => {
+    let i = 0;
+    while (i < KEYS.length - 2 && KEYS[i + 1]![0] < y) i++;
+    const a = KEYS[Math.max(0, i - 1)]!, b = KEYS[i]!, c = KEYS[i + 1]!, d = KEYS[Math.min(KEYS.length - 1, i + 2)]!;
+    const t = (y - b[0]) / (c[0] - b[0]);
+    // Catmull-Rom through the keys: smooth, no kinks between sections.
+    return b.map((_, k) => {
+      const p0 = a[k]!, p1 = b[k]!, p2 = c[k]!, p3 = d[k]!;
+      return 0.5 * (2 * p1 + (-p0 + p2) * t + (2 * p0 - 5 * p1 + 4 * p2 - p3) * t * t + (-p0 + 3 * p1 - 3 * p2 + p3) * t * t * t);
+    });
+  };
+  const G = (v: number, m: number, w: number) => Math.exp(-(((v - m) / w) ** 2));
+  const rows = 72;
+  const cols = 72;
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  const y0 = KEYS[0]![0];
+  const y1 = KEYS[KEYS.length - 1]![0];
+  for (let i = 0; i <= rows; i++) {
+    // Rows packed closer round the face, where the shape changes fastest.
+    const u = i / rows;
+    const y = y0 + (y1 - y0) * (u + 0.06 * Math.sin(u * Math.PI * 2));
+    const [, W, F, B, cz, n] = at(y) as [number, number, number, number, number, number];
+    for (let j = 0; j <= cols; j++) {
+      const th = (j / cols) * Math.PI * 2; // 0: straight ahead (+z)
+      const sn = Math.sin(th);
+      const cs = Math.cos(th);
+      const e = 2 / n;
+      let x = W * Math.sign(sn) * Math.abs(sn) ** e;
+      let z = (cs > 0 ? F : B) * Math.sign(cs) * Math.abs(cs) ** e;
+      // Features, on the front only (cs > 0), pushed out along the section's normal.
+      const front = Math.max(0, cs) ** 2;
+      const a = Math.abs(th > Math.PI ? th - Math.PI * 2 : th); // angle off the middle
+      let push = 0;
+      push += 0.0045 * G(y, 1.606, 0.009) * G(a, 0, 0.75); // brow ridge
+      push -= 0.0055 * G(y, 1.58, 0.012) * G(a, 0.4, 0.2); // eye sockets
+      push += 0.0035 * G(y, 1.552, 0.012) * G(a, 0.72, 0.2); // cheekbones
+      // Nose: a bridge from between the eyes growing to a tip, then turning under.
+      const bridge = THREE.MathUtils.smoothstep(y, 1.598, 1.545) * (1 - THREE.MathUtils.smoothstep(y, 1.54, 1.528));
+      push += 0.016 * bridge ** 1.4 * G(a, 0, 0.09 + 0.06 * (1.598 - y) / 0.06);
+      push += 0.0035 * G(y, 1.538, 0.006) * G(a, 0.12, 0.06); // nostril wings
+      push += 0.0025 * G(y, 1.508, 0.006) * G(a, 0, 0.22); // lips
+      push -= 0.002 * G(y, 1.497, 0.004) * G(a, 0, 0.25); // under the lower lip
+      push += 0.004 * G(y, 1.468, 0.008) * G(a, 0, 0.3); // chin
+      push *= front;
+      const r = Math.hypot(x, z) || 1;
+      x += (x / r) * push;
+      z += (z / r) * push;
+      pos.push(x, y, z + cz);
+      uv.push(j / cols, u);
+    }
+  }
+  for (let i = 0; i < rows; i++)
+    for (let j = 0; j < cols; j++) {
+      const a = i * (cols + 1) + j;
+      const b = a + cols + 1;
+      idx.push(a, a + 1, b, a + 1, b + 1, b);
+    }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return g;
+}
 
 /** Weights of a garment tube along a leg: the hips at the top, the thigh, the shin below the knee. */
 export function legWeights(p: THREE.Vector3): number[] {
