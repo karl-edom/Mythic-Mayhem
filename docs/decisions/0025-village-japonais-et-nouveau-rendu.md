@@ -75,3 +75,12 @@ Pas atteint :
 - Le rendu est vérifié dans un navigateur sans carte graphique (SwiftShader). Sur une vraie machine, il faut mesurer la cadence ; la qualité adaptative est là pour ça.
 - Un toit dont les murs ont cassé reste en l'air. C'est un choix de lisibilité : la règle « on tombe si le plancher casse » s'applique, mais rien ne s'effondre en chaîne.
 - Les ornements attachés à un mur (rideau, lanterne) disparaissent avec le mur. Ceux attachés à l'auvent restent tant que l'auvent tient.
+
+## Équilibrage après ces changements
+
+La gauntlet de référence inclut désormais le village. Elle a été relancée sur les 16 packs locaux, en tenant compte des nouvelles règles de sortie de combo (décision 0024).
+
+- 14 packs restent dans la bande de 40 à 60 % de victoires.
+- Deux en sortaient, Conker (76 %) et Donatello (66 %). Leurs dégâts ont été réduits par `--tune` : ils sont maintenant à 53 % et 50 %.
+
+Les packs sont dans `packs/local/` et ne sont donc pas commités.
