@@ -107,7 +107,12 @@ const SEE_THROUGH = new Set([
 function rimLight(m: THREE.Material): void {
   if (m.userData.rim || !("emissive" in m)) return;
   m.userData.rim = true;
-  m.onBeforeCompile = (shader) => {
+  // On top of any shader change the material already has (hair, for one).
+  const prev = m.onBeforeCompile.bind(m);
+  const prevKey = m.customProgramCacheKey.bind(m);
+  m.customProgramCacheKey = () => `${prevKey()}|rim`;
+  m.onBeforeCompile = (shader, renderer) => {
+    prev(shader, renderer);
     shader.fragmentShader = shader.fragmentShader.replace(
       "#include <emissivemap_fragment>",
       `#include <emissivemap_fragment>

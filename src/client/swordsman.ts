@@ -174,6 +174,58 @@ function sleeve(side: number, x0: number, x1: number, r0: number, r1: number, sa
 }
 
 /**
+ * A kimono sleeve as one piece of cloth from the shoulder (`x0`) to the wrist (`x1`),
+ * skinned to the chest, upper and lower arm: it bends at the elbow with no seam. Its
+ * underside hangs in a pocket (the tamoto) that closes again before the cuff, so the
+ * opening at the wrist stays the size of the arm instead of a wide flat disc.
+ */
+export function skinnedSleeve(c: Ctx, side: number, x0: number, x1: number, r0: number, r1: number, pocket: number, mat: THREE.Material, name: string): THREE.SkinnedMesh {
+  const segs = 28;
+  const sides = 28;
+  const y = 1.372;
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  const S = THREE.MathUtils.smoothstep;
+  for (let i = 0; i <= segs; i++) {
+    const t = i / segs;
+    const x = x0 + (x1 - x0) * t;
+    const r = r0 + (r1 - r0) * t;
+    // The pocket deepens past the elbow and closes toward the cuff.
+    const depth = pocket * S(t, 0.25, 0.7) * (1 - 0.9 * S(t, 0.86, 1));
+    for (let k = 0; k <= sides; k++) {
+      const a = (k / sides) * Math.PI * 2;
+      const down = Math.max(0, -Math.sin(a));
+      // A soft wrinkle round the elbow, where the cloth bunches.
+      const bunch = 1 + 0.06 * Math.exp(-(((t - 0.52) / 0.08) ** 2)) * Math.sin(a * 5);
+      const dy = Math.sin(a) * r * bunch - depth * down ** 1.5;
+      const dz = Math.cos(a) * r * 0.92 * bunch;
+      pos.push(side * x, y + dy, dz);
+      uv.push(k / sides, t * 2);
+    }
+  }
+  for (let i = 0; i < segs; i++)
+    for (let k = 0; k < sides; k++) {
+      const a = i * (sides + 1) + k;
+      const b = a + sides + 1;
+      if (side > 0) idx.push(a, a + 1, b, a + 1, b + 1, b);
+      else idx.push(a, b, a + 1, a + 1, b, b + 1);
+    }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  const arm = side > 0 ? "left" : "right";
+  return c.skinned(g, mat, name, ["chest", `${arm}UpperArm`, `${arm}LowerArm`], (p) => {
+    const ax = Math.abs(p.x);
+    const chest = 1 - S(ax, 0.17, 0.25);
+    const lower = S(ax, 0.4, 0.49);
+    return [chest, Math.max(0, 1 - chest - lower), lower];
+  });
+}
+
+/**
  * A lock of hair along a smooth curve through `pts`: a flattened, tapering tube whose
  * flat side lies along the surface it grows from (`out` gives the outward direction at
  * a point). It widens from `root` × its width and narrows to a point, or to `end` × its
@@ -333,7 +385,7 @@ function faceTexture(o: FaceStyle): THREE.CanvasTexture {
   }
   for (const s of [-1, 1]) {
     const [cx, cy] = P(s * 0.032, 1.578);
-    const hw = 0.0185 * m;
+    const hw = 0.0205 * m;
     const inner = cx - s * hw;
     const outer = cx + s * hw;
     // Almond: the upper lid arches high and lifts at the outer corner, the lower is flatter.
@@ -352,7 +404,7 @@ function faceTexture(o: FaceStyle): THREE.CanvasTexture {
     // Iris, a little toward the nose, its top hidden under the lid.
     const ix = cx - s * 0.002 * m;
     const iy = cy - 0.001 * m;
-    const ir = 0.0078 * m * irisK;
+    const ir = 0.0091 * m * irisK;
     const grad = g.createLinearGradient(0, iy - ir, 0, iy + ir);
     grad.addColorStop(0, `#${irisDark.getHexString()}`);
     grad.addColorStop(0.55, `#${iris.getHexString()}`);
@@ -361,8 +413,30 @@ function faceTexture(o: FaceStyle): THREE.CanvasTexture {
     g.beginPath();
     g.ellipse(ix, iy, ir * 0.85, ir, 0, 0, Math.PI * 2);
     g.fill();
-    g.strokeStyle = `#${irisDark.getHexString()}`;
-    g.lineWidth = 2;
+    // Fibres radiating from the pupil, a glow low in the iris, a dark ring round it.
+    const rs = seeded(s > 0 ? 3 : 4);
+    for (let k = 0; k < 40; k++) {
+      const a = (k / 40) * Math.PI * 2 + rs() * 0.1;
+      g.strokeStyle = rs() < 0.5 ? `rgba(255,255,255,${0.08 + rs() * 0.12})` : `rgba(0,0,0,${0.1 + rs() * 0.15})`;
+      g.lineWidth = 1;
+      g.beginPath();
+      g.moveTo(ix + Math.cos(a) * ir * 0.3, iy + Math.sin(a) * ir * 0.38);
+      g.lineTo(ix + Math.cos(a) * ir * 0.8, iy + Math.sin(a) * ir * 0.95);
+      g.stroke();
+    }
+    const glow = g.createRadialGradient(ix, iy + ir * 0.55, 1, ix, iy + ir * 0.55, ir * 0.7);
+    glow.addColorStop(0, `#${iris.clone().lerp(new THREE.Color("#ffffff"), 0.55).getHexString()}`);
+    glow.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = glow;
+    g.globalAlpha = 0.6;
+    g.beginPath();
+    g.ellipse(ix, iy, ir * 0.85, ir, 0, 0, Math.PI * 2);
+    g.fill();
+    g.globalAlpha = 1;
+    g.strokeStyle = `#${irisDark.clone().multiplyScalar(0.6).getHexString()}`;
+    g.lineWidth = 3;
+    g.beginPath();
+    g.ellipse(ix, iy, ir * 0.85, ir, 0, 0, Math.PI * 2);
     g.stroke();
     g.fillStyle = "#140a12";
     g.beginPath();
@@ -384,12 +458,12 @@ function faceTexture(o: FaceStyle): THREE.CanvasTexture {
     g.restore();
     // Upper lash line: heavy, thickening outward, with a flick at the outer corner.
     g.strokeStyle = "#1a100c";
-    g.lineWidth = 5;
+    g.lineWidth = 7;
     g.beginPath();
     g.moveTo(inner + s * 2, cy - 1);
     g.bezierCurveTo(inner + s * hw * 0.4, cy - 0.0108 * m * open, outer - s * hw * 0.35, cy - 0.0113 * m * open, outer + s * 4, cy - 0.0045 * m);
     g.stroke();
-    g.lineWidth = 3;
+    g.lineWidth = 4;
     g.beginPath();
     g.moveTo(outer - s * 6, cy - 0.0062 * m);
     g.lineTo(outer + s * 0.004 * m, cy - 0.0075 * m);
@@ -422,6 +496,18 @@ function faceTexture(o: FaceStyle): THREE.CanvasTexture {
       g.stroke();
     }
   }
+  // Warmth: a blush on the cheeks and the tip of the nose, painted very softly.
+  if (!o.bandaged)
+    for (const [x, y, rx, a] of [[-0.045, 1.535, 0.022, 0.22], [0.045, 1.535, 0.022, 0.22], [0, 1.546, 0.008, 0.12]] as const) {
+      const [bx, by] = P(x, y);
+      const bl = g.createRadialGradient(bx, by, 0, bx, by, rx * m);
+      bl.addColorStop(0, `rgba(235,120,110,${a})`);
+      bl.addColorStop(1, "rgba(235,120,110,0)");
+      g.fillStyle = bl;
+      g.beginPath();
+      g.ellipse(bx, by, rx * m, rx * m * 0.6, 0, 0, Math.PI * 2);
+      g.fill();
+    }
   // Nose: just the shadow under its tip, and a touch along one side.
   if (!o.bandaged) {
     const [nx, ny] = P(0.0, 1.543);
@@ -481,8 +567,8 @@ function faceTexture(o: FaceStyle): THREE.CanvasTexture {
     g.moveTo(mx - 17, my);
     g.quadraticCurveTo(mx, my + (mood === "fierce" ? -1.5 : 2.5), mx + 17, my - 0.5);
     g.stroke();
-    g.strokeStyle = "rgba(190,110,95,0.35)";
-    g.lineWidth = 3;
+    g.strokeStyle = "rgba(200,105,95,0.5)";
+    g.lineWidth = 4;
     g.beginPath();
     g.moveTo(mx - 8, my + 8);
     g.quadraticCurveTo(mx, my + 10, mx + 8, my + 8);
@@ -611,7 +697,7 @@ function materials(): HumanMaterials {
   const fur = furTexture(31);
   shared = {
     skin: new THREE.MeshPhysicalMaterial({
-      name: "skin", color: "#efc29c", roughness: 0.55, sheen: 0.3, sheenColor: new THREE.Color("#ffd9c0"), sheenRoughness: 0.6, clearcoat: 0.05,
+      name: "skin", color: "#eab592", roughness: 0.6, sheen: 0.45, sheenColor: new THREE.Color("#ffb59a"), sheenRoughness: 0.6, clearcoat: 0.05,
     }),
     cloth1: clothMaterial("cloth1", "#8a8276", 7),
     cloth2: clothMaterial("cloth2", "#e8e1d0", 5),
@@ -858,11 +944,7 @@ defineParts({
     put("chest", c.shell(1.1, 1.445, 1), M.cloth2, "gi");
     for (const s of [-1, 1]) put("chest", blob(0.07, 0.055, 0.075).translate(s * 0.17, 1.375, 0), M.cloth2, "gi"); // shoulder seams
     collar(c, M.cloth2, 1.22, 1.12);
-    for (const s of [1, -1]) {
-      const side = s > 0 ? "left" : "right";
-      put(`${side}UpperArm`, sleeve(s, 0.17, 0.45, 0.085, 0.115, 0.5, 1.375), M.cloth2, "gi");
-      put(`${side}LowerArm`, sleeve(s, 0.43, 0.56, 0.12, 0.13, 1.1, 1.372), M.cloth2, "gi");
-    }
+    for (const s of [1, -1]) skinnedSleeve(c, s, 0.15, 0.6, 0.085, 0.078, 0.075, M.cloth2, "gi");
     void V;
   },
   Hakama: (c) => {
@@ -1205,6 +1287,59 @@ export function onDress(f: (root: THREE.Object3D, look: HumanLook, parts: Set<st
 /** Heads that make the figure an animal (creatureParts.ts): its whole skin is fur. */
 export const ANIMAL_HEADS = ["Head_Rat", "Head_Squirrel", "Head_Teddy"];
 
+/**
+ * Anime hair shading on a hair material: darker at the roots, lighter at the tips (the
+ * locks run along their texture's v), and a sharp band of light across the locks, the
+ * "angel ring", from a strand highlight (Kajiya-Kay) computed along each lock, with a
+ * second, tinted and softer one a little lower.
+ */
+export function hairShader(m: THREE.MeshPhysicalMaterial): void {
+  if (m.userData.hairShader) return;
+  m.userData.hairShader = true;
+  m.clearcoat = 0;
+  m.roughness = 0.62;
+  m.customProgramCacheKey = () => "hair-kk";
+  m.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <map_fragment>",
+        `#include <map_fragment>
+        #ifdef USE_MAP
+          diffuseColor.rgb *= mix(0.5, 1.12, smoothstep(0.0, 0.75, vMapUv.y));
+        #endif`,
+      )
+      .replace(
+        "#include <opaque_fragment>",
+        `#ifdef USE_MAP
+        {
+          // Direction of the lock on screen-space derivatives (along v).
+          vec3 p = -vViewPosition;
+          vec3 dp1 = dFdx(p);
+          vec3 dp2 = dFdy(p);
+          vec2 duv1 = dFdx(vMapUv);
+          vec2 duv2 = dFdy(vMapUv);
+          vec3 n = normalize(normal);
+          vec3 strand = cross(dp2, n) * duv1.y + cross(n, dp1) * duv2.y;
+          if (dot(strand, strand) > 1e-12) {
+            strand = normalize(strand);
+            vec3 V = normalize(vViewPosition);
+            vec3 L = normalize((viewMatrix * vec4(0.35, 1.0, 0.45, 0.0)).xyz);
+            vec3 H = normalize(L + V);
+            float d1 = dot(normalize(strand + n * 0.12), H);
+            float d2 = dot(normalize(strand - n * 0.25), H);
+            float s1 = pow(sqrt(max(0.0, 1.0 - d1 * d1)), 90.0);
+            float s2 = pow(sqrt(max(0.0, 1.0 - d2 * d2)), 22.0);
+            float lit = 0.35 + 0.65 * clamp(dot(n, L) * 0.5 + 0.5, 0.0, 1.0);
+            outgoingLight += (vec3(1.0, 0.96, 0.9) * s1 * 0.55 + diffuseColor.rgb * s2 * 0.35) * lit;
+          }
+        }
+        #endif
+        #include <opaque_fragment>`,
+      );
+  };
+  m.needsUpdate = true;
+}
+
 /** Tops that leave the chest bare. */
 const OPEN_TOPS = ["Vest", "Top_None"];
 
@@ -1231,6 +1366,7 @@ export function paintSwordsman(root: THREE.Object3D, look: HumanLook): void {
     const col = colours[mat.name];
     if (col) mat.color.set(col);
     if (mat.name === "face") mat.map = faceTexture(face);
+    if (mat.name === "hair" && mat instanceof THREE.MeshPhysicalMaterial) hairShader(mat);
     if (mat.name === "skin" && furry) {
       mat.map = materials().fur.map;
       mat.bumpMap = materials().fur.bumpMap;
