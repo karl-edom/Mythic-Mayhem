@@ -34,8 +34,8 @@ export const TURTLE_BONES: [string, string | null, number, number, number][] = [
 ];
 
 /** Mask tails: length (metres) and segments along it. */
-const TAIL_LENGTH = 0.55;
-const TAIL_ROWS = 14;
+export const TAIL_LENGTH = 0.55;
+export const TAIL_ROWS = 14;
 
 /** Optional parts, shown only when the look's `show` list names them. */
 const OPTIONAL = ["Katana_Back"];

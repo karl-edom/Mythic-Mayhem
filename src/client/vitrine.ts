@@ -17,6 +17,7 @@ const look: Look = {
   outfit: q.get("outfit") ?? "#d01c1c",
   ...(q.get("hair") ? { hair: q.get("hair")! } : {}),
   ...(q.get("expression") ? { expression: q.get("expression") as Look["expression"] } : {}),
+  ...Object.fromEntries((["accent", "trim", "skin", "eyes", "emblem"] as const).flatMap((k) => (q.get(k) ? [[k, q.get(k)!]] : []))),
 };
 
 if (q.get("wrist")) setWrist(Number(q.get("wrist")));

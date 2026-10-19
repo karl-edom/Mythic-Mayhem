@@ -3,6 +3,7 @@
 // each with a short life. Purely visual: nothing here touches the simulation.
 
 import * as THREE from "three";
+import { flameTexture } from "./moveFx.ts";
 import { glowTexture, noOutline, starTexture, toon } from "./toon.ts";
 
 interface Effect {
@@ -164,6 +165,29 @@ export class Vfx {
     this.add(halo, 0.28, (k) => {
       halo.scale.setScalar(size * 1.6 * (0.4 + k));
       halo.material.opacity = 0.7 * (1 - k);
+    });
+  }
+
+  /** Flames bursting out and rising, then gone (fire, explosions). */
+  flames(pos: THREE.Vector3, count: number, size: number): void {
+    for (let i = 0; i < count; i++) {
+      const s = this.sprite(flameTexture(), 0xffffff, 1);
+      const a = Math.random() * Math.PI * 2;
+      const v = new THREE.Vector3(Math.cos(a), 0.6 + Math.random(), Math.sin(a)).multiplyScalar(size * (1.5 + Math.random() * 2));
+      s.position.copy(pos);
+      const sz = size * (0.8 + Math.random() * 0.8);
+      this.add(s, 0.45 + Math.random() * 0.3, (k, dt) => {
+        s.position.addScaledVector(v, dt * (1 - k * 0.6));
+        s.scale.set(sz * (0.6 + k * 0.6), sz * (1 + k), 1);
+        s.material.opacity = 1 - k;
+      });
+    }
+    const smoke = new THREE.Sprite(noOutline(new THREE.SpriteMaterial({ map: this.glow, color: 0x3a3330, transparent: true, opacity: 0.5, depthWrite: false })));
+    smoke.position.copy(pos);
+    this.add(smoke, 0.9, (k, dt) => {
+      smoke.position.y += dt * size * 1.5;
+      smoke.scale.setScalar(size * (1.5 + k * 2.5));
+      smoke.material.opacity = 0.5 * (1 - k);
     });
   }
 

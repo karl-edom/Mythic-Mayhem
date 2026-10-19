@@ -9,13 +9,16 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import { ANIME_MODELS, MODELS, isAnime, type Look, type ModelId } from "../brawl/character.ts";
 import { turtlePoses } from "./poses.ts";
+import { fistPoses } from "./fistPoses.ts";
 import { staffPoses, swordsmanPoses } from "./swordPoses.ts";
 import { SWORDSMAN_HEIGHT, animateSwordsman, buildSwordsmanRig, paintSwordsman } from "./swordsman.ts";
+import "./humanParts.ts";
+import "./creatureParts.ts";
 import { TURTLE_BONES, TURTLE_HEIGHT, animateTurtle, buildTurtleRig, paintTurtle } from "./turtle.ts";
 import type { Archetype } from "../brawl/kit.ts";
 import { KAYKIT_TO_HUMANOID, LOCOMOTION, LOCOMOTION_LEGS, Retargeter, amplifyClip, amplitudeFor, clenchFists } from "./retarget.ts";
 import { noOutline, outlineOf, toToon } from "./toon.ts";
-import { buildWeapon } from "./weapons.ts";
+import { ANIME_WEAPONS, buildWeapon } from "./weapons.ts";
 
 /** KayKit fighters stand this tall on screen (feet to top of head): chibis need the extra size. */
 const MODEL_HEIGHT = 1.95;
@@ -139,7 +142,11 @@ export async function loadModels(base: string, onProgress?: (done: number, total
   const hipsRest = turtle.getObjectByName("hips")!.position.clone();
   anime.set("turtle", {
     rig: turtle, height: TURTLE_HEIGHT, procedural: true, poses: (style) =>
-      style === "sword" ? swordsmanPoses(hipsRest, TURTLE_BONES) : style === "staff" ? staffPoses(hipsRest, TURTLE_BONES) : turtlePoses(hipsRest),
+      style === "sword" ? swordsmanPoses(hipsRest, TURTLE_BONES)
+      : style === "staff" ? staffPoses(hipsRest, TURTLE_BONES)
+      : style === "club" ? swordsmanPoses(hipsRest, TURTLE_BONES, { oneHand: true })
+      : style === "fist" ? fistPoses(hipsRest, TURTLE_BONES)
+      : turtlePoses(hipsRest),
     dress: (rig, look) => {
       paintTurtle(rig, look);
       animateTurtle(rig);
@@ -148,10 +155,16 @@ export async function loadModels(base: string, onProgress?: (done: number, total
   const swordsman = buildSwordsmanRig();
   const swordsmanHips = swordsman.getObjectByName("hips")!.position.clone();
   anime.set("swordsman", {
-    rig: swordsman, height: SWORDSMAN_HEIGHT, procedural: true, poses: (style) => (style === "staff" ? staffPoses(swordsmanHips) : swordsmanPoses(swordsmanHips)),
+    rig: swordsman, height: SWORDSMAN_HEIGHT, procedural: true, poses: (style) =>
+      style === "staff" ? staffPoses(swordsmanHips)
+      : style === "club" ? swordsmanPoses(swordsmanHips, undefined, { oneHand: true })
+      : style === "fist" ? fistPoses(swordsmanHips)
+      : style === "dual" ? turtlePoses(swordsmanHips)
+      : swordsmanPoses(swordsmanHips),
     dress: (rig, look) => {
       paintSwordsman(rig, look);
       animateSwordsman(rig);
+      animateTurtle(rig);
     },
   });
   return {
@@ -162,12 +175,20 @@ export async function loadModels(base: string, onProgress?: (done: number, total
   };
 }
 
-/** How a fighter moves, from the weapons it carries: a sword, a staff, or a pair (or none). */
-export type PoseStyle = "dual" | "sword" | "staff";
-const SWORDS = ["1H_Katana", "2H_Odachi", "Sakabato"];
-const STAFFS = ["Bo", "2H_Staff"];
+/**
+ * How a fighter moves, from the weapons it carries: a sword, a staff, a one-handed club,
+ * a pair of short weapons, or bare fists.
+ */
+export type PoseStyle = "dual" | "sword" | "staff" | "club" | "fist";
+const SWORDS = ["1H_Katana", "2H_Odachi", "Sakabato", "Mugenjin", "Chokuto"];
+const STAFFS = ["Bo", "2H_Staff", "Staff_Gnarled"];
+const CLUBS = ["Pan", "Bottle"];
 export const poseStyle = (show: string[]): PoseStyle =>
-  show.some((w) => SWORDS.includes(w)) ? "sword" : show.some((w) => STAFFS.includes(w)) ? "staff" : "dual";
+  show.some((w) => SWORDS.includes(w)) ? "sword"
+  : show.some((w) => STAFFS.includes(w)) ? "staff"
+  : show.some((w) => CLUBS.includes(w)) ? "club"
+  : show.some((w) => (ANIME_WEAPONS as readonly string[]).includes(w)) ? "dual"
+  : "fist";
 
 /**
  * The shared clips retargeted onto an anime avatar, then, for procedural models, the
@@ -354,12 +375,14 @@ const GRIP = {
 /** Where the closed fist holds the grip, from the hand bone (metres, T-pose). */
 const GRIP_OFFSET = { out: 0.07, down: -0.025 };
 
-function attachWeapon(rig: THREE.Object3D, name: string): void {
+/** Puts a weapon in the hand of an anime rig (by name; the left hand for "_Offhand"). */
+export function attachWeapon(rig: THREE.Object3D, name: string): THREE.Group | null {
   const weapon = buildWeapon(name);
-  if (!weapon) return;
+  if (!weapon) return null;
   const grip = name.endsWith("_Offhand") ? GRIP.left : GRIP.right;
   const hand = rig.getObjectByName(grip.bone);
-  if (!hand) return;
+  if (!hand) return null;
+  weapon.userData.weapon = name;
   rig.updateMatrixWorld(true);
   const toRig = new THREE.Matrix4().copy(rig.matrixWorld).invert().multiply(hand.matrixWorld);
   const handPos = new THREE.Vector3();
@@ -369,6 +392,7 @@ function attachWeapon(rig: THREE.Object3D, name: string): void {
   weapon.position.copy(at.applyMatrix4(toRig.clone().invert()));
   weapon.quaternion.copy(handQuat.invert().multiply(grip.quat));
   hand.add(weapon);
+  return weapon;
 }
 
 function instantiateAnime(lib: ModelLibrary, look: Look): ModelInstance {

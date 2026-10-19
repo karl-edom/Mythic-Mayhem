@@ -288,6 +288,21 @@ test("apparence : un look valide est lu, un look invalide est ignoré", async ()
   const moves = parseCharacter({ moves: { "coup-1": { callout: "龍<b>槌</b>閃", slashes: 40 }, "BAD ID": { callout: "x" } } }, "x").moves;
   assert.deepEqual(moves, { "coup-1": { callout: "龍b槌b閃", slashes: 12 } });
   assert.deepEqual(parseCharacter({ moves: { tir: { projectile: "pizza" }, autre: { projectile: "<img>" } } }, "x").moves, { tir: { projectile: "pizza" }, autre: {} });
+  // Looks of the techniques: closed lists, a colour, a weapon name; anything else dropped.
+  const fx = parseCharacter({
+    moves: {
+      kame: { projectile: "beam", color: "#6ec8ff", hand: "ki" },
+      feu: { zone: "fire", hand: "fire", color: "orange" },
+      tir: { projectile: "bullet", weapon: "Sniper" },
+      faux: { zone: "lava", hand: "<b>", weapon: "../x" },
+    },
+  }, "x").moves;
+  assert.deepEqual(fx, {
+    kame: { projectile: "beam", color: "#6ec8ff", hand: "ki" },
+    feu: { zone: "fire", hand: "fire" },
+    tir: { projectile: "bullet", weapon: "Sniper" },
+    faux: {},
+  });
 });
 
 test("dégagement : sous les coups, il repousse l'agresseur sans dégâts et coûte 50 d'énergie", () => {

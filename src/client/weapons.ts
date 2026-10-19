@@ -3,9 +3,13 @@
 // no model files to ship or license.
 
 import * as THREE from "three";
+import { RoundedBoxGeometry } from "three/examples/jsm/geometries/RoundedBoxGeometry.js";
 import { noOutline, outlineOf, toon } from "./toon.ts";
 
-export const ANIME_WEAPONS = ["1H_Katana", "2H_Odachi", "Kunai", "Kunai_Offhand", "2H_Staff", "Sai", "Sai_Offhand", "Sakabato", "Bo", "Nunchaku", "Nunchaku_Offhand"] as const;
+export const ANIME_WEAPONS = [
+  "1H_Katana", "2H_Odachi", "Kunai", "Kunai_Offhand", "2H_Staff", "Sai", "Sai_Offhand", "Sakabato", "Bo", "Nunchaku", "Nunchaku_Offhand",
+  "Mugenjin", "Chokuto", "Claws", "Claws_Offhand", "Staff_Gnarled", "Pan", "Bottle", "Chainsaw", "Sniper", "Gun", "Bazooka",
+] as const;
 
 const STEEL = 0xe8eef6;
 
@@ -18,7 +22,7 @@ function part(geo: THREE.BufferGeometry, color: THREE.ColorRepresentation, outli
 }
 
 /** Slightly curved single-edged blade (katana family), extruded thin. */
-function curvedBlade(length: number, width: number, curve: number): THREE.BufferGeometry {
+function curvedBlade(length: number, width: number, curve: number, teeth = 0): THREE.BufferGeometry {
   const s = new THREE.Shape();
   const n = 12;
   // Back of the blade, then the edge on the way down; the tip is a short diagonal.
@@ -27,9 +31,12 @@ function curvedBlade(length: number, width: number, curve: number): THREE.Buffer
     s[i === 0 ? "moveTo" : "lineTo"](-width / 2 + curve * (y / length) ** 2, y);
   }
   s.lineTo(width / 2 + curve - width * 0.2, length - width * 1.4);
-  for (let i = n; i >= 0; i--) {
-    const y = (i / n) * (length - width * 1.4);
-    s.lineTo(width / 2 + curve * (y / length) ** 2, y);
+  // The edge, straight, or cut into saw teeth (`teeth` of them).
+  const m = teeth > 0 ? teeth * 2 : n;
+  for (let i = m; i >= 0; i--) {
+    const y = (i / m) * (length - width * 1.4);
+    const tooth = teeth > 0 && i % 2 === 1 ? width * 0.35 : 0;
+    s.lineTo(width / 2 + curve * (y / length) ** 2 + tooth, y);
   }
   const g = new THREE.ExtrudeGeometry(s, { depth: 0.006, bevelEnabled: true, bevelThickness: 0.002, bevelSize: 0.002, bevelSegments: 1 });
   g.translate(0, 0, -0.003);
@@ -48,9 +55,9 @@ function markTrail(g: THREE.Group, base: number, tip: number): void {
   }
 }
 
-function katana(bladeLength: number, handle: number, scale = 1): THREE.Group {
+function katana(bladeLength: number, handle: number, scale = 1, opts: { curve?: number; teeth?: number; steel?: number; hilt?: number; guard?: number } = {}): THREE.Group {
   const g = new THREE.Group();
-  const tsuka = part(new THREE.CylinderGeometry(0.017 * scale, 0.017 * scale, handle, 8), 0x1d1b2a);
+  const tsuka = part(new THREE.CylinderGeometry(0.017 * scale, 0.017 * scale, handle, 8), opts.hilt ?? 0x1d1b2a);
   tsuka.position.y = -handle / 2 + 0.06;
   g.add(tsuka);
   // Diamond wrap pattern suggested by a few light rings.
@@ -60,10 +67,10 @@ function katana(bladeLength: number, handle: number, scale = 1): THREE.Group {
     ring.position.y = 0.06 - (handle * i) / 5;
     g.add(ring);
   }
-  const tsuba = part(new THREE.CylinderGeometry(0.042 * scale, 0.042 * scale, 0.01, 12), 0x8a6a2c);
+  const tsuba = part(new THREE.CylinderGeometry((opts.guard ?? 0.042) * scale, (opts.guard ?? 0.042) * scale, 0.01, 12), 0x8a6a2c);
   tsuba.position.y = 0.07;
   g.add(tsuba);
-  const blade = part(curvedBlade(bladeLength, 0.032 * scale, 0.05 * scale), STEEL, 0.002);
+  const blade = part(curvedBlade(bladeLength, 0.032 * scale, (opts.curve ?? 0.05) * scale, opts.teeth ?? 0), opts.steel ?? STEEL, 0.002);
   blade.position.y = 0.076;
   blade.userData.blade = true;
   g.add(blade);
@@ -259,6 +266,170 @@ function nunchaku(): THREE.Group {
   return g;
 }
 
+/** A material of the arms built below: physically lit, with the ink outline. */
+function mat(color: THREE.ColorRepresentation, metal = 0, rough = 0.6, outline = 0.0025): THREE.MeshStandardMaterial {
+  const m = new THREE.MeshStandardMaterial({ color, metalness: metal, roughness: rough });
+  outlineOf(m, outline);
+  return m;
+}
+function add(g: THREE.Object3D, geo: THREE.BufferGeometry, m: THREE.Material, x = 0, y = 0, z = 0): THREE.Mesh {
+  const mesh = new THREE.Mesh(geo, m);
+  mesh.position.set(x, y, z);
+  mesh.castShadow = true;
+  g.add(mesh);
+  return mesh;
+}
+
+/**
+ * Tekko-kagi: three long blades rising from a steel plate strapped over the fist and the
+ * back of the hand.
+ */
+function claws(): THREE.Group {
+  const g = new THREE.Group();
+  const steel = mat(0xc9ced8, 1, 0.25, 0.002);
+  const strap = mat(0x2a1e2c, 0, 0.8);
+  add(g, new RoundedBoxGeometry(0.075, 0.1, 0.03, 2, 0.008), steel, 0, 0.02, 0.03);
+  add(g, new THREE.CylinderGeometry(0.035, 0.035, 0.03, 10, 1, true), strap, 0, -0.02, 0);
+  for (const x of [-0.025, 0, 0.025]) {
+    const s = new THREE.Shape();
+    s.moveTo(-0.007, 0);
+    s.lineTo(0.007, 0);
+    s.lineTo(0.004, 0.3);
+    s.lineTo(-0.002, 0.34);
+    s.lineTo(-0.007, 0.3);
+    s.lineTo(-0.007, 0);
+    const geo = new THREE.ExtrudeGeometry(s, { depth: 0.004, bevelEnabled: false });
+    geo.rotateY(Math.PI / 2);
+    const b = add(g, geo, steel, x, 0.06, 0.03);
+    b.userData.blade = true;
+  }
+  markTrail(g, 0.1, 0.4);
+  return g;
+}
+
+/** A gnarled wooden staff: bent, knotted, thicker toward its head, a few twigs. */
+function gnarledStaff(): THREE.Group {
+  const g = new THREE.Group();
+  const wood = mat(0x5a3a22, 0, 0.8);
+  const pts: THREE.Vector3[] = [];
+  for (let i = 0; i <= 8; i++) {
+    const t = i / 8;
+    pts.push(new THREE.Vector3(Math.sin(t * 7) * 0.02, -0.55 + t * 1.65, Math.cos(t * 5) * 0.018));
+  }
+  const curve = new THREE.CatmullRomCurve3(pts);
+  const tube = new THREE.TubeGeometry(curve, 40, 0.02, 8);
+  // Thicker toward the head, with knots.
+  const p = tube.attributes.position!;
+  for (let i = 0; i < p.count; i++) {
+    const t = (p.getY(i) + 0.55) / 1.65;
+    const k = 0.85 + 0.45 * t ** 3 + 0.18 * Math.max(0, Math.sin(t * 31)) ** 6;
+    const c = curve.getPoint(Math.min(1, Math.max(0, t)));
+    p.setX(i, c.x + (p.getX(i) - c.x) * k);
+    p.setZ(i, c.z + (p.getZ(i) - c.z) * k);
+  }
+  tube.computeVertexNormals();
+  add(g, tube, wood);
+  // The head: a curled knob.
+  add(g, new THREE.TorusGeometry(0.035, 0.022, 8, 14, Math.PI * 1.4), wood, 0.02, 1.12, 0).rotation.y = Math.PI / 2;
+  for (const [y, a] of [[0.7, 0.7], [0.35, -0.8]] as const) {
+    const twig = add(g, new THREE.CylinderGeometry(0.003, 0.008, 0.08, 5), wood, Math.sign(a) * 0.03, y, 0);
+    twig.rotation.z = -a;
+  }
+  markTrail(g, 0.5, 1.12);
+  return g;
+}
+
+/** A cast-iron frying pan: held by the handle, the pan's face toward the foe. */
+function pan(): THREE.Group {
+  const g = new THREE.Group();
+  const iron = mat(0x2b2b30, 0.6, 0.45);
+  const wood = mat(0x6b4426, 0, 0.7);
+  add(g, new THREE.CylinderGeometry(0.016, 0.014, 0.16, 8), wood, 0, -0.01, 0);
+  add(g, new THREE.CylinderGeometry(0.009, 0.009, 0.1, 6), iron, 0, 0.12, 0);
+  const dish = new THREE.CylinderGeometry(0.13, 0.11, 0.035, 24, 1, false);
+  dish.rotateX(Math.PI / 2);
+  const d = add(g, dish, iron, 0, 0.3, 0);
+  d.userData.blade = true;
+  markTrail(g, 0.2, 0.43);
+  return g;
+}
+
+/** A broken bottle held by its neck, the jagged glass up. */
+function bottle(): THREE.Group {
+  const g = new THREE.Group();
+  const glass = new THREE.MeshStandardMaterial({ color: 0x3f8a3a, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.75 });
+  outlineOf(glass, 0.002);
+  add(g, new THREE.CylinderGeometry(0.014, 0.016, 0.1, 10), glass, 0, -0.02, 0);
+  add(g, new THREE.CylinderGeometry(0.04, 0.016, 0.05, 12), glass, 0, 0.055, 0);
+  add(g, new THREE.CylinderGeometry(0.04, 0.04, 0.08, 12, 1, true), glass, 0, 0.12, 0);
+  // The broken edge: shards of different heights.
+  for (let i = 0; i < 7; i++) {
+    const a = (i / 7) * Math.PI * 2;
+    const shard = new THREE.ConeGeometry(0.018, 0.05 + ((i * 37) % 5) * 0.012, 3);
+    shard.scale(1, 1, 0.3);
+    shard.rotateY(-a + Math.PI / 2);
+    const m = add(g, shard, glass, Math.cos(a) * 0.035, 0.18 + ((i * 37) % 5) * 0.006, Math.sin(a) * 0.035);
+    m.userData.blade = true;
+  }
+  markTrail(g, 0.08, 0.24);
+  return g;
+}
+
+/** A chainsaw: the motor block in the hand, the bar and its chain out in front. */
+function chainsaw(): THREE.Group {
+  const g = new THREE.Group();
+  const body = mat(0xe86a12, 0, 0.5);
+  const dark = mat(0x26262c, 0.3, 0.5);
+  const steel = mat(0xc0c4cc, 1, 0.3, 0.002);
+  add(g, new RoundedBoxGeometry(0.09, 0.2, 0.15, 3, 0.02), body, 0, 0.0, -0.02);
+  add(g, new THREE.TorusGeometry(0.045, 0.01, 6, 12, Math.PI), dark, 0, 0.05, 0.07).rotation.y = Math.PI / 2;
+  add(g, new THREE.BoxGeometry(0.012, 0.5, 0.065), steel, 0, 0.35, -0.02).userData.blade = true;
+  // The chain: teeth round the bar.
+  for (let i = 0; i < 20; i++) {
+    const y = 0.12 + i * 0.024;
+    for (const z of [-0.055, 0.015]) add(g, new THREE.BoxGeometry(0.016, 0.012, 0.012), dark, 0, y, z);
+  }
+  markTrail(g, 0.12, 0.6);
+  return g;
+}
+
+/** Firearms: the barrel along +Y from the hand, the stock behind, the sights on top. */
+function sniper(): THREE.Group {
+  const g = new THREE.Group();
+  const metal = mat(0x2e3036, 0.7, 0.35);
+  const wood = mat(0x5a3a1e, 0, 0.6);
+  add(g, new THREE.CylinderGeometry(0.011, 0.013, 0.7, 10), metal, 0, 0.45, 0.02);
+  add(g, new RoundedBoxGeometry(0.04, 0.3, 0.06, 2, 0.01), wood, 0, 0.12, 0.0);
+  add(g, new RoundedBoxGeometry(0.035, 0.26, 0.09, 2, 0.012), wood, 0, -0.2, -0.015);
+  const scope = add(g, new THREE.CylinderGeometry(0.018, 0.018, 0.2, 12), metal, 0, 0.18, 0.06);
+  scope.userData.scope = true;
+  add(g, new THREE.CylinderGeometry(0.024, 0.02, 0.03, 12), metal, 0, 0.29, 0.06);
+  add(g, new THREE.BoxGeometry(0.02, 0.03, 0.06), metal, 0, 0.05, -0.05);
+  markTrail(g, 0.2, 0.8);
+  return g;
+}
+function gun(): THREE.Group {
+  const g = new THREE.Group();
+  const metal = mat(0x2a2b30, 0.7, 0.35);
+  add(g, new RoundedBoxGeometry(0.045, 0.24, 0.07, 2, 0.008), metal, 0, 0.12, 0.01);
+  add(g, new THREE.CylinderGeometry(0.009, 0.009, 0.14, 8), metal, 0, 0.3, 0.02);
+  add(g, new THREE.BoxGeometry(0.03, 0.04, 0.11), metal, 0, 0.0, -0.05).rotation.x = 0.3;
+  add(g, new THREE.BoxGeometry(0.025, 0.035, 0.12), metal, 0, 0.16, -0.08);
+  markTrail(g, 0.1, 0.37);
+  return g;
+}
+function bazooka(): THREE.Group {
+  const g = new THREE.Group();
+  const olive = mat(0x4f5a2e, 0.2, 0.6);
+  const dark = mat(0x26262c, 0.3, 0.5);
+  add(g, new THREE.CylinderGeometry(0.055, 0.055, 0.95, 16, 1, true), olive, 0, 0.22, 0.07);
+  add(g, new THREE.CylinderGeometry(0.07, 0.06, 0.08, 16, 1, true), dark, 0, 0.7, 0.07);
+  add(g, new THREE.CylinderGeometry(0.065, 0.055, 0.06, 16, 1, true), dark, 0, -0.27, 0.07);
+  add(g, new THREE.BoxGeometry(0.03, 0.04, 0.1), dark, 0, 0.0, -0.01);
+  markTrail(g, 0.0, 0.75);
+  return g;
+}
+
 /** Builds a weapon by name, or null for names that are not anime weapons. */
 export function buildWeapon(name: string): THREE.Group | null {
   switch (name) {
@@ -285,6 +456,29 @@ export function buildWeapon(name: string): THREE.Group | null {
     case "Nunchaku":
     case "Nunchaku_Offhand":
       return nunchaku();
+    case "Mugenjin":
+      // Shishio's blade: saw-toothed, dark, its edge notched to hold the flames.
+      return katana(0.76, 0.27, 1, { teeth: 22, steel: 0xa8a8b0, hilt: 0x3a1e1a });
+    case "Chokuto":
+      // Straight, plain, a small guard: the ninja's sword.
+      return katana(0.68, 0.22, 1, { curve: 0, hilt: 0x2a2a30, guard: 0.03 });
+    case "Claws":
+    case "Claws_Offhand":
+      return claws();
+    case "Staff_Gnarled":
+      return gnarledStaff();
+    case "Pan":
+      return pan();
+    case "Bottle":
+      return bottle();
+    case "Chainsaw":
+      return chainsaw();
+    case "Sniper":
+      return sniper();
+    case "Gun":
+      return gun();
+    case "Bazooka":
+      return bazooka();
     default:
       return null;
   }

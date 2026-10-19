@@ -15,11 +15,12 @@ import { FIGHTER_HEIGHT, bodyCenter, lockTarget, type BrawlWorld, type Fighter }
 import { Animator } from "./animator.ts";
 import { applyWear, damageStage, propColor, wearLean } from "./damage.ts";
 import { buildEnvironment } from "./environment.ts";
-import { defaultLook, instantiate, proceduralEnv, weaponStyle, type ModelInstance, type ModelLibrary } from "./models.ts";
+import { attachWeapon, defaultLook, instantiate, proceduralEnv, weaponStyle, type ModelInstance, type ModelLibrary } from "./models.ts";
 import { glowTexture, magicCircleTexture, noOutline, toon } from "./toon.ts";
 import { WeaponTrail } from "./trail.ts";
 import { buildPizza } from "./pizza.ts";
 import { Vfx } from "./vfx.ts";
+import { handLook, projectileLook, zoneFlames, type HandLook, type ProjectileLook } from "./moveFx.ts";
 
 interface FighterView {
   root: THREE.Group;
@@ -47,6 +48,10 @@ interface FighterView {
   /** Frames rendered for this fighter. */
   frame: number;
   wasAirborne: boolean;
+  /** Per special: what glows in the hand or on the blade, a weapon taken just for it. */
+  moveFx: { slot: number; hand: HandLook | null; weapon: THREE.Group | null }[];
+  /** The weapons held the rest of the time (hidden while a special's own weapon is out). */
+  mainWeapons: THREE.Object3D[];
 }
 
 /** Small coloured label (« J1 », « CPU3 ») drawn on a canvas, for the tag over a fighter's head. */
@@ -92,7 +97,12 @@ export class ArenaView {
   readonly camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
   private fighters: FighterView[] = [];
   private projectiles = new Map<object, THREE.Group>();
-  private zones = new Map<object, { group: THREE.Group; circle: THREE.Mesh; fill: THREE.Mesh; center: THREE.Vector3; color: string }>();
+  /** Projectiles with a look of their own (beam, fire, bullet, rocket). */
+  private looks = new Map<object, { look: ProjectileLook; kind: string; color: string }>();
+  private zones = new Map<
+    object,
+    { group: THREE.Group; circle: THREE.Mesh; fill: THREE.Mesh; center: THREE.Vector3; color: string; look?: string; fire?: THREE.Group; leap?: boolean; owner: number; radius: number }
+  >();
   private camPos = new THREE.Vector3(0, 6, 14);
   private camLook = new THREE.Vector3();
   private lastEvent = 0;
@@ -244,6 +254,47 @@ export class ArenaView {
     );
     root.add(chargeOrb);
 
+    // The looks of the specials that the model carries: a weapon drawn just for one, what
+    // glows in the hand or along the blade.
+    const moveFx: FighterView["moveFx"] = [];
+    const mainWeapons: THREE.Object3D[] = [];
+    if (model) {
+      const rig = model.root;
+      rig.traverse((o) => {
+        if (o.userData.weapon) mainWeapons.push(o);
+      });
+      f.kit.specials.forEach((sp, slot) => {
+        const style = ch.moves[sp.id];
+        if (!style || (!style.hand && !style.weapon)) return;
+        let weapon: THREE.Group | null = null;
+        if (style.weapon) {
+          const host = rig.children[0] ?? rig;
+          weapon = attachWeapon(host, style.weapon);
+          if (weapon) weapon.visible = false;
+        }
+        let hand: HandLook | null = null;
+        if (style.hand) {
+          // Flames go along the blade (the special's own weapon, else the main one).
+          const blade = style.hand === "fire" ? (weapon ?? mainWeapons.find((w) => !String(w.userData.weapon).endsWith("_Offhand"))) : undefined;
+          const tip = blade?.getObjectByName("trailTip");
+          hand = handLook(style.hand, style.color ?? ch.colors.secondary, tip ? tip.position.y : 0);
+          if (blade && tip) blade.add(hand.obj);
+          else {
+            const bone = rig.getObjectByName("rightHand");
+            if (bone) {
+              bone.add(hand.obj);
+              // Just past the knuckles, in the bone's units.
+              const scale = bone.getWorldScale(new THREE.Vector3()).x || 1;
+              hand.obj.position.set(-0.09 / scale, -0.01 / scale, 0);
+              hand.obj.scale.setScalar(1 / scale);
+            } else hand = null;
+          }
+          if (hand) hand.obj.visible = false;
+        }
+        moveFx.push({ slot, hand, weapon });
+      });
+    }
+
     let trail: WeaponTrail | null = null;
     if (model?.trail) {
       trail = new WeaponTrail();
@@ -253,7 +304,7 @@ export class ArenaView {
     this.scene.add(root);
     return {
       root, model, animator, materials, shadow, ring, tag, guard, aura, stars, chargeOrb, lowHp, trail,
-      flashUntil: 0, slashKey: "", wasAirborne: false, windupKey: "", frame: 0,
+      flashUntil: 0, slashKey: "", wasAirborne: false, windupKey: "", frame: 0, moveFx, mainWeapons,
     };
   }
 
@@ -524,6 +575,22 @@ export class ArenaView {
     v.stars.visible = a?.kind === "guardbroken";
     v.stars.rotation.y = t * 6;
 
+    // A special under way: its own weapon in hand, its light in the fist or on the blade.
+    const slot = a && (a.kind === "special" || a.kind === "rush" || a.kind === "leap" || a.kind === "counter") ? a.slot : -1;
+    let swapped = false;
+    for (const fx of v.moveFx) {
+      const on = fx.slot === slot && f.alive;
+      if (fx.weapon) {
+        fx.weapon.visible = on;
+        swapped ||= on;
+      }
+      if (fx.hand) {
+        fx.hand.obj.visible = on;
+        if (on) fx.hand.update(t);
+      }
+    }
+    for (const m of v.mainWeapons) if (!String(m.userData.weapon).endsWith("_Offhand")) m.visible = !swapped;
+
     v.chargeOrb.visible = a?.kind === "heavy" && a.charging;
     if (a?.kind === "heavy" && a.charging) {
       const k = f.kit.heavy.maxCharge > 0 ? a.charge / f.kit.heavy.maxCharge : 0;
@@ -656,48 +723,89 @@ export class ArenaView {
 
   private syncProjectiles(): void {
     const seen = new Set<object>();
+    const t = this.world.time;
     for (const p of this.world.projectiles) {
       if (p.prop !== undefined) continue; // drawn as the prop itself
       seen.add(p);
       let g = this.projectiles.get(p);
+      const ch = this.characters[p.owner]!;
+      const id = this.world.fighters[p.owner]!.kit.specials[p.slot]?.id;
+      const style = id ? ch.moves[id] : undefined;
+      const color = style?.color ?? ch.colors.secondary;
       if (!g) {
-        const ch = this.characters[p.owner]!;
-        g = new THREE.Group();
-        const id = this.world.fighters[p.owner]!.kit.specials[p.slot]?.id;
-        const pizzaLook = !!id && ch.moves[id]?.projectile === "pizza";
-        if (pizzaLook) {
-          // A pizza flung like a frisbee: tilted, spinning, a faint glow behind it.
-          const pizza = buildPizza(Math.max(0.4, p.size * 1.4));
-          pizza.rotation.z = 0.25;
-          pizza.userData.spin = true;
-          g.add(pizza);
+        const owner = this.world.fighters[p.owner]!;
+        // Fired from the hands (or the muzzle) of the owner as drawn now.
+        const hand = this.fighters[p.owner]?.model?.root.getObjectByName("rightHand");
+        const origin = hand ? hand.getWorldPosition(new THREE.Vector3()) : this.center(owner).add(new THREE.Vector3(owner.facing.x, 0, owner.facing.z).multiplyScalar(0.5));
+        const look = projectileLook(this.scene, style?.projectile, color, p.size, origin);
+        if (look) {
+          g = look.group;
+          this.looks.set(p, { look, kind: style!.projectile!, color });
+          if (style?.projectile === "bullet" || style?.projectile === "rocket") this.vfx.glint(origin, 0xffd27a, 1.2);
+          if (style?.projectile === "beam") this.vfx.ring(origin, color, 1.6);
+          this.projectiles.set(p, g);
+        } else {
+          g = new THREE.Group();
+          const pizzaLook = style?.projectile === "pizza";
+          if (pizzaLook) {
+            // A pizza flung like a frisbee: tilted, spinning, a faint glow behind it.
+            const pizza = buildPizza(Math.max(0.4, p.size * 1.4));
+            pizza.rotation.z = 0.25;
+            pizza.userData.spin = true;
+            g.add(pizza);
+          }
+          const halo = new THREE.Sprite(
+            noOutline(new THREE.SpriteMaterial({ map: this.glow, color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })),
+          );
+          halo.scale.setScalar(p.size * 3.4);
+          const core = new THREE.Sprite(
+            noOutline(new THREE.SpriteMaterial({ map: this.glow, color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })),
+          );
+          core.scale.setScalar(p.size * 0.9);
+          // Behind a drawn object, only a faint glow.
+          if (pizzaLook) {
+            halo.material.opacity = 0.18;
+            g.add(halo);
+          } else g.add(halo, core);
+          this.scene.add(g);
+          this.projectiles.set(p, g);
         }
-        const halo = new THREE.Sprite(
-          noOutline(new THREE.SpriteMaterial({ map: this.glow, color: ch.colors.secondary, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })),
-        );
-        halo.scale.setScalar(p.size * 3.4);
-        const core = new THREE.Sprite(
-          noOutline(new THREE.SpriteMaterial({ map: this.glow, color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })),
-        );
-        core.scale.setScalar(p.size * 0.9);
-        // Behind a drawn object, only a faint glow.
-        if (pizzaLook) {
-          halo.material.opacity = 0.18;
-          g.add(halo);
-        } else g.add(halo, core);
-        this.scene.add(g);
-        this.projectiles.set(p, g);
       }
       g.position.copy(this.drawn(p));
+      const dir = new THREE.Vector3(p.dir.x, p.dir.y, p.dir.z);
+      this.looks.get(p)?.look.update(t, g.position, dir);
       for (const c of g.children) if (c.userData.spin) c.rotation.y += 0.45;
-      if (this.frame % 2 === 0) this.vfx.speedLines(g.position.clone(), new THREE.Vector3(p.dir.x, p.dir.y, p.dir.z), this.characters[p.owner]!.colors.secondary);
+      const kind = this.looks.get(p)?.kind;
+      if (kind === "fire" || kind === "rocket") {
+        if (this.frame % 3 === 0) this.vfx.puff(g.position.clone().addScaledVector(dir, -0.4), kind === "rocket" ? 0.5 : 0.7);
+      } else if (kind !== "beam" && this.frame % 2 === 0) this.vfx.speedLines(g.position.clone(), dir, color);
     }
     for (const [p, g] of this.projectiles)
       if (!seen.has(p)) {
-        this.vfx.ring(g.position.clone(), 0xffffff, 1.5);
-        this.scene.remove(g);
+        const look = this.looks.get(p);
+        const at = g.position.clone();
+        if (look) {
+          look.look.dispose();
+          this.looks.delete(p);
+          if (look.kind === "rocket" || look.kind === "fire") this.explosion(at, look.kind === "rocket" ? 1.4 : 0.9);
+          else if (look.kind === "beam") {
+            this.vfx.hit(at, look.color, true);
+            this.vfx.ring(at, look.color, 3);
+          } else this.vfx.glint(at, 0xffd27a, 0.8);
+        } else {
+          this.vfx.ring(at, 0xffffff, 1.5);
+          this.scene.remove(g);
+        }
         this.projectiles.delete(p);
       }
+  }
+
+  /** A burst of fire and smoke: rockets, fireballs, exploding areas. */
+  private explosion(at: THREE.Vector3, size: number): void {
+    this.vfx.hit(at, 0xff7a1a, true);
+    this.vfx.ring(at, 0xffb347, 2.4 * size);
+    this.vfx.flames(at, Math.round(8 * size), size);
+    this.vfx.shake = Math.max(this.vfx.shake, 0.3 * size);
   }
 
   /** Area specials: a magic circle in the owner's colour, filling up until the strike. */
@@ -708,7 +816,11 @@ export class ArenaView {
       seen.add(z);
       let entry = this.zones.get(z);
       if (!entry) {
-        const color = this.characters[z.owner]!.colors.primary;
+        const ch = this.characters[z.owner]!;
+        const id = this.world.fighters[z.owner]!.kit.specials[z.slot]?.id;
+        const style = id ? ch.moves[id] : undefined;
+        const look = style?.zone;
+        const color = look === "fire" ? "#ff6a1a" : look === "blast" ? "#ff3a2a" : (style?.color ?? ch.colors.primary);
         const group = new THREE.Group();
         const circle = new THREE.Mesh(
           new THREE.PlaneGeometry(z.radius * 2, z.radius * 2),
@@ -723,17 +835,27 @@ export class ArenaView {
         group.add(circle, fill);
         group.position.set(z.center.x, z.center.y + 0.04, z.center.z);
         this.scene.add(group);
-        entry = { group, circle, fill, center: group.position.clone(), color };
+        entry = { group, circle, fill, center: group.position.clone(), color, look, leap: z.leap, owner: z.owner, radius: z.radius };
+        if (look === "fire") {
+          entry.fire = zoneFlames(z.radius);
+          group.add(entry.fire);
+        }
         this.zones.set(z, entry);
       }
       const k = Math.min(1, (t - z.createdAt) / Math.max(1e-6, z.triggerAt - z.createdAt));
       entry.fill.scale.setScalar(Math.max(0.01, k));
       entry.circle.rotation.z = t * 1.5;
       (entry.circle.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.5 * k;
+      (entry.fire?.userData.flicker as ((t: number, k: number) => void) | undefined)?.(t, k);
     }
     for (const [z, e] of this.zones)
       if (!seen.has(z)) {
-        // The circle resolves: a burst of light where it struck.
+        // The circle resolves: a burst of light where it struck (of fire, an explosion).
+        const radius = (z as { radius: number }).radius;
+        // (A leap cut short in the air takes its circle away without striking.)
+        const owner = this.world.fighters[e.owner]!;
+        const landed = !e.leap || Math.hypot(owner.pos.x - e.center.x, owner.pos.z - e.center.z) < e.radius + 0.5;
+        if (e.look && landed) this.explosion(e.center.clone().setY(e.center.y + 0.6), radius * 0.6);
         this.vfx.groundWave(e.center, e.color, (z as { radius: number }).radius * 1.6);
         this.vfx.ring(e.center.clone().setY(e.center.y + 1), e.color, (z as { radius: number }).radius * 1.5);
         this.scene.remove(e.group);

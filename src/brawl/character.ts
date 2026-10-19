@@ -23,6 +23,13 @@ export interface Look {
   /** Anime models: colour multiplied over the hair, and over the clothes. */
   hair?: string;
   outfit?: string;
+  /** Models built in code: second and third cloth colours, skin, eyes. */
+  accent?: string;
+  trim?: string;
+  skin?: string;
+  eyes?: string;
+  /** A sign worn on the clothes: a few letters (e.g. a kanji), or "spiral" / "fan". */
+  emblem?: string;
   /** Face of models that have several (turtle): "fierce" (default), "calm", "wild". */
   expression?: "fierce" | "calm" | "wild";
 }
@@ -45,9 +52,19 @@ export interface MoveStyle {
   slashes?: number;
   /** Look of a projectile special: a ball of light (default) or one of the drawn objects. */
   projectile?: (typeof PROJECTILE_LOOKS)[number];
+  /** Look of an area special's circle and burst: a magic circle (default), fire, or an explosion. */
+  zone?: (typeof ZONE_LOOKS)[number];
+  /** What glows in the hand (or on the blade) from the start of the special to its end. */
+  hand?: (typeof HAND_LOOKS)[number];
+  /** Colour of the technique's light (beam, ball, aura in the hand), else the character's. */
+  color?: string;
+  /** A weapon taken in hand for this special only (a chainsaw, a rifle), by name. */
+  weapon?: string;
 }
 
-export const PROJECTILE_LOOKS = ["pizza"] as const;
+export const PROJECTILE_LOOKS = ["pizza", "beam", "fire", "bullet", "rocket"] as const;
+export const ZONE_LOOKS = ["fire", "blast"] as const;
+export const HAND_LOOKS = ["ki", "orb", "lightning", "fire"] as const;
 
 const COLOR = /^#[0-9a-fA-F]{6}$/;
 
@@ -84,6 +101,10 @@ function parseMoves(v: unknown): Record<string, MoveStyle> {
     }
     if (typeof o.slashes === "number" && Number.isFinite(o.slashes)) style.slashes = Math.max(0, Math.min(12, Math.round(o.slashes)));
     if ((PROJECTILE_LOOKS as readonly unknown[]).includes(o.projectile)) style.projectile = o.projectile as MoveStyle["projectile"];
+    if ((ZONE_LOOKS as readonly unknown[]).includes(o.zone)) style.zone = o.zone as MoveStyle["zone"];
+    if ((HAND_LOOKS as readonly unknown[]).includes(o.hand)) style.hand = o.hand as MoveStyle["hand"];
+    if (typeof o.color === "string" && COLOR.test(o.color)) style.color = o.color;
+    if (typeof o.weapon === "string" && /^[A-Za-z0-9_]{1,40}$/.test(o.weapon)) style.weapon = o.weapon;
     out[id] = style;
   }
   return out;
@@ -93,10 +114,14 @@ function parseLook(v: unknown): Look | undefined {
   if (typeof v !== "object" || v === null) return undefined;
   const o = v as Record<string, unknown>;
   if (!ALL_MODELS.includes(o.model as string)) return undefined;
-  const show = Array.isArray(o.show) ? o.show.filter((s): s is string => typeof s === "string" && /^[A-Za-z0-9_]{1,40}$/.test(s)).slice(0, 8) : [];
+  const show = Array.isArray(o.show) ? o.show.filter((s): s is string => typeof s === "string" && /^[A-Za-z0-9_]{1,40}$/.test(s)).slice(0, 20) : [];
   const tint = typeof o.tint === "string" && COLOR.test(o.tint) ? o.tint : "#ffffff";
   const look: Look = { model: o.model as ModelId, show, tint };
-  for (const k of ["hair", "outfit"] as const) if (typeof o[k] === "string" && COLOR.test(o[k] as string)) look[k] = o[k] as string;
+  for (const k of ["hair", "outfit", "accent", "trim", "skin", "eyes"] as const) if (typeof o[k] === "string" && COLOR.test(o[k] as string)) look[k] = o[k] as string;
+  if (typeof o.emblem === "string") {
+    const t = [...o.emblem.trim()].filter((ch) => /\p{L}|\p{N}/u.test(ch)).slice(0, 8).join("");
+    if (t) look.emblem = t;
+  }
   if (o.expression === "fierce" || o.expression === "calm" || o.expression === "wild") look.expression = o.expression;
   return look;
 }

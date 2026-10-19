@@ -7,12 +7,20 @@ import * as THREE from "three";
 import { keyClip, mix, over, poseClip, reactionClips, type Key, type Pose } from "./poses.ts";
 import { SWORDSMAN_BONES } from "./swordsman.ts";
 
-type V = [number, number, number];
+export type V = [number, number, number];
 
-type BoneTable = [string, string | null, number, number, number][];
+export type BoneTable = [string, string | null, number, number, number][];
 const restOf = (table: BoneTable) => new Map(table.map(([name, parent, x, y, z]) => [name, { parent, pos: new THREE.Vector3(x, y, z) }]));
 /** Rest skeleton the solver works on: set by each entry point for the model it poses. */
 let REST = restOf(SWORDSMAN_BONES);
+/** Sets the rest skeleton the solver works on (each style's entry point calls it). */
+export function useBones(bones: BoneTable): void {
+  REST = restOf(bones);
+}
+/** One-handed weapons (a club, a pan, a bottle): the off hand never joins the grip. */
+let ONE_HAND = false;
+/** The free arm of a one-handed style: forward, bent, for balance and guard. */
+const OFF_GUARD: Pose["bones"] = { leftUpperArm: [0, -0.9, -0.95], leftLowerArm: [0, -1.2, 0], leftHand: [0, 0, 0.2] };
 
 const euler = new THREE.Euler();
 /** Local rotation of a bone in a pose. */
@@ -24,7 +32,7 @@ function local(p: Pose, bone: string): THREE.Quaternion {
 }
 
 /** Rig-space rotation and position of a bone in a pose (forward kinematics). */
-function fk(p: Pose, bone: string): { q: THREE.Quaternion; pos: THREE.Vector3 } {
+export function fk(p: Pose, bone: string): { q: THREE.Quaternion; pos: THREE.Vector3 } {
   const r = REST.get(bone)!;
   if (!r.parent) {
     const h = p.hips ?? [0, 0, 0];
@@ -72,7 +80,7 @@ const qArr = (q: THREE.Quaternion): [number, number, number, number] => [q.x, q.
  * (rig space; null keeps the wrist straight). The elbow bends toward `pole`. Twists are
  * chosen to keep the sleeves hanging and the wrist as straight as it can be.
  */
-function solveArm(p: Pose, side: 1 | -1, target: THREE.Vector3, hand: THREE.Quaternion | null, pole: THREE.Vector3): Pose["q"] {
+export function solveArm(p: Pose, side: 1 | -1, target: THREE.Vector3, hand: THREE.Quaternion | null, pole: THREE.Vector3): Pose["q"] {
   const s = side > 0 ? "left" : "right";
   const chest = fk(p, "chest");
   const restU = REST.get(`${s}UpperArm`)!.pos;
@@ -105,7 +113,7 @@ function solveArm(p: Pose, side: 1 | -1, target: THREE.Vector3, hand: THREE.Quat
   return out;
 }
 
-interface Grip {
+export interface Grip {
   /** Sword hand, from the hips (in the hips' frame), metres. */
   at: V;
   /** Where the blade points, and where its edge faces (hips' frame). */
@@ -121,13 +129,17 @@ interface Grip {
 }
 
 /** The body pose with its arms solved to hold the sword as `g` says. */
-function armed(body: Pose, g: Grip): Pose {
+export function armed(body: Pose, g: Grip): Pose {
   const hips = fk(body, "hips");
   const at = new THREE.Vector3(...g.at).applyQuaternion(hips.q).add(hips.pos);
   const blade = new THREE.Vector3(...g.blade).normalize().applyQuaternion(hips.q);
   const edge = new THREE.Vector3(...(g.edge ?? [0, -1, 0.2])).applyQuaternion(hips.q);
   const grip = gripRotation(blade, edge);
   const p: Pose = { hips: body.hips, bones: { ...body.bones }, q: { ...(body.q ?? {}) } };
+  if (ONE_HAND) {
+    g = { ...g, two: false };
+    if (!p.bones.leftUpperArm && !p.q!.leftUpperArm) Object.assign(p.bones, OFF_GUARD);
+  }
   for (const b of ["rightUpperArm", "rightLowerArm", "rightHand"]) delete p.bones[b];
   Object.assign(p.q!, solveArm(body, -1, at, grip, new THREE.Vector3(...(g.pole ?? [-0.6, -1, -0.4]))));
   if (g.two !== false) {
@@ -142,7 +154,7 @@ function armed(body: Pose, g: Grip): Pose {
 const L = (lu: V, ll: V) => ({ leftUpperArm: lu, leftLowerArm: ll });
 
 /** Bodies (legs, trunk, head) shared by the weapon styles, from the swordsman's sheet. */
-function bodies() {
+export function bodies() {
 
   /** Low, wide stance (sheet, third pose): knees out, weight forward, eyes on the foe. */
   const low: Pose = {
@@ -193,8 +205,17 @@ function bodies() {
 
 
 /** The sword style on a humanoid skeleton (the swordsman's by default, or the turtle's). */
-export function swordsmanPoses(hipsRest: THREE.Vector3, bones: BoneTable = SWORDSMAN_BONES): Map<string, THREE.AnimationClip> {
+export function swordsmanPoses(hipsRest: THREE.Vector3, bones: BoneTable = SWORDSMAN_BONES, opts: { oneHand?: boolean } = {}): Map<string, THREE.AnimationClip> {
   REST = restOf(bones);
+  ONE_HAND = !!opts.oneHand;
+  try {
+    return swordClips(hipsRest, ONE_HAND);
+  } finally {
+    ONE_HAND = false;
+  }
+}
+
+function swordClips(hipsRest: THREE.Vector3, oneHand: boolean): Map<string, THREE.AnimationClip> {
   const { low, lunge, tucked, turn } = bodies();
 
   // ---- Stances.
@@ -331,6 +352,31 @@ export function swordsmanPoses(hipsRest: THREE.Vector3, bones: BoneTable = SWORD
     );
   const rush = keyClip("@rush", [[0, dash(1)], [0.5, dash(-1)], [1, dash(1)]], 0.3, hipsRest, { loop: true });
 
+  // ---- Projectile. With a sword: a rising cut that sends its wave (or its flame) at the
+  // foe. One-handed: the weapon (a gun, a rifle) shouldered in both hands, aimed, and a
+  // recoil at the shot.
+  let shot: THREE.AnimationClip;
+  if (oneHand) {
+    ONE_HAND = false;
+    const aimBody = turn(over(low, { spine: [0.08, 0, 0], head: [-0.05, 0, 0] }, [0, -0.16, 0]), 0.5);
+    const aim = armed(aimBody, { at: [-0.12, 0.5, 0.32], blade: [0.12, 0.02, 1], edge: [0, -1, 0], gap: 0.22 });
+    const aimB = armed(aimBody, { at: [-0.12, 0.505, 0.32], blade: [0.12, 0.03, 1], edge: [0, -1, 0], gap: 0.22 });
+    const kick = armed(over(aimBody, { spine: [-0.08, 0, 0], head: [0.08, 0, 0] }, [0, -0.15, -0.04]), { at: [-0.12, 0.56, 0.24], blade: [0.12, 0.35, 1], edge: [0, -1, 0], gap: 0.22 });
+    shot = keyClip("@special:projectile", [[0, stance], [0.2, aim], [0.38, aimB], [0.42, kick, "out"], [0.6, aim], [0.85, aim], [1, stance]], 1.0, hipsRest, { impact: 0.42 });
+    ONE_HAND = true;
+  } else shot = keyClip("@special:projectile", blow(ageCoil, age, stance, 1.12), 0.75, hipsRest, { impact: 0.42 });
+
+  // ---- Area: a full turn, the blade flat at arm's length, twice round.
+  const whirlAt = (yaw: number): Pose =>
+    armed(over(lunge, { hips: [0, yaw, 0], spine: [0.25, 0, 0], ...L([0, 0.45, -1.05], [0, -0.9, 0]) }, [0, -0.22, 0]), { at: [-0.4, 0.4, 0.3], blade: [-0.2, 0.02, 1], edge: [-1, 0, 0], two: false });
+  const whirl = keyClip(
+    "@special:area",
+    [[0, stance], [0.2, whirlAt(0)], [0.42, whirlAt(-Math.PI)], [0.64, whirlAt(-Math.PI * 2)], [0.86, whirlAt(-Math.PI * 3)], [1, whirlAt(-Math.PI * 4)]],
+    0.9,
+    hipsRest,
+    { impact: 0.42, linear: true },
+  );
+
   // Rolls tuck the sword along the body.
   const ball: Pose = armed(
     {
@@ -356,6 +402,8 @@ export function swordsmanPoses(hipsRest: THREE.Vector3, bones: BoneTable = SWORD
     ["@counter:miss", counterMiss],
     ["@special:rush", enterCharge],
     ["@rush", rush],
+    ["@special:projectile", shot],
+    ["@special:area", whirl],
     ...reactionClips(hipsRest, stance, guard, air, ball),
     ["Idle", poseClip("Idle", stance, stanceB, 2.4, hipsRest)],
     ["Blocking", poseClip("Blocking", guard, { ...guard, hips: [0, -0.16, 0] }, 1.4, hipsRest)],
