@@ -1354,7 +1354,7 @@ export function hairShader(m: THREE.MeshPhysicalMaterial): void {
         "#include <map_fragment>",
         `#include <map_fragment>
         #ifdef USE_MAP
-          diffuseColor.rgb *= mix(0.5, 1.12, smoothstep(0.0, 0.75, vMapUv.y));
+          diffuseColor.rgb *= mix(vec3(0.42, 0.3, 0.3), vec3(1.12, 1.1, 1.02), smoothstep(0.0, 0.8, vMapUv.y));
         #endif`,
       )
       .replace(
@@ -1379,7 +1379,7 @@ export function hairShader(m: THREE.MeshPhysicalMaterial): void {
             float s1 = pow(sqrt(max(0.0, 1.0 - d1 * d1)), 48.0);
             float s2 = pow(sqrt(max(0.0, 1.0 - d2 * d2)), 22.0);
             float lit = 0.35 + 0.65 * clamp(dot(n, L) * 0.5 + 0.5, 0.0, 1.0);
-            outgoingLight += (vec3(1.0, 0.96, 0.9) * s1 * 0.8 + diffuseColor.rgb * s2 * 0.45) * lit;
+            outgoingLight += (vec3(1.0, 0.96, 0.9) * s1 * 1.1 + diffuseColor.rgb * s2 * 0.5) * lit;
           }
         }
         #endif
