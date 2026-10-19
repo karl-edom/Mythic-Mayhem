@@ -21,14 +21,6 @@ export function toon(color: THREE.ColorRepresentation, map: THREE.Texture | null
   return new THREE.MeshToonMaterial({ color, map, gradientMap: toonGradient() });
 }
 
-/** Turns any loaded material into a cel-shaded one, keeping its texture and colour. */
-export function toToon(m: THREE.Material): THREE.MeshToonMaterial {
-  const src = m as THREE.MeshStandardMaterial;
-  const t = toon(src.color ?? 0xffffff, src.map ?? null);
-  t.name = src.name;
-  return t;
-}
-
 /** Effects (glows, rings, sparks) must not get an ink outline. */
 export function noOutline<T extends THREE.Material>(m: T): T {
   m.userData.outlineParameters = { visible: false };

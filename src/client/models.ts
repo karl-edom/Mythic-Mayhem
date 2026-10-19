@@ -1,13 +1,13 @@
-// Character models. Two families share one set of animations:
-// - KayKit chibis (CC0): their own skeleton, the clips play as they are;
-// - anime avatars from VRoid Studio (CC0): the clips are retargeted onto their
-//   humanoid skeleton (see retarget.ts), weapons are built in code (weapons.ts).
-// Every instance is cel-shaded and outlined.
+// Character models, all built in code: a humanoid with a wardrobe of parts and a
+// turtle. Their hand-keyed poses replace most clips; the few left (falls, cheers…)
+// are KayKit's (CC0), retargeted onto their skeleton (see retarget.ts). Weapons are
+// built in code too (weapons.ts). The first models (KayKit chibis, VRoid avatars)
+// were retired with the first fighters (decision 0024).
 
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
-import { ANIME_MODELS, MODELS, isAnime, type Look, type ModelId } from "../brawl/character.ts";
+import type { Look, ModelId } from "../brawl/character.ts";
 import { turtlePoses } from "./poses.ts";
 import { fistPoses } from "./fistPoses.ts";
 import { fistSignatures, signaturePoses } from "./signaturePoses.ts";
@@ -18,16 +18,11 @@ import "./creatureParts.ts";
 import { TURTLE_BONES, TURTLE_HEIGHT, animateTurtle, buildTurtleRig, paintTurtle } from "./turtle.ts";
 import type { Archetype } from "../brawl/kit.ts";
 import { KAYKIT_TO_HUMANOID, LOCOMOTION, LOCOMOTION_LEGS, Retargeter, amplifyClip, amplitudeFor, clenchFists } from "./retarget.ts";
-import { noOutline, outlineOf, toToon } from "./toon.ts";
+import { noOutline, outlineOf } from "./toon.ts";
 import { ANIME_WEAPONS, buildWeapon } from "./weapons.ts";
 
-/** KayKit fighters stand this tall on screen (feet to top of head): chibis need the extra size. */
-const MODEL_HEIGHT = 1.95;
-/** Anime fighters: realistic proportions, about the simulation's fighter height. */
+/** Fighters stand this tall on screen: about the simulation's fighter height. */
 const ANIME_HEIGHT = 1.8;
-
-/** Meshes that make the body itself; everything else is an accessory shown on request. */
-const BODY_PART = /_(ArmLeft|ArmRight|Body|Head|Head_Hooded|LegLeft|LegRight)$/;
 
 interface AnimeTemplate {
   /** Faces +Z like the KayKit rig (VRM 0.x avatars face −Z). */
@@ -48,7 +43,6 @@ interface AnimeTemplate {
 export const proceduralEnv: { map: THREE.Texture | null } = { map: null };
 
 export interface ModelLibrary {
-  templates: Map<ModelId, THREE.Object3D>;
   anime: Map<ModelId, AnimeTemplate>;
   /** KayKit clips, as authored. */
   clips: Map<string, THREE.AnimationClip>;
@@ -60,13 +54,13 @@ export interface ModelLibrary {
 export function defaultLook(archetype: Archetype): Look {
   switch (archetype) {
     case "rushdown":
-      return { model: "shino", show: ["Kunai", "Kunai_Offhand"], tint: "#ffffff" };
+      return { model: "swordsman", show: ["Kunai", "Kunai_Offhand", "Jacket", "Pants_Ninja", "Sandals_Ninja", "Hair_Spiky"], tint: "#ffffff", outfit: "#3a4a6a" };
     case "heavy":
-      return { model: "akane", show: ["2H_Odachi"], tint: "#ffffff" };
+      return { model: "swordsman", show: ["2H_Odachi", "Build_Muscular", "Vest", "Pants_Baggy", "Boots_Martial", "Hair_Spiky"], tint: "#ffffff", outfit: "#7a3a2a" };
     case "zoner":
-      return { model: "vita", show: ["2H_Staff"], tint: "#ffffff" };
+      return { model: "swordsman", show: ["Bo", "Robe_Tattered", "Pants_Baggy", "Sandals_Wrapped", "Hair_Saito"], tint: "#ffffff", outfit: "#2a5a5a" };
     default:
-      return { model: "kaito", show: ["1H_Katana"], tint: "#ffffff" };
+      return { model: "swordsman", show: ["1H_Katana", "Saya"], tint: "#ffffff" };
   }
 }
 
@@ -110,35 +104,10 @@ async function fetchModel(loader: GLTFLoader, url: string): Promise<Gltf> {
 
 export async function loadModels(base: string, onProgress?: (done: number, total: number) => void): Promise<ModelLibrary> {
   const loader = new GLTFLoader();
-  const files = [
-    ...MODELS.map((m) => `kaykit/${m}.${EXT}`),
-    `kaykit/animations.${EXT}`,
-    ...ANIME_MODELS.map((m) => `anime/${m}.${EXT}`),
-  ];
-  let done = 0;
-  const load = async (f: string) => {
-    const g = await fetchModel(loader, new URL(f, base).href);
-    onProgress?.(++done, files.length);
-    return g;
-  };
-  // A few files at a time: decoding dozens of textures at once makes some browsers drop images.
-  const loaded: Awaited<ReturnType<typeof load>>[] = [];
-  for (let i = 0; i < files.length; i += 3) loaded.push(...(await Promise.all(files.slice(i, i + 3).map(load))));
-  const templates = new Map<ModelId, THREE.Object3D>();
-  MODELS.forEach((m, i) => templates.set(m, loaded[i]!.scene));
-  const shared = loaded[MODELS.length]!;
+  // The shared clips and the skeleton they were authored on.
+  const shared = await fetchModel(loader, new URL(`kaykit/animations.${EXT}`, base).href);
+  onProgress?.(1, 1);
   const anime = new Map<ModelId, AnimeTemplate>();
-  ANIME_MODELS.forEach((m, i) => {
-    const scene = loaded[MODELS.length + 1 + i]!.scene;
-    const facing = new THREE.Group();
-    facing.rotation.y = Math.PI;
-    facing.add(scene);
-    const rig = new THREE.Group();
-    rig.add(facing);
-    rig.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(rig);
-    anime.set(m, { rig, height: box.max.y - Math.min(0, box.min.y) });
-  });
   const turtle = buildTurtleRig();
   const hipsRest = turtle.getObjectByName("hips")!.position.clone();
   anime.set("turtle", {
@@ -169,7 +138,6 @@ export async function loadModels(base: string, onProgress?: (done: number, total
     },
   });
   return {
-    templates,
     anime,
     clips: new Map(shared.animations.map((c) => [c.name, c] as const)),
     rig: shared.scene,
@@ -289,83 +257,7 @@ export interface ModelInstance {
 }
 
 export function instantiate(lib: ModelLibrary, look: Look): ModelInstance {
-  return isAnime(look.model) ? instantiateAnime(lib, look) : instantiateKaykit(lib, look);
-}
-
-function instantiateKaykit(lib: ModelLibrary, look: Look): ModelInstance {
-  const template = lib.templates.get(look.model)!;
-  const model = SkeletonUtils.clone(template);
-  const materials: THREE.MeshToonMaterial[] = [];
-  const tint = new THREE.Color(look.tint);
-  model.traverse((o) => {
-    if (!(o instanceof THREE.Mesh)) return;
-    const isBody = BODY_PART.test(o.name);
-    o.visible = isBody || look.show.includes(o.name);
-    const m = toToon(o.material as THREE.Material);
-    if (isBody) m.color.multiply(tint);
-    outlineOf(m, 0.004);
-    o.material = m;
-    o.castShadow = true;
-    o.receiveShadow = false;
-    o.frustumCulled = false; // skinned bounds do not follow animations
-    materials.push(m);
-  });
-  // Normalise height: feet on the ground, MODEL_HEIGHT tall.
-  const root = new THREE.Group();
-  root.add(model);
-  model.scale.setScalar(MODEL_HEIGHT / 2.45);
-  return { root, mixer: new THREE.AnimationMixer(model), clips: lib.clips, materials, trail: null };
-}
-
-// ---------------------------------------------------------------------------
-// Anime avatars.
-
-/** Shading hints written by tools/build-anime.ts into each material's extras. */
-interface AnimeHints {
-  kind?: "skin" | "cloth" | "hair" | "face" | "eye";
-  shade?: [number, number, number];
-  queue?: number;
-}
-
-const gradients = new Map<string, THREE.DataTexture>();
-
-/**
- * Two-step toon ramp whose dark step is the avatar's own shade colour (as in its
- * MToon material): pinkish shadows on skin, bluish on clothes. That is the anime look.
- */
-function shadeRamp(shade: [number, number, number]): THREE.DataTexture {
-  const key = shade.map((v) => v.toFixed(3)).join();
-  let g = gradients.get(key);
-  if (!g) {
-    const c = new THREE.Color().setRGB(shade[0], shade[1], shade[2], THREE.SRGBColorSpace);
-    const steps = new Uint8Array([c.r * 255, c.g * 255, c.b * 255, 255, 255, 255, 255, 255]);
-    g = new THREE.DataTexture(steps, 2, 1, THREE.RGBAFormat);
-    g.minFilter = g.magFilter = THREE.NearestFilter;
-    g.generateMipmaps = false;
-    g.needsUpdate = true;
-    gradients.set(key, g);
-  }
-  return g;
-}
-
-function animeMaterial(src: THREE.MeshStandardMaterial, look: Look): THREE.MeshToonMaterial {
-  const hints = src.userData as AnimeHints;
-  const kind = hints.kind ?? "cloth";
-  const m = new THREE.MeshToonMaterial({
-    color: src.color,
-    map: src.map,
-    gradientMap: shadeRamp(hints.shade ?? [0.75, 0.75, 0.85]),
-    transparent: src.transparent,
-    alphaTest: src.alphaTest,
-    side: src.side,
-    depthWrite: src.depthWrite,
-  });
-  m.name = src.name;
-  if (kind === "hair" && look.hair) m.color.multiply(new THREE.Color(look.hair));
-  if (kind === "cloth" && look.outfit) m.color.multiply(new THREE.Color(look.outfit));
-  if (kind === "skin" || kind === "cloth" || kind === "hair") outlineOf(m, 0.0028);
-  else noOutline(m);
-  return m;
+  return instantiateAnime(lib, look);
 }
 
 /** World rotation of a weapon held in each hand in the T-pose, as on the KayKit rig. */
@@ -402,27 +294,15 @@ function instantiateAnime(lib: ModelLibrary, look: Look): ModelInstance {
   const materials: (THREE.MeshToonMaterial | THREE.MeshStandardMaterial)[] = [];
   rig.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return;
-    if (t.procedural) {
-      // Own copies (hit flashes, mask colour), reflections, a thin ink line for readability.
-      const m = (o.material as THREE.MeshStandardMaterial).clone();
-      m.envMap = proceduralEnv.map;
-      m.envMapIntensity = 0.8;
-      // Painted decals (a face) lie on the skin: no ink line round their edge.
-      if (m.transparent) noOutline(m);
-      else outlineOf(m, 0.0022);
-      o.material = m;
-      o.castShadow = true;
-      o.frustumCulled = false;
-      materials.push(m);
-      return;
-    }
-    const src = o.material as THREE.MeshStandardMaterial;
-    // Draw order from the avatar (eyelashes and highlights over the face).
-    o.renderOrder = ((src.userData as AnimeHints).queue ?? 2000) - 2000;
-    const m = animeMaterial(src, look);
+    // Own copies (hit flashes, mask colour), reflections, a thin ink line for readability.
+    const m = (o.material as THREE.MeshStandardMaterial).clone();
+    m.envMap = proceduralEnv.map;
+    m.envMapIntensity = 0.8;
+    // Painted decals (a face) lie on the skin: no ink line round their edge.
+    if (m.transparent) noOutline(m);
+    else outlineOf(m, 0.0022);
     o.material = m;
     o.castShadow = true;
-    o.receiveShadow = false;
     o.frustumCulled = false;
     materials.push(m);
   });

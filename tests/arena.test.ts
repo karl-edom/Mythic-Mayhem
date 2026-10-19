@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { buildArena, validateArena, type ArenaDef } from "../src/brawl/arena.ts";
 import type { FighterKit } from "../src/brawl/kit.ts";
-import { loadAllPacks, loadArenas, loadPropCatalog } from "../src/brawl/load.ts";
+import { loadArenas, loadBrawlCosts, loadPropCatalog } from "../src/brawl/load.ts";
+import { randomRoster } from "../src/brawl/generate.ts";
+import { rng } from "../src/sim/math.ts";
 import { runDuel } from "../src/brawl/match.ts";
 import { canSee, createBrawl, step, type BrawlWorld, type Command } from "../src/brawl/world.ts";
 
@@ -95,9 +97,8 @@ test("on peut sauter sur une caisse et y rester debout", () => {
 });
 
 test("un duel de bots se termine sur chaque arène", () => {
-  const kits = loadAllPacks()
-    .filter((p) => p.dir.startsWith("data/"))
-    .map((p) => (p.result.ok ? p.result.kit : (undefined as never)));
+  const costs = loadBrawlCosts();
+  const kits = randomRoster(rng(11), 2, costs, costs.budget.target);
   for (const def of loadArenas(catalog)) {
     const r = runDuel(kits[0]!, kits[1]!, 3, undefined, undefined, buildArena(def, catalog));
     assert.equal(r.world.over, true, def.id);

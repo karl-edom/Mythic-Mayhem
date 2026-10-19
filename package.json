@@ -18,8 +18,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "brawl:field": "node tools/brawl-field.ts",
-    "build:models": "node tools/build-models.ts",
-    "build:anime": "node tools/build-anime.ts"
+    "build:models": "node tools/build-models.ts"
   },
   "devDependencies": {
     "@gltf-transform/core": "4.5.1",

@@ -208,6 +208,15 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
   const perched = foe.floor - me.pos.y > CLIMB_NEEDED;
   const reach = perched ? -1 : me.kit.stats.radius + foe.kit.stats.radius + (me.kit.light.hits[0]?.reach ?? 1);
 
+  // Taking blows: hold the stick away from the attacker across the launch (directional
+  // influence), and try a ground tech when falling from a knockdown, as often as the
+  // bot's reflexes allow (decision 0024).
+  if (me.action?.kind === "hitstun" || me.action?.kind === "knockdown") {
+    const side = bot.strafe;
+    cmd.move = { x: -toFoe.x * 0.5 - toFoe.z * side, z: -toFoe.z * 0.5 + toFoe.x * side };
+    if (me.action.kind === "knockdown" && me.vel.y < 0 && me.pos.y - me.floor < 0.6 && bot.random() < p.reactivity * 0.25) cmd.guard = true;
+    return cmd;
+  }
   // Keep held buttons consistent with what we started: full jump or short hop.
   if (me.action?.kind === "jumpsquat") {
     cmd.jumpHeld = bot.fullHop;

@@ -1,7 +1,15 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { FighterKit, Special } from "../src/brawl/kit.ts";
-import { loadAllPacks, loadBrawlCosts } from "../src/brawl/load.ts";
+import { loadBrawlCosts } from "../src/brawl/load.ts";
+import { randomRoster } from "../src/brawl/generate.ts";
+import { rng as seeded } from "../src/sim/math.ts";
+
+/** Valid kits at the target budget (the first original fighters were retired, decision 0024). */
+const sampleKits = (n: number, seed = 11): FighterKit[] => {
+  const costs = loadBrawlCosts();
+  return randomRoster(seeded(seed), n, costs, costs.budget.target);
+};
 import { runDuel } from "../src/brawl/match.ts";
 import { validateFighter } from "../src/brawl/validate.ts";
 import { BRAWL_CONFIG, createBrawl, step, type BrawlWorld, type Command } from "../src/brawl/world.ts";
@@ -228,11 +236,12 @@ test("le validateur refuse un kit hors budget ou sans contre-jeu", () => {
   assert.equal(r3.ok, false);
 });
 
-test("les combattants d'origine sont valides et un duel de bots se termine, de façon déterministe", () => {
-  const packs = loadAllPacks().filter((p) => p.dir.startsWith("data/"));
-  assert.ok(packs.length >= 2);
-  for (const p of packs) assert.ok(p.result.ok, `${p.dir}: ${p.result.ok ? "" : p.result.errors.join(", ")}`);
-  const [a, b] = packs.map((p) => (p.result.ok ? p.result.kit : (undefined as never)));
+test("un duel de bots se termine, de façon déterministe", async () => {
+  const { randomRoster } = await import("../src/brawl/generate.ts");
+  const { rng } = await import("../src/sim/math.ts");
+  const costs = loadBrawlCosts();
+  const [a, b] = randomRoster(rng(3), 2, costs, costs.budget.target);
+  for (const k of [a!, b!]) assert.ok(validateFighter(k, costs).ok);
   const r1 = runDuel(a!, b!, 7);
   const r2 = runDuel(a!, b!, 7);
   assert.equal(r1.world.over, true);
@@ -262,26 +271,15 @@ test("générateur : des kits aléatoires valides, ramenés au budget visé", as
   for (const k of kits) assert.ok(Math.abs(fighterBudget(k, costs).total - 95) < 1.5);
 });
 
-test("épreuve : les combattants d'origine gagnent entre 40 % et 60 % contre le panel de référence", async () => {
-  const { BALANCED_BAND, gauntletRate, referencePanel } = await import("../src/brawl/gauntlet.ts");
-  const { gauntletGrounds } = await import("../src/brawl/load.ts");
-  const costs = loadBrawlCosts();
-  const panel = referencePanel(costs);
-  const grounds = gauntletGrounds();
-  for (const p of loadAllPacks(costs).filter((x) => x.dir.startsWith("data/"))) {
-    assert.ok(p.result.ok);
-    const rate = gauntletRate(p.result.kit, panel, grounds);
-    assert.ok(rate >= BALANCED_BAND[0] && rate <= BALANCED_BAND[1], `${p.dir} : ${(rate * 100).toFixed(0)} %`);
-  }
-});
-
 test("apparence : un look valide est lu, un look invalide est ignoré", async () => {
   const { parseCharacter } = await import("../src/brawl/character.ts");
-  const ok = parseCharacter({ name: "X", look: { model: "mage", show: ["2H_Staff", "<script>"], tint: "#ff0000" } }, "x");
-  assert.deepEqual(ok.look, { model: "mage", show: ["2H_Staff"], tint: "#ff0000" });
+  const ok = parseCharacter({ name: "X", look: { model: "swordsman", show: ["2H_Staff", "<script>"], tint: "#ff0000" } }, "x");
+  assert.deepEqual(ok.look, { model: "swordsman", show: ["2H_Staff"], tint: "#ff0000" });
   assert.equal(parseCharacter({ look: { model: "dragon" } }, "x").look, undefined);
-  const anime = parseCharacter({ look: { model: "shino", show: ["Kunai"], tint: "#ffffff", hair: "#ff0000", outfit: "rouge" } }, "x");
-  assert.deepEqual(anime.look, { model: "shino", show: ["Kunai"], tint: "#ffffff", hair: "#ff0000" });
+  const anime = parseCharacter({ look: { model: "turtle", show: ["Kunai"], tint: "#ffffff", hair: "#ff0000", outfit: "rouge" } }, "x");
+  assert.deepEqual(anime.look, { model: "turtle", show: ["Kunai"], tint: "#ffffff", hair: "#ff0000" });
+  // Les premiers modèles (KayKit, VRoid) ont été retirés : un look qui les nomme est ignoré.
+  assert.equal(parseCharacter({ look: { model: "mage", show: [] } }, "x").look, undefined);
   assert.equal(parseCharacter({ look: { model: "turtle", show: ["Bo"], expression: "wild" } }, "x").look?.expression, "wild");
   assert.equal(parseCharacter({ look: { model: "turtle", show: [], expression: "sad" } }, "x").look?.expression, undefined);
   // Technique presentation: letters only (any script), at most 8; slashes within 0–12.
@@ -481,15 +479,20 @@ test("sauter hors du bouclier évite le temps mort", () => {
 
 test("v3 : le validateur impose combo court, éjection finale et coups ratés punissables", () => {
   const costs = loadBrawlCosts();
-  const base = loadAllPacks(costs).find((p) => p.result.ok)!;
-  const kit = (base.result as { kit: FighterKit }).kit;
+  // A generated kit, brought to the v3 rules (the generator predates them).
+  const raw = sampleKits(1)[0]!;
+  const kit: FighterKit = {
+    ...raw,
+    light: { hits: raw.light.hits.map((h, i, all) => (i === all.length - 1 ? { ...h, knockback: Math.max(12, h.knockback), recovery: Math.max(0.4, h.recovery) } : { ...h, recovery: Math.max(0.2, h.recovery) })) },
+    heavy: { ...raw.heavy, recovery: Math.max(0.6, raw.heavy.recovery) },
+  };
   const errs = (k: FighterKit) => {
     const r = validateFighter(k, { ...costs, budget: { ...costs.budget, min: 0, max: Infinity } });
     return r.ok ? [] : r.errors.join(" | ");
   };
   assert.deepEqual(errs(kit), []);
   const hits = kit.light.hits;
-  assert.match(String(errs({ ...kit, light: { hits: [...hits, hits[0]!] } })), /entre 1 et 3/);
+  assert.match(String(errs({ ...kit, light: { hits: [...hits, ...hits, hits[0]!].slice(0, 4) } })), /entre 1 et 3/);
   assert.match(String(errs({ ...kit, light: { hits: hits.map((h, i) => (i === hits.length - 1 ? { ...h, knockback: 8 } : h)) } })), /éjecte/);
   assert.match(String(errs({ ...kit, light: { hits: hits.map((h) => ({ ...h, recovery: 0.1 })) } })), /recovery/);
   assert.match(String(errs({ ...kit, heavy: { ...kit.heavy, recovery: 0.3 } })), /heavy.recovery/);
@@ -572,7 +575,7 @@ test("multi : un match à 4 en chacun pour soi se termine, chaque équipe a son 
   const { createMatch } = await import("../src/brawl/world.ts");
   const { botCommand, createBot } = await import("../src/brawl/bot.ts");
   const { rng } = await import("../src/sim/math.ts");
-  const kits = loadAllPacks().filter((p) => p.dir.startsWith("data/") && p.result.ok).map((p) => (p.result.ok ? p.result.kit : (undefined as never)));
+  const kits = sampleKits(4);
   const w = createMatch(kits.slice(0, 4).map((kit, i) => ({ kit, team: i })), { ...BRAWL_CONFIG, rule: "stock", stocks: 2 });
   assert.equal(w.score.length, 4);
   const r = rng(3);
@@ -642,4 +645,79 @@ test("multi : les bots se répartissent les cibles au lieu de tous viser le mêm
   run(w, 3, () => w.fighters.map((f) => botCommand(w, f, bots[f.id]!)));
   const targets = w.fighters.map((f) => f.target).filter((t) => t !== null);
   assert.ok(new Set(targets).size >= 2, `cibles : ${targets.join(",")}`);
+});
+
+test("sortie de combo : une esquive pressée pendant l'étourdissement part à la première image libre", () => {
+  const w = duel(fighter(), fighter());
+  const b = w.fighters[1]!;
+  b.energy = 30; // assez pour esquiver (15), pas pour le dégagement (50)
+  step(w, [{ unit: 0, light: true }]);
+  run(w, 0.15);
+  assert.equal(b.action?.kind, "hitstun");
+  // Une seule pression, tôt dans l'étourdissement.
+  step(w, [{ unit: 0 }, { unit: 1, dodge: true }]);
+  let ticks = 0;
+  while (b.action?.kind === "hitstun" && ticks++ < 120) step(w, []);
+  assert.equal(b.action?.kind, "dodge", "l'esquive mémorisée sort dès la fin de l'étourdissement");
+});
+
+test("sortie de combo : chaque coup reçu encore étourdi étourdit moins longtemps", () => {
+  const kit: FighterKit = { ...fighter(), light: { hits: [strike, strike, strike] } };
+  const w = duel(kit, fighter(), 1.2);
+  const stuns: number[] = [];
+  for (let i = 0; i < 120 && stuns.length < 3; i++) {
+    const before = w.events.length;
+    step(w, [{ unit: 0, light: true }]);
+    for (const e of w.events.slice(before))
+      if (e.type === "hit" && e.target === 1) {
+        const a = w.fighters[1]!.action;
+        stuns.push(a && "until" in a ? a.until - w.time - (w.fighters[1]!.hitlagUntil - w.time) : 0);
+      }
+  }
+  assert.equal(stuns.length, 3);
+  assert.ok(stuns[1]! < stuns[0]! - 1e-6 && stuns[2]! < stuns[1]! - 1e-6, `étourdissements ${stuns.map((s) => s.toFixed(3)).join(", ")}`);
+  assert.ok(Math.abs(stuns[1]! / stuns[0]! - BRAWL_CONFIG.comboStunDecay) < 0.02);
+});
+
+test("influence directionnelle : tenir le stick en travers dévie l'éjection de 18° au plus", () => {
+  const launch = (move?: { x: number; z: number }) => {
+    const w = duel(fighter(), fighter(), 1.4);
+    step(w, [{ unit: 0, heavy: true }]);
+    for (let i = 0; i < 60; i++) {
+      const b = w.fighters[1]!;
+      // Le stick n'est tenu qu'une fois touché (sinon on sortirait de portée).
+      step(w, [{ unit: 0 }, { unit: 1, ...(move && b.action ? { move } : {}) }]);
+      if (b.action?.kind === "knockdown" && b.hitlagUntil <= w.time && !b.diPending) return Math.atan2(b.vel.z, b.vel.x);
+    }
+    throw new Error("pas d'éjection");
+  };
+  const straight = launch();
+  const bent = launch({ x: 0, z: 1 });
+  const along = launch({ x: 1, z: 0 });
+  assert.ok(Math.abs(Math.abs(bent - straight) - BRAWL_CONFIG.diMaxAngle) < 0.02, `${((bent - straight) * 180) / Math.PI}°`);
+  assert.ok(Math.abs(along - straight) < 1e-6, "dans l'axe de l'éjection : aucun effet");
+});
+
+test("récupération au sol : garde pressée juste avant l'atterrissage, on se relève aussitôt, invulnérable", () => {
+  const fall = (tech: boolean) => {
+    const w = duel(fighter(), fighter(), 1.4);
+    step(w, [{ unit: 0, heavy: true }]);
+    const b = w.fighters[1]!;
+    let pressed = false;
+    for (let i = 0; i < 120; i++) {
+      // Presser une fois quand la chute touche presque le sol.
+      const press = tech && !pressed && b.action?.kind === "knockdown" && b.vel.y < 0 && b.pos.y < 0.3;
+      if (press) pressed = true;
+      step(w, [{ unit: 0 }, { unit: 1, guard: press }]);
+      if (b.action?.kind === "knockdown" && b.pos.y <= b.floor && b.vel.y === 0 && i > 5) return { w, b, landed: true };
+      if (pressed && b.action?.kind !== "knockdown") return { w, b, landed: true };
+    }
+    return { w, b, landed: false };
+  };
+  const { w, b } = fall(true);
+  assert.notEqual(b.action?.kind, "knockdown");
+  assert.ok(b.invulnerableUntil > w.time, "invulnérable un instant");
+  assert.ok(w.events.some((e) => e.type === "tech"));
+  const plain = fall(false);
+  assert.equal(plain.b.action?.kind, "knockdown", "sans appui : on reste au sol");
 });

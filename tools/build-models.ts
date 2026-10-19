@@ -1,13 +1,13 @@
-// Builds the 3D models used by the client from the KayKit "Adventurers" pack
-// (Kay Lousberg, CC0 1.0 — public domain, see public/models/kaykit/LICENSE.txt).
+// Builds the shared animations from the KayKit "Adventurers" pack (Kay Lousberg,
+// CC0 1.0 — public domain, see public/models/kaykit/LICENSE.txt).
 //
 //   node tools/build-models.ts
 //
-// - downloads the source .glb files (cached in .cache/kaykit/, git-ignored);
-// - writes each character WITHOUT its animations (they are identical for all:
-//   same skeleton), with quantised geometry (no decoder needed in the browser);
-// - writes one shared animations.glb holding only the clips the game uses.
-// Output: public/models/kaykit/*.glb (committed, ~2.6 MB in all).
+// - downloads the source .glb (cached in .cache/kaykit/, git-ignored);
+// - writes animations.glb: the Knight's skeleton and only the clips the game uses,
+//   retargeted at run time onto the models built in code. (The KayKit characters
+//   themselves were retired with the first fighters, decision 0024.)
+// Output: public/models/kaykit/animations.glb (committed).
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -21,8 +21,6 @@ const CACHE = join(ROOT, ".cache/kaykit");
 const OUT = join(ROOT, "public/models/kaykit");
 const SOURCE =
   "https://raw.githubusercontent.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0/main/addons/kaykit_character_pack_adventures/Characters/gltf/";
-
-export const CHARACTERS = ["Knight", "Barbarian", "Mage", "Rogue", "Rogue_Hooded"] as const;
 
 /** Clips the client maps onto fighter states (see src/client/animations.ts). */
 export const CLIPS = [
@@ -73,15 +71,6 @@ const io = new NodeIO()
   .registerExtensions([...ALL_EXTENSIONS, EXTMeshoptCompression, KHRMeshQuantization])
   .registerDependencies({ "meshopt.encoder": MeshoptEncoder, "meshopt.decoder": MeshoptDecoder });
 mkdirSync(OUT, { recursive: true });
-
-for (const name of CHARACTERS) {
-  const doc = await io.readBinary(await source(name));
-  for (const a of doc.getRoot().listAnimations()) dropAnimation(a);
-  await compress(doc);
-  const bytes = await io.writeBinary(doc);
-  writeFileSync(join(OUT, `${name.toLowerCase()}.glb`), bytes);
-  console.log(`${name.toLowerCase()}.glb : ${(bytes.byteLength / 1024).toFixed(0)} Ko`);
-}
 
 // Shared animations: the Knight's skeleton and the kept clips, no meshes or textures.
 {

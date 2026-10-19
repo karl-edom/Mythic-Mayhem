@@ -2,7 +2,7 @@
 
 Jeu d'arène en équipe (MOBA court), lumineux et lisible. On peut y faire s'affronter des personnages venus de n'importe quel univers, tous soumis à un même cadre de règles et à un budget de puissance commun.
 
-> **Branche `claude/jstars-custom-characters-fiqi08` : adaptation « J-Stars »** — brawler d'arène 3D, jouable en **1v1 contre un bot** dans le navigateur. Deux cartes avec décors cassables (`data/arenas/`), combattants originaux dans `data/fighters/`, tes personnages dans `packs/local/` (jamais commités).
+> **Branche `claude/jstars-custom-characters-fiqi08` : adaptation « J-Stars »** — brawler d'arène 3D, jouable en **1v1 contre un bot** dans le navigateur. Cartes avec décors cassables (`data/arenas/`), tes personnages dans `packs/local/` (jamais commités) ; les premiers personnages d'exemple ont été retirés (décision 0024).
 >
 > ```bash
 > npm install

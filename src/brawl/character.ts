@@ -1,18 +1,14 @@
 // Identity layer (layer A): display only. The engine never reads it, so any
 // value here is harmless; it is still sanitised before reaching the screen.
 
-/** Chibi 3D models available to every pack (KayKit Adventurers, CC0). */
-export const MODELS = ["knight", "barbarian", "mage", "rogue", "rogue_hooded"] as const;
-/** Anime 3D models available to every pack (VRoid Studio samples, CC0). */
-export const ANIME_MODELS = ["kaito", "fumiriya", "shino", "akane", "vita", "rubin"] as const;
-/** Models built entirely in code (no file), on the same humanoid skeleton as the anime ones. */
+/**
+ * Models built entirely in code (no file): a humanoid with a wardrobe of parts
+ * (swordsman.ts, humanParts.ts, creatureParts.ts) and a turtle. The first models
+ * (KayKit chibis and VRoid avatars) were retired with the first fighters (decision 0024).
+ */
 export const PROCEDURAL_MODELS = ["turtle", "swordsman"] as const;
-export type ModelId = (typeof MODELS)[number] | (typeof ANIME_MODELS)[number] | (typeof PROCEDURAL_MODELS)[number];
-const ALL_MODELS: readonly string[] = [...MODELS, ...ANIME_MODELS, ...PROCEDURAL_MODELS];
-
-/** Humanoid models (anime or procedural): they play the retargeted clips. */
-export const isAnime = (m: ModelId): m is (typeof ANIME_MODELS)[number] | (typeof PROCEDURAL_MODELS)[number] =>
-  (ANIME_MODELS as readonly string[]).includes(m) || (PROCEDURAL_MODELS as readonly string[]).includes(m);
+export type ModelId = (typeof PROCEDURAL_MODELS)[number];
+const ALL_MODELS: readonly string[] = PROCEDURAL_MODELS;
 
 export interface Look {
   model: ModelId;

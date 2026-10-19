@@ -443,6 +443,14 @@ export class ArenaView {
           this.freezeUntil = now + 160;
           break;
         }
+        case "tech": {
+          // Ground tech: a white ring and a puff of dust where the fighter springs up.
+          const f = w.fighters[e.unit]!;
+          const at = new THREE.Vector3(f.pos.x, f.floor + 0.05, f.pos.z);
+          this.vfx.groundWave(at, 0xffffff, 1.8);
+          this.vfx.dust(at, 6);
+          break;
+        }
         case "airJump": {
           // Double jump: a little ring of air under the feet.
           const f = w.fighters[e.unit]!;

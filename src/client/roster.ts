@@ -1,6 +1,6 @@
-// Browser-side roster: original fighters (data/fighters) plus local fan packs
-// (packs/local, git-ignored), bundled at build time and validated in the
-// browser with the exact same rules as the Node tools.
+// Browser-side roster: the fighter packs in packs/local (git-ignored), bundled at
+// build time and validated in the browser with the exact same rules as the Node
+// tools. (The first original fighters were retired, decision 0024.)
 
 import { validateArena, type ArenaDef, type PropCatalog } from "../brawl/arena.ts";
 import type { BrawlCostTable } from "../brawl/budget.ts";
@@ -8,8 +8,8 @@ import { parseCharacter, type Character } from "../brawl/character.ts";
 import type { FighterKit } from "../brawl/kit.ts";
 import { validateFighter } from "../brawl/validate.ts";
 
-const kitFiles = import.meta.glob(["/data/fighters/*/kit.json", "/packs/local/**/kit.json"], { eager: true, import: "default" });
-const characterFiles = import.meta.glob(["/data/fighters/*/character.json", "/packs/local/**/character.json"], {
+const kitFiles = import.meta.glob(["/packs/local/**/kit.json"], { eager: true, import: "default" });
+const characterFiles = import.meta.glob(["/packs/local/**/character.json"], {
   eager: true,
   import: "default",
 });

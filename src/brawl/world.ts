@@ -145,6 +145,20 @@ export interface BrawlConfig {
   /** Stun on pushed enemies, seconds. */
   breakerStun: number;
   breakerDuration: number;
+  /**
+   * Combo wear (decision 0024): each blow taken while still stunned stuns for this factor
+   * more times less (at least comboStunFloor of the normal stun), so strings open up.
+   */
+  comboStunDecay: number;
+  comboStunFloor: number;
+  /** Directional influence: holding the stick at the end of hitlag bends the launch by up to this angle (radians). */
+  diMaxAngle: number;
+  /** Ground tech: guard or dodge pressed this long before landing from a knockdown skips the floor time. */
+  techWindow: number;
+  /** After a tech attempt, no new one for this long (no mashing). */
+  techLockout: number;
+  /** Invulnerability after a tech. */
+  techInvulnerable: number;
 }
 
 export const BRAWL_CONFIG: BrawlConfig = {
@@ -214,6 +228,12 @@ export const BRAWL_CONFIG: BrawlConfig = {
   breakerPush: 12,
   breakerStun: 0.35,
   breakerDuration: 0.4,
+  comboStunDecay: 0.85,
+  comboStunFloor: 0.5,
+  diMaxAngle: (18 * Math.PI) / 180,
+  techWindow: 20 / 60,
+  techLockout: 40 / 60,
+  techInvulnerable: 20 / 60,
 };
 
 /** Height of a fighter's hurtbox capsule, metres (shared by everyone for now). */
@@ -293,6 +313,23 @@ export interface Fighter {
   drift: V3;
   /** Frozen by hitlag until then: no action, no movement. */
   hitlagUntil: number;
+  /**
+   * Input buffer (decision 0024): a dodge, a jump or a special pressed while busy (stunned,
+   * attacking, frozen) is remembered until then and done at the first free tick.
+   */
+  bufferedDodgeUntil: number;
+  bufferedJumpUntil: number;
+  bufferedSpecial: { slot: number; until: number } | null;
+  /** Blows taken in a row while still stunned (combo wear). */
+  combo: number;
+  /** Knockback to bend by directional influence when the hitlag ends. */
+  diPending: boolean;
+  /** Last tech attempt (guard or dodge pressed in a knockdown). */
+  techTriedAt: number;
+  /** Previous tick's guard button, to detect a press. */
+  guardHeld: boolean;
+  /** Stick direction at the tech press (a tech roll), or null (tech in place). */
+  techMove: { x: number; z: number } | null;
 }
 
 export interface Projectile {
@@ -334,6 +371,8 @@ export type BrawlEvent =
   | { t: number; type: "parry"; unit: number; attacker: number }
   | { t: number; type: "counter"; unit: number; attacker: number; slot: number }
   | { t: number; type: "breaker"; unit: number }
+  /** Ground tech: up at once, invulnerable an instant. */
+  | { t: number; type: "tech"; unit: number }
   | { t: number; type: "ko"; target: number; killer: number }
   | { t: number; type: "respawn"; unit: number }
   | { t: number; type: "propBroken"; prop: number; source: number }
@@ -427,6 +466,14 @@ export function createBrawl(
       hitlagUntil: -Infinity,
       stocks: config.stocks,
       target: null,
+      bufferedDodgeUntil: -Infinity,
+      bufferedJumpUntil: -Infinity,
+      bufferedSpecial: null,
+      combo: 0,
+      diPending: false,
+      techTriedAt: -Infinity,
+      guardHeld: false,
+      techMove: null,
     })),
     projectiles: [],
     zones: [],
@@ -706,6 +753,10 @@ function applyHit(w: BrawlWorld, src: Fighter, target: Fighter, hit: HitSpec, fr
     return true;
   }
   damage(w, src, target, hit.damage);
+  // Combo wear: hit again before being free, stunned for less each time.
+  const stunned = ta?.kind === "hitstun" || ta?.kind === "knockdown";
+  target.combo = stunned ? target.combo + 1 : 0;
+  const stun = hit.hitstun * Math.max(c.comboStunFloor, c.comboStunDecay ** target.combo);
   // Knockback grows as health drops (the nod to Smash's percentage): late hits send fighters flying.
   const lost = 1 - Math.max(0, target.hp) / target.kit.stats.hp;
   const speed = (hit.knockback / target.kit.stats.weight) * (1 + c.knockbackLowHpBonus * lost);
@@ -714,10 +765,11 @@ function applyHit(w: BrawlWorld, src: Fighter, target: Fighter, hit: HitSpec, fr
   target.vel.z = dir.z * speed;
   if (knockdown && target.alive) target.vel.y = Math.max(target.vel.y, 4);
   const hl = freeze(1);
+  target.diPending = true;
   if (target.alive)
     target.action = knockdown
-      ? { kind: "knockdown", until: t + hl + hit.hitstun + c.knockdownTime }
-      : { kind: "hitstun", until: t + hl + hit.hitstun };
+      ? { kind: "knockdown", until: t + hl + stun + c.knockdownTime }
+      : { kind: "hitstun", until: t + hl + stun };
   w.events.push({ t, type: "hit", source: src.id, target: target.id, amount: hit.damage, by: hit.by, knockdown, ...(hit.slot !== undefined ? { slot: hit.slot } : {}) });
   return true;
 }
@@ -1265,10 +1317,61 @@ function physics(w: BrawlWorld, f: Fighter): void {
   }
 }
 
+/** States that take control away after a blow. */
+const STUNS = new Set<Action["kind"]>(["hitstun", "blockstun", "knockdown", "guardbroken"]);
+
+/** When the fighter's current stun (and hitlag) ends; now if not stunned. */
+function stunEnd(f: Fighter): number {
+  const a = f.action;
+  const until = a && STUNS.has(a.kind) && "until" in a ? a.until : -Infinity;
+  return Math.max(until, f.hitlagUntil);
+}
+
+/** The command with the presses still in the input buffer added in. */
+function buffered(w: BrawlWorld, f: Fighter, cmd: Command | undefined): Command {
+  const out: Command = { ...(cmd ?? { unit: f.id }) };
+  if (f.bufferedDodgeUntil >= w.time) out.dodge = true;
+  if (f.bufferedJumpUntil >= w.time) {
+    out.jump = true;
+    out.jumpHeld = out.jumpHeld ?? true;
+  }
+  if (out.special === undefined && f.bufferedSpecial && f.bufferedSpecial.until >= w.time) out.special = f.bufferedSpecial.slot;
+  return out;
+}
+
+/**
+ * Directional influence (Smash's DI): the stick held when the hitlag ends turns the
+ * launch toward its side, by up to diMaxAngle when held square across the launch.
+ * Holding along the launch changes nothing.
+ */
+function influence(w: BrawlWorld, f: Fighter, move: { x: number; z: number } | undefined): void {
+  const sp = Math.hypot(f.vel.x, f.vel.z);
+  const m = move ? Math.hypot(move.x, move.z) : 0;
+  if (sp < 1e-6 || m < 0.3) return;
+  const across = (f.vel.x * move!.z - f.vel.z * move!.x) / (sp * m);
+  const a = w.config.diMaxAngle * across;
+  const [cs, sn] = [Math.cos(a), Math.sin(a)];
+  const [x, z] = [f.vel.x, f.vel.z];
+  f.vel.x = x * cs - z * sn;
+  f.vel.z = x * sn + z * cs;
+}
+
 /** Touching the ground: jumps come back; an aerial strike still going costs a short landing lag. */
 function land(w: BrawlWorld, f: Fighter): void {
-  f.airJumpsLeft = w.config.airJumps;
+  const c = w.config;
+  f.airJumpsLeft = c.airJumps;
   f.drift = { x: 0, y: 0, z: 0 };
+  // Ground tech: the press came just before touching down, up at once (or a roll toward the stick).
+  if (f.action?.kind === "knockdown" && w.time - f.techTriedAt <= c.techWindow) {
+    f.techTriedAt = -Infinity;
+    f.invulnerableUntil = Math.max(f.invulnerableUntil, w.time + c.techInvulnerable);
+    f.vel.x = f.vel.z = 0;
+    f.combo = 0;
+    const mv = f.techMove;
+    f.action = mv ? { kind: "dodge", dir: hnorm({ x: mv.x, y: 0, z: mv.z }, f.facing), t: 0, stale: 0 } : null;
+    w.events.push({ t: w.time, type: "tech", unit: f.id });
+    return;
+  }
   if (f.action?.kind === "aerial") f.action = { kind: "landing", until: w.time + w.config.landingLag };
 }
 
@@ -1396,10 +1499,38 @@ export function step(w: BrawlWorld, commands: Command[]): void {
       physics(w, f);
       continue;
     }
+    // Presses made while busy are remembered a moment (input buffer); made while stunned,
+    // until the stun is over: the answer comes out at the first free tick.
+    const until = Math.max(w.time, stunEnd(f)) + c.inputBuffer;
+    if (cmd?.dodge) f.bufferedDodgeUntil = until;
+    if (cmd?.jump) f.bufferedJumpUntil = until;
+    if (cmd?.special !== undefined) f.bufferedSpecial = { slot: cmd.special, until };
+    // Knocked down: a guard or dodge press is a tech attempt (one per lockout).
+    const guardPressed = !!cmd?.guard && !f.guardHeld;
+    f.guardHeld = !!cmd?.guard;
+    if (f.action?.kind === "knockdown" && (guardPressed || cmd?.dodge) && w.time - f.techTriedAt >= c.techLockout) {
+      f.techTriedAt = w.time;
+      const mv = cmd?.move;
+      f.techMove = mv && Math.hypot(mv.x, mv.z) > 0.3 ? { x: mv.x, z: mv.z } : null;
+    }
     // Hitlag: frozen in place; presses made meanwhile stay buffered.
     if (f.hitlagUntil > w.time) continue;
-    if (f.action) advanceAction(w, f, cmd, lightWanted);
-    else startAction(w, f, cmd, heavyPressed, lightWanted);
+    // End of hitlag: the stick held bends the launch (directional influence).
+    if (f.diPending) {
+      f.diPending = false;
+      influence(w, f, cmd?.move);
+    }
+    if (f.action) {
+      const wasStunned = STUNS.has(f.action.kind);
+      advanceAction(w, f, cmd, lightWanted);
+      // Out of a stun: free on this very tick (no lost frame before the answer).
+      if (wasStunned && !f.action) startAction(w, f, buffered(w, f, cmd), heavyPressed, lightWanted);
+    } else startAction(w, f, buffered(w, f, cmd), heavyPressed, lightWanted);
+    // A buffered press is spent once it has been acted on.
+    const k = f.action?.kind;
+    if (k === "dodge") f.bufferedDodgeUntil = -Infinity;
+    if (k === "special" || k === "rush" || k === "leap" || k === "counter") f.bufferedSpecial = null;
+    if (k === "jumpsquat" || (f.vel.y > 0 && !grounded(f))) f.bufferedJumpUntil = -Infinity;
     // A leap carries the body along its own arc.
     if (f.alive && f.action?.kind !== "leap") physics(w, f);
   }

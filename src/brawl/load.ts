@@ -50,9 +50,9 @@ export function findPacks(root: string, costs: BrawlCostTable): LoadedPack[] {
   return out;
 }
 
-/** Original fighters (committed) then local fan packs (git-ignored). */
+/** The fighter packs: packs/local (git-ignored). */
 export function loadAllPacks(costs = loadBrawlCosts()): LoadedPack[] {
-  return [...findPacks(join(DATA_DIR, "fighters"), costs), ...findPacks(join(ROOT_DIR, "packs/local"), costs)];
+  return findPacks(join(ROOT_DIR, "packs/local"), costs);
 }
 
 export function loadPropCatalog(): PropCatalog {
