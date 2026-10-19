@@ -343,7 +343,7 @@ function faceTexture(o: FaceStyle): THREE.CanvasTexture {
   const brow = o.brows ?? "#3a2418";
   const mood = o.mood ?? "calm";
   // Eye opening and iris size by mood.
-  const open = mood === "fierce" ? 0.72 : mood === "wild" ? 1.25 : 1;
+  const open = (mood === "fierce" ? 0.72 : mood === "wild" ? 1.25 : 1) * 1.18;
   const irisK = mood === "wild" ? 0.72 : 1;
   g.lineCap = "round";
   g.lineJoin = "round";
@@ -383,6 +383,44 @@ function faceTexture(o: FaceStyle): THREE.CanvasTexture {
       g.fill();
     }
   }
+  // Modelling painted under the features: the face turns away toward the temples and
+  // the jaw (darker, warmer), the fringe casts a soft shadow across the brow, and the
+  // lids carry a touch of colour.
+  if (!o.bandaged) {
+    for (const s of [-1, 1]) {
+      const [x0] = P(s * 0.045, 0);
+      const [x1] = P(s * 0.088, 0);
+      const side = g.createLinearGradient(x0, 0, x1, 0);
+      side.addColorStop(0, "rgba(170,85,70,0)");
+      side.addColorStop(1, "rgba(150,70,60,0.32)");
+      g.fillStyle = side;
+      g.fillRect(Math.min(x0, x1), 0, Math.abs(x1 - x0), H);
+    }
+    const [, yb0] = P(0, 1.65);
+    const [, yb1] = P(0, 1.612);
+    const fringe = g.createLinearGradient(0, yb0, 0, yb1);
+    fringe.addColorStop(0, "rgba(110,50,45,0.38)");
+    fringe.addColorStop(1, "rgba(110,50,45,0)");
+    g.fillStyle = fringe;
+    g.fillRect(0, yb0, W, yb1 - yb0);
+    const [, yj0] = P(0, 1.505);
+    const [, yj1] = P(0, 1.45);
+    const jaw = g.createLinearGradient(0, yj0, 0, yj1);
+    jaw.addColorStop(0, "rgba(150,70,60,0)");
+    jaw.addColorStop(1, "rgba(150,70,60,0.22)");
+    g.fillStyle = jaw;
+    g.fillRect(0, yj0, W, yj1 - yj0);
+    for (const s of [-1, 1]) {
+      const [ex, ey] = P(s * 0.033, 1.589);
+      const lid = g.createRadialGradient(ex, ey, 0, ex, ey, 0.02 * m);
+      lid.addColorStop(0, "rgba(190,80,85,0.28)");
+      lid.addColorStop(1, "rgba(190,80,85,0)");
+      g.fillStyle = lid;
+      g.beginPath();
+      g.ellipse(ex, ey, 0.022 * m, 0.011 * m, 0, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
   for (const s of [-1, 1]) {
     const [cx, cy] = P(s * 0.032, 1.578);
     const hw = 0.0205 * m;
@@ -404,7 +442,7 @@ function faceTexture(o: FaceStyle): THREE.CanvasTexture {
     // Iris, a little toward the nose, its top hidden under the lid.
     const ix = cx - s * 0.002 * m;
     const iy = cy - 0.001 * m;
-    const ir = 0.0091 * m * irisK;
+    const ir = 0.0099 * m * irisK;
     const grad = g.createLinearGradient(0, iy - ir, 0, iy + ir);
     grad.addColorStop(0, `#${irisDark.getHexString()}`);
     grad.addColorStop(0.55, `#${iris.getHexString()}`);
@@ -489,7 +527,7 @@ function faceTexture(o: FaceStyle): THREE.CanvasTexture {
     const [bx1, by1] = P(s * 0.056, 1.603 - tilt * 0.3 + (mood === "wild" ? 0.003 : 0));
     g.strokeStyle = brow;
     for (let k = 0; k < 6; k++) {
-      g.lineWidth = 4.5 - k * 0.6;
+      g.lineWidth = 6 - k * 0.7;
       g.beginPath();
       g.moveTo(bx0 + s * k * 6, by0 + k * 0.2);
       g.quadraticCurveTo((bx0 + bx1) / 2, by0 - 7, bx1, by1 + 1);
@@ -889,15 +927,26 @@ function buildBody(c: Ctx): void {
   for (const s of [1, -1]) {
     const side = s > 0 ? "left" : "right";
     const sx = (x: number) => s * x;
-    // Fist: palm, four curled fingers, the thumb across.
-    const fist = new RoundedBoxGeometry(0.085, 0.075, 0.08, 3, 0.025);
-    fist.translate(sx(0.7), 1.365, 0.004);
+    // Fist: the palm, then four fingers curled in three joints (out from the knuckles,
+    // down, back under the palm), a little shorter toward the little finger, the
+    // knuckles standing out; the thumb across.
+    const fist = new RoundedBoxGeometry(0.08, 0.072, 0.078, 3, 0.024);
+    fist.translate(sx(0.698), 1.366, 0.004);
     put(`${side}Hand`, fist, M.skin, "hand");
-    for (let k = 0; k < 4; k++) {
-      const f = new THREE.CapsuleGeometry(0.0145, 0.035, 4, 8);
-      f.rotateX(Math.PI / 2);
-      f.translate(sx(0.738), 1.348, 0.03 - k * 0.02);
+    const bone = (len: number, r: number, axis: "x" | "y", x: number, y: number, z: number) => {
+      const f = new THREE.CapsuleGeometry(r, len, 4, 10);
+      if (axis === "x") f.rotateZ(Math.PI / 2);
+      f.translate(sx(x), y, z);
       put(`${side}Hand`, f, M.skin, "hand");
+    };
+    for (let k = 0; k < 4; k++) {
+      const z = 0.029 - k * 0.0195;
+      const r = 0.0112 - k * 0.0007;
+      const short = k * 0.002;
+      bone(0.02 - short, r, "x", 0.744, 1.384, z); // proximal, the knuckle at its root
+      bone(0.016 - short, r * 0.95, "y", 0.758, 1.362, z); // middle, turned down
+      bone(0.012 - short, r * 0.9, "x", 0.746, 1.341, z); // tip, back under the palm
+      put(`${side}Hand`, blob(0.011, 0.009, 0.0095).translate(sx(0.734), 1.392, z), M.skin, "hand"); // knuckle
     }
     const thumb = new THREE.CapsuleGeometry(0.014, 0.035, 4, 8);
     thumb.rotateZ(Math.PI / 2);
@@ -1178,7 +1227,7 @@ function buildKenshinHair(c: Ctx): void {
       const tipEl = -0.02 - 0.12 * centre - 0.08 * r();
       const swing = (r() - 0.5) * 0.25;
       locks.push(
-        lock([scalp(az * 0.6, 1.15, out - 0.004), scalp(az * 0.9, 0.7, out + 0.01), scalp(az + swing * 0.4, 0.3, out + 0.016), scalp(az * 1.05 + swing, tipEl, out + 0.014)], w0 + r() * 0.006, 0.0055, fromHead),
+        lock([scalp(az * 0.6, 1.15, out - 0.004), scalp(az * 0.9, 0.7, out + 0.01), scalp(az + swing * 0.4, 0.3, out + 0.016), scalp(az * 1.05 + swing, tipEl, out + 0.014)], w0 + r() * 0.006, 0.0085, fromHead),
       );
     }
   }
@@ -1187,7 +1236,7 @@ function buildKenshinHair(c: Ctx): void {
     for (let i = 0; i < 3; i++) {
       const az = s * (1.0 + i * 0.16);
       const tip = -0.55 - 0.25 * r() - (i === 0 ? 0.15 : 0);
-      locks.push(lock([scalp(az * 0.7, 1.0, 0.002), scalp(az, 0.45, 0.014), scalp(az * 1.02, -0.1, 0.016), scalp(az * 0.97 - s * 0.05, tip, 0.012)], 0.022 + r() * 0.006, 0.006, fromHead));
+      locks.push(lock([scalp(az * 0.7, 1.0, 0.002), scalp(az, 0.45, 0.014), scalp(az * 1.02, -0.1, 0.016), scalp(az * 0.97 - s * 0.05, tip, 0.012)], 0.022 + r() * 0.006, 0.009, fromHead));
     }
   // Crown and back: locks swept toward the tie, and up from the nape.
   const tie = new THREE.Vector3(0, 1.598, -0.112);
@@ -1199,12 +1248,12 @@ function buildKenshinHair(c: Ctx): void {
     for (let i = 0; i < 5; i++) {
       const az = s * (1.25 + i * 0.17);
       const tip = -0.7 - 0.25 * r();
-      locks.push(lock([scalp(az * 0.8, 0.95, -0.002), scalp(az, 0.45, 0.012), scalp(az * 1.04, -0.1, 0.018), scalp(az * 1.08, tip, 0.016)], 0.026 + r() * 0.006, 0.006, fromHead));
+      locks.push(lock([scalp(az * 0.8, 0.95, -0.002), scalp(az, 0.45, 0.012), scalp(az * 1.04, -0.1, 0.018), scalp(az * 1.08, tip, 0.016)], 0.026 + r() * 0.006, 0.009, fromHead));
     }
   // Nape: short locks hanging below the tie line.
   for (let i = 0; i < 9; i++) {
     const az = Math.PI + (-1.2 + (2.4 * i) / 8) + (r() - 0.5) * 0.1;
-    locks.push(lock([scalp(az, -0.05, -0.002), scalp(az, -0.45, 0.01), scalp(az * 1.0, -0.85 - r() * 0.15, 0.016)], 0.026, 0.0055, fromHead));
+    locks.push(lock([scalp(az, -0.05, -0.002), scalp(az, -0.45, 0.01), scalp(az * 1.0, -0.85 - r() * 0.15, 0.016)], 0.026, 0.0085, fromHead));
   }
   // A few strands escaping at the crown, as messy hair does.
   for (let i = 0; i < 4; i++) {
@@ -1327,10 +1376,10 @@ export function hairShader(m: THREE.MeshPhysicalMaterial): void {
             vec3 H = normalize(L + V);
             float d1 = dot(normalize(strand + n * 0.12), H);
             float d2 = dot(normalize(strand - n * 0.25), H);
-            float s1 = pow(sqrt(max(0.0, 1.0 - d1 * d1)), 90.0);
+            float s1 = pow(sqrt(max(0.0, 1.0 - d1 * d1)), 48.0);
             float s2 = pow(sqrt(max(0.0, 1.0 - d2 * d2)), 22.0);
             float lit = 0.35 + 0.65 * clamp(dot(n, L) * 0.5 + 0.5, 0.0, 1.0);
-            outgoingLight += (vec3(1.0, 0.96, 0.9) * s1 * 0.55 + diffuseColor.rgb * s2 * 0.35) * lit;
+            outgoingLight += (vec3(1.0, 0.96, 0.9) * s1 * 0.8 + diffuseColor.rgb * s2 * 0.45) * lit;
           }
         }
         #endif
