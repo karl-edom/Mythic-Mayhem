@@ -90,7 +90,7 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
       const body = new THREE.Group();
       const unit = new THREE.CylinderGeometry(1, 1, 1, 20, 1, true);
       unit.translate(0, 0.5, 0);
-      const sheath = new THREE.Mesh(unit, noOutline(new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })));
+      const sheath = new THREE.Mesh(unit, noOutline(new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })));
       const core = new THREE.Mesh(unit, noOutline(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })));
       body.add(sheath, core);
       body.position.copy(origin);
@@ -109,7 +109,7 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
           body.quaternion.setFromUnitVectors(UP, d.normalize());
           const r = size * (0.55 + 0.06 * Math.sin(t * 40));
           sheath.scale.set(r, len, r);
-          core.scale.set(r * 0.45, len, r * 0.45);
+          core.scale.set(r * 0.3, len, r * 0.3);
           head.scale.setScalar(size * (2.6 + 0.3 * Math.sin(t * 33)));
           headCore.scale.setScalar(size * 1.1);
         },
@@ -126,7 +126,7 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
             }
             sheath.scale.x = sheath.scale.z = r0 * (1 - k);
             core.scale.x = core.scale.z = r0 * 0.45 * (1 - k * k);
-            (sheath.material as THREE.MeshBasicMaterial).opacity = 0.55 * (1 - k);
+            (sheath.material as THREE.MeshBasicMaterial).opacity = 0.8 * (1 - k);
             requestAnimationFrame(fade);
           };
           void last;

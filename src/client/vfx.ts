@@ -171,7 +171,7 @@ export class Vfx {
   /** Flames bursting out and rising, then gone (fire, explosions). */
   flames(pos: THREE.Vector3, count: number, size: number): void {
     for (let i = 0; i < count; i++) {
-      const s = this.sprite(flameTexture(), 0xffffff, 1);
+      const s = this.sprite(flameTexture(), 0xff9a50, 0.8);
       const a = Math.random() * Math.PI * 2;
       const v = new THREE.Vector3(Math.cos(a), 0.6 + Math.random(), Math.sin(a)).multiplyScalar(size * (1.5 + Math.random() * 2));
       s.position.copy(pos);
@@ -179,7 +179,7 @@ export class Vfx {
       this.add(s, 0.45 + Math.random() * 0.3, (k, dt) => {
         s.position.addScaledVector(v, dt * (1 - k * 0.6));
         s.scale.set(sz * (0.6 + k * 0.6), sz * (1 + k), 1);
-        s.material.opacity = 1 - k;
+        s.material.opacity = 0.8 * (1 - k);
       });
     }
     const smoke = new THREE.Sprite(noOutline(new THREE.SpriteMaterial({ map: this.glow, color: 0x3a3330, transparent: true, opacity: 0.5, depthWrite: false })));
