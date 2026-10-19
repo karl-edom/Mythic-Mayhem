@@ -8,7 +8,7 @@ import { keyClip, mix, over, poseClip, reactionClips, type Key, type Pose } from
 import { bodies, fk, solveArm, useBones, type BoneTable, type V } from "./swordPoses.ts";
 import { SWORDSMAN_BONES } from "./swordsman.ts";
 
-interface Fists {
+export interface Fists {
   /** Right and left fist, from the hips (hips' frame), metres; null leaves the arm as the body has it. */
   r: V | null;
   l: V | null;
@@ -18,7 +18,7 @@ interface Fists {
 }
 
 /** The body pose with its arms solved to put the fists where `f` says. */
-function fists(body: Pose, f: Fists): Pose {
+export function fists(body: Pose, f: Fists): Pose {
   const hips = fk(body, "hips");
   const p: Pose = { hips: body.hips, bones: { ...body.bones }, q: { ...(body.q ?? {}) } };
   for (const [side, at, pole, def] of [[-1, f.r, f.rPole, [-0.55, -1, -0.25]], [1, f.l, f.lPole, [0.55, -1, -0.25]]] as const) {

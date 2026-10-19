@@ -294,7 +294,8 @@ test("apparence : un look valide est lu, un look invalide est ignoré", async ()
       kame: { projectile: "beam", color: "#6ec8ff", hand: "ki" },
       feu: { zone: "fire", hand: "fire", color: "orange" },
       tir: { projectile: "bullet", weapon: "Sniper" },
-      faux: { zone: "lava", hand: "<b>", weapon: "../x" },
+      faux: { zone: "lava", hand: "<b>", weapon: "../x", pose: "dance" },
+      estoc: { pose: "gatotsu", weapon: "None" },
     },
   }, "x").moves;
   assert.deepEqual(fx, {
@@ -302,6 +303,7 @@ test("apparence : un look valide est lu, un look invalide est ignoré", async ()
     feu: { zone: "fire", hand: "fire" },
     tir: { projectile: "bullet", weapon: "Sniper" },
     faux: {},
+    estoc: { pose: "gatotsu", weapon: "None" },
   });
 });
 

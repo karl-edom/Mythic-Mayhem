@@ -57,10 +57,24 @@ export class Animator {
   private lastPos = new THREE.Vector3();
   private velocity = new THREE.Vector3();
 
-  constructor(mixer: THREE.AnimationMixer, clips: Map<string, THREE.AnimationClip>, style: WeaponStyle) {
+  /** Per special slot: the name of its signature animation, if the character has one. */
+  private signatures: (string | undefined)[];
+
+  constructor(mixer: THREE.AnimationMixer, clips: Map<string, THREE.AnimationClip>, style: WeaponStyle, signatures: (string | undefined)[] = []) {
     this.mixer = mixer;
     this.clips = clips;
     this.style = style;
+    this.signatures = signatures;
+  }
+
+  /**
+   * The clip of a special's phase: its signature one ("@gatotsu:rush"), else the
+   * style's own ("@rush"), else `shared`. `phase` is "" for the start-up.
+   */
+  private phase(slot: number, phase: string, own: string, shared: string): string {
+    const sig = this.signatures[slot];
+    if (sig && this.clips.has(`@${sig}${phase}`)) return `@${sig}${phase}`;
+    return this.own(own, shared);
   }
 
   private action(name: string): THREE.AnimationAction | null {
@@ -150,32 +164,40 @@ export class Animator {
         // After a leap's touchdown or a counter: the closing blow, from its impact on.
         if (a.fired && (del.type === "leap" || del.type === "counter")) {
           const clip =
-            del.type === "leap" ? this.own("@leap:land", "2H_Melee_Attack_Chop")
-            : a.countered ? this.own("@counter:strike", "2H_Melee_Attack_Spin")
-            : this.own("@counter:miss", "Block");
+            del.type === "leap" ? this.phase(a.slot, ":land", "@leap:land", "2H_Melee_Attack_Chop")
+            : a.countered ? this.phase(a.slot, ":strike", "@counter:strike", "2H_Melee_Attack_Spin")
+            : this.phase(a.slot, ":miss", "@counter:miss", "Block");
           const d = this.len(clip);
           const at = (this.clips.get(clip)?.userData.impact as number | undefined) ?? IMPACT;
           const from = clip === "Block" ? 0 : at * d;
           return { clip, key: `special${a.slot}-end${a.countered ? "-hit" : ""}`, from, duration: Math.max(0.15, sp.startup + sp.recovery - a.t), fade: 0.04 };
         }
-        const clip = this.clips.has(`@special:${del.type}`) ? `@special:${del.type}` :
+        const clip = this.phase(
+          a.slot,
+          "",
+          `@special:${del.type}`,
           del.type === "projectile" ? "Spellcast_Shoot"
           : del.type === "rush" ? "1H_Melee_Attack_Stab"
           : del.type === "leap" ? "Jump_Start"
           : del.type === "counter" ? "Blocking"
-          : del.castRange <= 0.5 ? "2H_Melee_Attack_Spin" : "Spellcast_Long";
+          : del.castRange <= 0.5 ? "2H_Melee_Attack_Spin" : "Spellcast_Long",
+        );
         return this.strike(clip, `special${a.slot}`, sp.startup, sp.startup + sp.recovery);
       }
-      case "leap":
-        return this.clips.has("@leap")
-          ? { clip: "@leap", key: "leap", from: 0, duration: a.time, fade: 0.05 }
+      case "leap": {
+        const clip = this.phase(a.slot, ":leap", "@leap", "");
+        return clip
+          ? { clip, key: "leap", from: 0, duration: a.time, fade: 0.05 }
           : { clip: "Jump_Idle", key: "leap", loop: true, fade: 0.08 };
+      }
       case "counter":
-        return { clip: this.own("@counter", "Blocking"), key: "counter", loop: true, fade: 0.05 };
-      case "rush":
-        return this.clips.has("@rush")
-          ? { clip: "@rush", key: "rush", loop: true, speed: 1, fade: 0.06 }
+        return { clip: this.phase(a.slot, ":wait", "@counter", "Blocking"), key: "counter", loop: true, fade: 0.05 };
+      case "rush": {
+        const clip = this.phase(a.slot, ":rush", "@rush", "");
+        return clip
+          ? { clip, key: "rush", loop: true, speed: 1, fade: 0.06 }
           : { clip: "Running_B", key: "rush", loop: true, speed: 2.2, fade: 0.04 };
+      }
       case "breaker":
         return { clip: "Spellcast_Raise", key: `breaker${w.tick - Math.round(a.t * c.tickRate)}`, duration: c.breakerDuration, fade: 0.03 };
       case "dodge": {

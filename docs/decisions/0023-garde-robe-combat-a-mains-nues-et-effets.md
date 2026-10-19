@@ -117,3 +117,28 @@ Aucun nouveau type de technique. Les rayons sont des projectiles, les explosions
 - La fourrure est une texture, pas des poils en volume.
 - Les visages humains sont peints. Les animaux ont des yeux en relief, mais pas d'expressions.
 - Le Rasengan et le Chidori sont tenus dans la main droite, quelle que soit la pose.
+
+## Ajout : des techniques propres à chaque épéiste
+
+> « Il faudra bien faire des attaques spéciales spécifiques pour chaque épéiste. Mais on peut laisser la même attaque de base. »
+
+- **Les coups de base restent communs** au style sabre. **Les techniques ont chacune leur animation** : `moves.{id}.pose` choisit l'animation de la technique dans une liste fermée (`signaturePoses.ts`). Sans `pose`, la technique garde celle du style (celles de Kenshin pour le sabre).
+- Une technique se joue en phases : la préparation, puis selon son type la course (`rush`), le saut et l'atterrissage (`leap`), l'attente, la riposte ou le retour au calme (`counter`). Chaque phase absente reprend celle du style.
+- `weapon: "None"` range l'arme le temps de la technique (mudras, coup à main nue).
+
+| Personnage | Technique | Animation |
+| --- | --- | --- |
+| Saitō | Gatotsu | garde de profil, la poignée tirée près de la tête, la lame à plat pointée sur l'adversaire, l'autre main qui la vise ; puis la course, bras d'épée tendu, l'autre bras rejeté en arrière |
+| | Gatotsu Sanshiki | accroupi, la pointe vers le haut ; en l'air, l'estoc monte, puis la pointe se retourne et il retombe comme un pieu ; à l'arrivée, la lame plantée dans le sol |
+| | Gatotsu Zeroshiki | le buste tordu loin en arrière, la main libre tendue vers l'adversaire ; puis tout le haut du corps se déroule d'un coup, les pieds bougent à peine |
+| Shishio | Homura Dama | la lame raclée au sol derrière lui (le frottement l'enflamme), puis un grand arc montant qui lance le feu |
+| | Guren Kaina | la main gantée tendue pour saisir l'adversaire, l'épée tenue basse derrière ; l'explosion part de cette main |
+| | Kagutsuchi | la lame en feu levée au-dessus de la tête, puis la charge en la portant haut |
+| Sasuke | Chidori | sabre rangé, accroupi, la main droite basse et en arrière qui crépite, la gauche serrant son poignet ; puis la course, main en avant |
+| | Gōkakyū | les mudras devant la bouche, une inspiration (buste et tête en arrière), puis le feu soufflé, corps projeté vers l'avant (sabre rangé) |
+| | Sharingan | droit et immobile, le sabre pointe en bas le long de l'avant-bras ; touché, un demi-tour et un revers |
+| Leonardo | Lame du dragon | le sabre ramené bas en arrière, puis une vrille de tout le corps derrière la lame tenue à plat |
+| | Garde du chef | la lame verticale devant le visage, à deux mains ; touché, un pas et une coupe montante dans le dos de l'attaquant |
+| | Bond du ninja | un salto avant en l'air, le sabre replié, puis la coupe à l'atterrissage |
+
+Kenshin garde les siennes (ce sont celles du style sabre). Les contre-jeux ne changent pas : ce sont les mêmes types de techniques, avec la même préparation.

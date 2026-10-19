@@ -58,9 +58,19 @@ export interface MoveStyle {
   hand?: (typeof HAND_LOOKS)[number];
   /** Colour of the technique's light (beam, ball, aura in the hand), else the character's. */
   color?: string;
-  /** A weapon taken in hand for this special only (a chainsaw, a rifle), by name. */
+  /** A weapon taken in hand for this special only (a chainsaw, a rifle), by name; "None": bare hands. */
   weapon?: string;
+  /** The technique's own animation (a swordsman's signature move), else its style's. */
+  pose?: (typeof SIGNATURE_POSES)[number];
 }
+
+/** Signature animations of the specials, by name (see signaturePoses.ts). */
+export const SIGNATURE_POSES = [
+  "gatotsu", "gatotsu-sanshiki", "gatotsu-zeroshiki",
+  "homura-dama", "guren-kaina", "kagutsuchi",
+  "chidori", "katon", "sharingan",
+  "leo-dragon", "leo-guard", "leo-flip",
+] as const;
 
 export const PROJECTILE_LOOKS = ["pizza", "beam", "fire", "bullet", "rocket"] as const;
 export const ZONE_LOOKS = ["fire", "blast"] as const;
@@ -105,6 +115,7 @@ function parseMoves(v: unknown): Record<string, MoveStyle> {
     if ((HAND_LOOKS as readonly unknown[]).includes(o.hand)) style.hand = o.hand as MoveStyle["hand"];
     if (typeof o.color === "string" && COLOR.test(o.color)) style.color = o.color;
     if (typeof o.weapon === "string" && /^[A-Za-z0-9_]{1,40}$/.test(o.weapon)) style.weapon = o.weapon;
+    if ((SIGNATURE_POSES as readonly unknown[]).includes(o.pose)) style.pose = o.pose as MoveStyle["pose"];
     out[id] = style;
   }
   return out;

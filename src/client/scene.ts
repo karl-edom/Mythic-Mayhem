@@ -49,7 +49,7 @@ interface FighterView {
   frame: number;
   wasAirborne: boolean;
   /** Per special: what glows in the hand or on the blade, a weapon taken just for it. */
-  moveFx: { slot: number; hand: HandLook | null; weapon: THREE.Group | null }[];
+  moveFx: { slot: number; hand: HandLook | null; weapon: THREE.Group | null; bare: boolean }[];
   /** The weapons held the rest of the time (hidden while a special's own weapon is out). */
   mainWeapons: THREE.Object3D[];
 }
@@ -173,7 +173,7 @@ export class ArenaView {
     if (this.library) {
       const look = ch.look ?? defaultLook(f.kit.archetype);
       model = instantiate(this.library, look);
-      animator = new Animator(model.mixer, model.clips, weaponStyle(look));
+      animator = new Animator(model.mixer, model.clips, weaponStyle(look), f.kit.specials.map((sp) => ch.moves[sp.id]?.pose));
       root.add(model.root);
       materials = model.materials;
     } else {
@@ -267,7 +267,9 @@ export class ArenaView {
         const style = ch.moves[sp.id];
         if (!style || (!style.hand && !style.weapon)) return;
         let weapon: THREE.Group | null = null;
-        if (style.weapon) {
+        // "None": the weapon is put away for this one (hand signs, a bare-handed blow).
+        const bare = style.weapon === "None";
+        if (style.weapon && !bare) {
           const host = rig.children[0] ?? rig;
           weapon = attachWeapon(host, style.weapon);
           if (weapon) weapon.visible = false;
@@ -275,7 +277,7 @@ export class ArenaView {
         let hand: HandLook | null = null;
         if (style.hand) {
           // Flames go along the blade (the special's own weapon, else the main one).
-          const blade = style.hand === "fire" ? (weapon ?? mainWeapons.find((w) => !String(w.userData.weapon).endsWith("_Offhand"))) : undefined;
+          const blade = style.hand === "fire" && !bare ? (weapon ?? mainWeapons.find((w) => !String(w.userData.weapon).endsWith("_Offhand"))) : undefined;
           const tip = blade?.getObjectByName("trailTip");
           hand = handLook(style.hand, style.color ?? ch.colors.secondary, tip ? tip.position.y : 0);
           if (blade && tip) blade.add(hand.obj);
@@ -291,7 +293,7 @@ export class ArenaView {
           }
           if (hand) hand.obj.visible = false;
         }
-        moveFx.push({ slot, hand, weapon });
+        moveFx.push({ slot, hand, weapon, bare });
       });
     }
 
@@ -580,10 +582,8 @@ export class ArenaView {
     let swapped = false;
     for (const fx of v.moveFx) {
       const on = fx.slot === slot && f.alive;
-      if (fx.weapon) {
-        fx.weapon.visible = on;
-        swapped ||= on;
-      }
+      if (fx.weapon) fx.weapon.visible = on;
+      if (fx.weapon || fx.bare) swapped ||= on;
       if (fx.hand) {
         fx.hand.obj.visible = on;
         if (on) fx.hand.update(t);
