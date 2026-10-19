@@ -62,6 +62,14 @@ const GradeShader = {
     }`,
 };
 
+/**
+ * Light (linear, before tone mapping) above which things glow. A white garment in full
+ * sun reaches about 1.2: under this, it would shine like a lantern. Lanterns, techniques
+ * and sparks are drawn brighter than that (see vfx: HDR).
+ */
+export const BLOOM_THRESHOLD = 1.6;
+const HDR_BOOST = 2.4;
+
 export type Quality = "high" | "medium" | "low";
 
 export class PostFX {
@@ -73,9 +81,11 @@ export class PostFX {
   private settleUntil = 0;
   quality: Quality = "high";
   private renderer: THREE.WebGLRenderer;
+  private scene: THREE.Scene;
 
   constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, outline: OutlineEffect) {
     this.renderer = renderer;
+    this.scene = scene;
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
     const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 4 });
     this.composer = new EffectComposer(renderer, target);
@@ -99,7 +109,7 @@ export class PostFX {
       });
     };
     this.composer.addPass(this.ao);
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.42, 0.55, 0.92);
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.5, 0.5, BLOOM_THRESHOLD);
     this.composer.addPass(this.bloom);
     this.composer.addPass(new ShaderPass(GradeShader));
     this.composer.addPass(new OutputPass());
@@ -132,7 +142,25 @@ export class PostFX {
       const avg = this.frameTimes.reduce((a, b) => a + b, 0) / this.frameTimes.length;
       if (avg > 24) this.lower();
     }
+    this.brightenEffects();
     this.composer.render();
+  }
+
+  /**
+   * Additive effects (sparks, beams, glows) are drawn HDR_BOOST times brighter than
+   * their colour, once, when they first appear: above the bloom threshold, they glow,
+   * while lit surfaces, even white ones, do not.
+   */
+  private brightenEffects(): void {
+    this.scene.traverseVisible((o) => {
+      const mats = (o as THREE.Mesh).material;
+      if (!mats) return;
+      for (const m of [mats].flat() as THREE.MeshBasicMaterial[]) {
+        if (m.blending !== THREE.AdditiveBlending || m.userData.hdr || !m.color) continue;
+        m.userData.hdr = true;
+        m.color.multiplyScalar(HDR_BOOST);
+      }
+    });
   }
 
   private lower(): void {

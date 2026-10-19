@@ -113,7 +113,9 @@ function rimLight(m: THREE.Material): void {
       `#include <emissivemap_fragment>
       {
         float rim = 1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0);
-        totalEmissiveRadiance += vec3(1.0, 0.93, 0.82) * pow(rim, 3.0) * 0.55;
+        // Softer on pale surfaces (a white gi would glow): the rim lifts dark ones most.
+        float pale = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));
+        totalEmissiveRadiance += vec3(1.0, 0.93, 0.82) * pow(rim, 3.0) * 0.5 * (1.0 - 0.75 * pale);
       }`,
     );
   };
