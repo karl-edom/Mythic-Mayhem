@@ -735,7 +735,7 @@ function materials(): HumanMaterials {
   const fur = furTexture(31);
   shared = {
     skin: new THREE.MeshPhysicalMaterial({
-      name: "skin", color: "#eab592", roughness: 0.6, sheen: 0.45, sheenColor: new THREE.Color("#ffb59a"), sheenRoughness: 0.6, clearcoat: 0.05,
+      name: "skin", color: "#e0a786", roughness: 0.72, sheen: 0.18, sheenColor: new THREE.Color("#ff9f86"), sheenRoughness: 0.7,
     }),
     cloth1: clothMaterial("cloth1", "#8a8276", 7),
     cloth2: clothMaterial("cloth2", "#e8e1d0", 5),
@@ -1460,7 +1460,7 @@ export function hairShader(m: THREE.MeshPhysicalMaterial): void {
             float s1 = pow(sqrt(max(0.0, 1.0 - d1 * d1)), 48.0);
             float s2 = pow(sqrt(max(0.0, 1.0 - d2 * d2)), 22.0);
             float lit = 0.35 + 0.65 * clamp(dot(n, L) * 0.5 + 0.5, 0.0, 1.0);
-            outgoingLight += (vec3(1.0, 0.96, 0.9) * s1 * 1.1 + diffuseColor.rgb * s2 * 0.5) * lit;
+            outgoingLight += (vec3(1.0, 0.95, 0.88) * s1 * 0.6 + diffuseColor.rgb * s2 * 0.4) * lit;
           }
         }
         #endif
