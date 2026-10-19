@@ -20,6 +20,7 @@ import { glowTexture, magicCircleTexture, noOutline, toon } from "./toon.ts";
 import { WeaponTrail } from "./trail.ts";
 import { buildPizza } from "./pizza.ts";
 import { Vfx } from "./vfx.ts";
+import { PostFX } from "./postfx.ts";
 import { handLook, projectileLook, zoneFlames, type HandLook, type ProjectileLook } from "./moveFx.ts";
 
 interface FighterView {
@@ -89,6 +90,36 @@ export function createRenderer(canvas: HTMLCanvasElement): THREE.WebGLRenderer {
   return renderer;
 }
 
+/**
+ * Rim light on a fighter's material (as in Smash): a warm glow along the silhouette's
+ * edges, facing away from the camera, so fighters stand out from busy scenery.
+ */
+/**
+ * Building parts the camera looks through (they fade, see syncProps) instead of
+ * pulling the camera in front of them: inside a house the camera keeps its distance,
+ * as in a 3D arena brawler. Ground volumes (terrace, stone stairs, bridge) still push it.
+ */
+const SEE_THROUGH = new Set([
+  "machiya-wall", "plaster-wall", "wood-floor", "tatami", "roof-tile", "roof-flat",
+  "wood-stairs", "wood-post", "torii-post", "sakura", "bamboo-fence",
+]);
+
+function rimLight(m: THREE.Material): void {
+  if (m.userData.rim || !("emissive" in m)) return;
+  m.userData.rim = true;
+  m.onBeforeCompile = (shader) => {
+    shader.fragmentShader = shader.fragmentShader.replace(
+      "#include <emissivemap_fragment>",
+      `#include <emissivemap_fragment>
+      {
+        float rim = 1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0);
+        totalEmissiveRadiance += vec3(1.0, 0.93, 0.82) * pow(rim, 3.0) * 0.55;
+      }`,
+    );
+  };
+  m.needsUpdate = true;
+}
+
 /** Slash tilt per combo hit, so consecutive blows read as different swings. */
 const SLASH_TILT = [0.55, -0.55, 0.05, 1.1, -1.0];
 
@@ -107,11 +138,16 @@ export class ArenaView {
   private camLook = new THREE.Vector3();
   private lastEvent = 0;
   private props: THREE.Object3D[] = [];
+  /** Scenery that moves by itself (environment.ts). */
+  private animateScenery: ((t: number, dt: number) => void)[] = [];
+  private sceneryTime = 0;
   /** Props shuddering after a hit, until this time (ms). */
   private propShake = new Map<number, number>();
   private raycaster = new THREE.Raycaster();
   private vfx: Vfx;
   private outline: OutlineEffect;
+  /** Occlusion, bloom, colour grade, tone mapping (postfx.ts). */
+  private post: PostFX;
   private glow = glowTexture();
   private circleTex = magicCircleTexture();
   /** Hit-stop: animations freeze briefly on impact (visual only). */
@@ -156,10 +192,16 @@ export class ArenaView {
     this.focus = focus;
     this.library = library;
     this.outline = new OutlineEffect(renderer, { defaultThickness: 0.003, defaultColor: [0.08, 0.06, 0.1], defaultAlpha: 1 });
+    this.post = new PostFX(renderer, this.scene, this.camera, this.outline);
     this.vfx = new Vfx(this.scene);
     // A soft studio reflection for the physically lit models (shell, steel, lacquer).
     if (!proceduralEnv.map) proceduralEnv.map = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
-    this.props = buildEnvironment(this.scene, world.arena).props;
+    // Image-based light for everything physically lit: soft reflections and fill.
+    this.scene.environment = proceduralEnv.map;
+    this.scene.environmentIntensity = 0.35;
+    const env = buildEnvironment(this.scene, world.arena);
+    this.props = env.props;
+    this.animateScenery = env.animate;
     this.fighters = world.fighters.map((f) => this.buildFighter(f, characters[f.id]!));
     this.resize();
   }
@@ -176,6 +218,7 @@ export class ArenaView {
       animator = new Animator(model.mixer, model.clips, weaponStyle(look), f.kit.specials.map((sp) => ch.moves[sp.id]?.pose));
       root.add(model.root);
       materials = model.materials;
+      for (const m of materials) rimLight(m);
     } else {
       // Fallback while models are unavailable: a coloured capsule.
       const m = toon(ch.colors.primary);
@@ -314,6 +357,7 @@ export class ArenaView {
     const w = window.innerWidth;
     const h = window.innerHeight;
     this.renderer.setSize(w, h, false);
+    this.post?.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
   }
@@ -379,7 +423,7 @@ export class ArenaView {
           // 2/3 and 1/3 of its hit points it cracks, loses parts, and leans.
           const p = w.arena.props[e.prop]!;
           this.propShake.set(e.prop, now + 160);
-          if (e.amount >= 20) this.vfx.dust(new THREE.Vector3(p.x, Math.min(p.height * 0.5, 1.5), p.z), 3);
+          if (e.amount >= 20) this.vfx.dust(new THREE.Vector3(p.x, p.base + Math.min(p.height * 0.5, 1.5), p.z), 3);
           const chips = applyWear(this.props[p.id]!, p, damageStage(p));
           if (chips.length) this.vfx.chips(chips);
           break;
@@ -391,7 +435,7 @@ export class ArenaView {
           // Big props burst into more and bigger pieces, spread over their volume.
           const vol = p.halfW * p.halfD * p.height * 4;
           this.vfx.debris(
-            new THREE.Vector3(p.x, Math.max(0.4, p.height * 0.5), p.z),
+            new THREE.Vector3(p.x, p.base + Math.max(0.4, p.height * 0.5), p.z),
             propColor(obj),
             Math.round(THREE.MathUtils.clamp(6 + vol / 4, 8, 30)),
             THREE.MathUtils.clamp(Math.cbrt(vol) * 0.12, 0.18, 0.5),
@@ -502,7 +546,9 @@ export class ArenaView {
     this.syncCamera(dt);
     this.syncProps();
     this.vfx.update(dt);
-    this.outline.render(this.scene, this.camera);
+    this.sceneryTime += dt;
+    for (const a of this.animateScenery) a(this.sceneryTime, dt);
+    this.post.render();
   }
 
   private syncFighter(f: Fighter, v: FighterView, dt: number, frozen: boolean): void {
@@ -678,6 +724,31 @@ export class ArenaView {
         if (o) blocking.add(o.userData.prop as number);
       }
     }
+    // The same on the volumes themselves, with a thick line of sight (left, middle and
+    // right of the body; feet, waist and head): a wall that only hides an arm or the
+    // feet is still in the way, and a ray through three points can slip past it.
+    for (const me of watched) {
+      const flat = new THREE.Vector3(me.pos.x - cam.x, 0, me.pos.z - cam.z);
+      const side = new THREE.Vector3(-flat.z, 0, flat.x).normalize().multiplyScalar(0.55);
+      const len = Math.max(1e-3, Math.hypot(flat.x, flat.z));
+      const stop = Math.max(0, 1 - 0.7 / len);
+      this.world.arena.props.forEach((p, i) => {
+        if (!p.alive || blocking.has(i)) return;
+        const top = p.base + p.height;
+        for (const o of [-1, 0, 1])
+          for (const h of [0.15, FIGHTER_HEIGHT * 0.55, FIGHTER_HEIGHT]) {
+            const b = { x: me.pos.x + side.x * o, z: me.pos.z + side.z * o };
+            const iv = segmentInterval(p, cam, b);
+            if (!iv || iv[0] > stop) continue;
+            const y0 = cam.y + (me.pos.y + h - cam.y) * iv[0];
+            const y1 = cam.y + (me.pos.y + h - cam.y) * Math.min(iv[1], stop);
+            if (Math.max(y0, y1) > p.base && Math.min(y0, y1) < top) {
+              blocking.add(i);
+              return;
+            }
+          }
+      });
+    }
     const flying = new Map(this.world.projectiles.filter((q) => q.prop !== undefined).map((q) => [q.prop!, q]));
     this.world.arena.props.forEach((p, i) => {
       const obj = this.props[i]!;
@@ -701,13 +772,13 @@ export class ArenaView {
       const shakeUntil = this.propShake.get(i);
       if (shakeUntil !== undefined) {
         const k = Math.max(0, (shakeUntil - performance.now()) / 160);
-        obj.position.set(p.x + Math.sin(performance.now() * 0.09) * 0.06 * k, 0, p.z + Math.cos(performance.now() * 0.11) * 0.06 * k);
+        obj.position.set(p.x + Math.sin(performance.now() * 0.09) * 0.06 * k, p.base, p.z + Math.cos(performance.now() * 0.11) * 0.06 * k);
         if (k <= 0) this.propShake.delete(i);
       }
       // Camera inside (or right against) a prop: hide it outright; layered see-through
       // surfaces would still veil the view. Trees reach well beyond their trunk.
       const reach = p.kind.look === "tree" ? 2.6 : 1;
-      if (distToProp(p, cam.x, cam.z) < reach && cam.y < p.height + 1.5) {
+      if (distToProp(p, cam.x, cam.z) < reach && cam.y < p.base + p.height + 1.5 && cam.y > p.base - 1.5) {
         obj.visible = false;
         return;
       }
@@ -715,16 +786,21 @@ export class ArenaView {
       const damage = p.kind.hp !== null && Number.isFinite(p.hp) ? 0.7 + 0.3 * Math.max(0, p.hp / p.kind.hp) : 1;
       obj.traverse((o) => {
         if (!(o instanceof THREE.Mesh)) return;
-        const m = o.material as THREE.MeshToonMaterial;
-        m.userData.baseColor ??= m.color.clone();
-        m.color.copy(m.userData.baseColor as THREE.Color).multiplyScalar(damage);
-        m.transparent = hides;
-        // Faint enough that the player seen through it does not look like a ghost.
-        m.opacity = hides ? 0.12 : 1;
-        m.depthWrite = !hides;
-        // The ink outline would stay opaque around a see-through prop: hide it too.
-        const outline = m.userData.outlineParameters as { visible?: boolean } | undefined;
-        if (outline) outline.visible = !hides;
+        for (const m of [o.material].flat() as THREE.MeshToonMaterial[]) {
+          m.userData.baseColor ??= m.color.clone();
+          m.color.copy(m.userData.baseColor as THREE.Color).multiplyScalar(damage);
+          // (The shader is built opaque or see-through: switching needs a rebuild.)
+          if (m.transparent !== hides) {
+            m.transparent = hides;
+            m.needsUpdate = true;
+          }
+          // Faint enough that the player seen through it does not look like a ghost.
+          m.opacity = hides ? 0.12 : 1;
+          m.depthWrite = !hides;
+          // The ink outline would stay opaque around a see-through prop: hide it too.
+          const outline = m.userData.outlineParameters as { visible?: boolean } | undefined;
+          if (outline) outline.visible = !hides;
+        }
       });
     });
   }
@@ -928,7 +1004,7 @@ export class ArenaView {
   private firstBlock(a: THREE.Vector3, b: THREE.Vector3): number {
     let first = 1;
     for (const pr of this.world.arena.props) {
-      if (!pr.alive) continue;
+      if (!pr.alive || SEE_THROUGH.has(pr.kind.id)) continue;
       const iv = segmentInterval(pr, a, b);
       if (!iv) continue;
       for (const t of iv) {
@@ -1022,14 +1098,17 @@ export class ArenaView {
     this.camera.lookAt(f.anchor.clone().add(new THREE.Vector3(0, 1.15, 0)));
     w.fighters.forEach((fi, i) => this.syncFighter(fi, this.fighters[i]!, dt, false));
     this.vfx.update(dt);
-    this.outline.render(this.scene, this.camera);
+    this.sceneryTime += dt;
+    for (const a of this.animateScenery) a(this.sceneryTime, dt);
+    this.post.render();
   }
 
   dispose(): void {
+    this.post.dispose();
     this.scene.traverse((o) => {
       if (o instanceof THREE.Mesh) {
         o.geometry.dispose();
-        (o.material as THREE.Material).dispose();
+        for (const m of [o.material].flat() as THREE.Material[]) m.dispose();
       }
     });
     this.scene.clear();

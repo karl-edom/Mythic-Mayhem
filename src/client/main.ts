@@ -55,7 +55,8 @@ const choice = {
   mode: "ffa" as Mode,
   rule: "stock" as Rule,
   level: "normal" as Level,
-  arena: arenas[0] as ArenaDef | undefined,
+  // The Japanese village first: the map being worked on (decision 0024).
+  arena: (arenas.find((a) => a.id === "village-japonais") ?? arenas[0]) as ArenaDef | undefined,
   /** Which slot the next card click fills. */
   active: 0,
 };

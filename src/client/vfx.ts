@@ -357,7 +357,7 @@ export class Vfx {
       e.obj.traverse((o) => {
         if (o instanceof THREE.Mesh || o instanceof THREE.Sprite) {
           if (o instanceof THREE.Mesh) o.geometry.dispose();
-          (o.material as THREE.Material).dispose();
+          for (const m of [o.material].flat() as THREE.Material[]) m.dispose();
         }
       });
       return false;

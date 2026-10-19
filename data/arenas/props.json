@@ -184,5 +184,240 @@
       "height": 2.2
     },
     "hp": 150
+  },
+  "machiya-wall": {
+    "id": "machiya-wall",
+    "look": "machiya-wall",
+    "color": "#efe6d2",
+    "shape": {
+      "type": "box",
+      "width": 4,
+      "depth": 0.3,
+      "height": 2.6
+    },
+    "hp": 500
+  },
+  "plaster-wall": {
+    "id": "plaster-wall",
+    "look": "plaster-wall",
+    "color": "#f2ead8",
+    "shape": {
+      "type": "box",
+      "width": 4,
+      "depth": 0.3,
+      "height": 2
+    },
+    "hp": 500
+  },
+  "wood-floor": {
+    "id": "wood-floor",
+    "look": "wood-floor",
+    "color": "#b08458",
+    "shape": {
+      "type": "box",
+      "width": 4,
+      "depth": 4,
+      "height": 0.25
+    },
+    "hp": 600
+  },
+  "tatami": {
+    "id": "tatami",
+    "look": "tatami",
+    "color": "#c9c48a",
+    "shape": {
+      "type": "box",
+      "width": 4,
+      "depth": 4,
+      "height": 0.3
+    },
+    "hp": 600
+  },
+  "roof-tile": {
+    "id": "roof-tile",
+    "look": "roof-tile",
+    "color": "#4d5560",
+    "shape": {
+      "type": "ramp",
+      "width": 6,
+      "length": 4,
+      "height": 1.4
+    },
+    "hp": 700
+  },
+  "roof-flat": {
+    "id": "roof-flat",
+    "look": "roof-flat",
+    "color": "#4d5560",
+    "shape": {
+      "type": "box",
+      "width": 4,
+      "depth": 4,
+      "height": 0.3
+    },
+    "hp": 700
+  },
+  "wood-stairs": {
+    "id": "wood-stairs",
+    "look": "wood-stairs",
+    "color": "#9a6d44",
+    "shape": {
+      "type": "ramp",
+      "width": 1.2,
+      "length": 4,
+      "height": 2.5
+    },
+    "hp": 400
+  },
+  "stone-terrace": {
+    "id": "stone-terrace",
+    "look": "stone-terrace",
+    "color": "#bdb6a6",
+    "shape": {
+      "type": "box",
+      "width": 8,
+      "depth": 6,
+      "height": 1.2
+    },
+    "hp": 900
+  },
+  "stone-stairs": {
+    "id": "stone-stairs",
+    "look": "stone-stairs",
+    "color": "#c4bdad",
+    "shape": {
+      "type": "ramp",
+      "width": 4,
+      "length": 3,
+      "height": 1.2
+    },
+    "hp": 500
+  },
+  "wood-post": {
+    "id": "wood-post",
+    "look": "wood-post",
+    "color": "#6b4a32",
+    "shape": {
+      "type": "cylinder",
+      "radius": 0.15,
+      "height": 2.6
+    },
+    "hp": 300
+  },
+  "torii-post": {
+    "id": "torii-post",
+    "look": "torii-post",
+    "color": "#c8321e",
+    "shape": {
+      "type": "cylinder",
+      "radius": 0.28,
+      "height": 4.6
+    },
+    "hp": 400
+  },
+  "stone-lantern": {
+    "id": "stone-lantern",
+    "look": "stone-lantern",
+    "color": "#a9a396",
+    "shape": {
+      "type": "cylinder",
+      "radius": 0.4,
+      "height": 1.9
+    },
+    "hp": 220
+  },
+  "sakura": {
+    "id": "sakura",
+    "look": "sakura",
+    "color": "#6a4a3a",
+    "shape": {
+      "type": "cylinder",
+      "radius": 0.4,
+      "height": 3.2
+    },
+    "hp": 220
+  },
+  "bamboo-fence": {
+    "id": "bamboo-fence",
+    "look": "bamboo-fence",
+    "color": "#b5a265",
+    "shape": {
+      "type": "box",
+      "width": 4,
+      "depth": 0.2,
+      "height": 1.6
+    },
+    "hp": 180
+  },
+  "well": {
+    "id": "well",
+    "look": "well",
+    "color": "#9c968a",
+    "shape": {
+      "type": "cylinder",
+      "radius": 0.9,
+      "height": 0.9
+    },
+    "hp": 400
+  },
+  "wood-deck": {
+    "id": "wood-deck",
+    "look": "wood-deck",
+    "color": "#a77b52",
+    "shape": {
+      "type": "box",
+      "width": 4,
+      "depth": 4,
+      "height": 0.4
+    },
+    "hp": 600
+  },
+  "stall-counter": {
+    "id": "stall-counter",
+    "look": "stall-counter",
+    "color": "#8a5e3c",
+    "shape": {
+      "type": "box",
+      "width": 3,
+      "depth": 0.8,
+      "height": 1
+    },
+    "hp": 260
+  },
+  "rock-garden": {
+    "id": "rock-garden",
+    "look": "rock",
+    "color": "#9a958a",
+    "shape": {
+      "type": "box",
+      "width": 1.6,
+      "depth": 1.2,
+      "height": 1
+    },
+    "hp": 500
+  },
+  "bridge-arch": {
+    "id": "bridge-arch",
+    "look": "bridge-arch",
+    "color": "#b8452c",
+    "shape": {
+      "type": "ramp",
+      "width": 3,
+      "length": 3,
+      "height": 1.2
+    },
+    "hp": 500
+  },
+  "bridge-deck": {
+    "id": "bridge-deck",
+    "look": "bridge-deck",
+    "color": "#b8452c",
+    "shape": {
+      "type": "box",
+      "width": 3,
+      "depth": 2,
+      "height": 0.25
+    },
+    "hp": 500
   }
 }

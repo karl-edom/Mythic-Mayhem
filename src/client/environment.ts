@@ -6,13 +6,14 @@ import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js
 import type { Arena } from "../brawl/arena.ts";
 import { buildLandscape } from "./landscape.ts";
 import { buildProp, stonework, type Theme } from "./props3d.ts";
+import { VILLAGE_LOOKS, buildDecor, buildVillageProp, villageFloor, type Animate } from "./village3d.ts";
 import {
   dirtTexture, grassTexture, noOutline, outlineOf, pavingTexture,
 } from "./toon.ts";
 
 export function themeOf(arena: Arena): Theme {
   const id = arena.def.id;
-  if (/japan|sanctuaire|shrine|kyoto/.test(id)) return "japan";
+  if (/japan|japon|sanctuaire|shrine|kyoto/.test(id)) return "japan";
   return id.includes("village") ? "village" : "meadow";
 }
 
@@ -36,6 +37,8 @@ export interface Environment {
   /** One object per arena prop, same order as arena.props. */
   props: THREE.Object3D[];
   sun: THREE.DirectionalLight;
+  /** Scenery that moves by itself (curtains, water, petals), stepped every frame. */
+  animate: Animate[];
 }
 
 export function buildEnvironment(scene: THREE.Scene, arena: Arena): Environment {
@@ -58,7 +61,9 @@ export function buildEnvironment(scene: THREE.Scene, arena: Arena): Environment 
   // Everything beyond the walls: hills, fields, river, woods, a town, sky and clouds.
   buildLandscape(scene, arena, sun.position.clone(), { theme, seed: theme === "village" ? 7 : 3 });
 
-  // The arena floor inside the walls.
+  // The arena floor inside the walls: painted from the arena's own plan when it has one.
+  const painted = !!arena.def.decor?.some((d) => d.look.startsWith("paint-"));
+  if (painted) scene.add(villageFloor(halfW * 2, halfD * 2, arena.def.decor!));
   const floorTex = theme === "village" ? pavingTexture() : theme === "japan" ? dirtTexture("#e6dcc6") : dirtTexture();
   floorTex.repeat.set(halfW / 3, halfD / 3);
   const floorMat = noOutline(new THREE.MeshStandardMaterial({ color: theme === "village" ? 0xffffff : 0xfff6e0, map: floorTex, roughness: 0.95 }));
@@ -66,6 +71,7 @@ export function buildEnvironment(scene: THREE.Scene, arena: Arena): Environment 
   floor.rotation.x = -Math.PI / 2;
   floor.position.y = 0.01;
   floor.receiveShadow = true;
+  if (painted) floor.position.y = -0.02;
   scene.add(floor);
   if (theme === "meadow") {
     // Meadow arena: grass over most of the floor, a worn dirt ring in the middle.
@@ -112,7 +118,7 @@ export function buildEnvironment(scene: THREE.Scene, arena: Arena): Environment 
   edge(-halfW - o, halfD + o, -halfW - o, -halfD - o);
 
   // Grass tufts on the meadow floor away from props (instanced: cheap).
-  {
+  if (!painted) {
     const blades = [-0.5, 0, 0.5].map((tilt, i) => {
       const b = new THREE.ConeGeometry(0.05, 0.38, 3);
       b.translate(0, 0.19, 0);
@@ -140,11 +146,19 @@ export function buildEnvironment(scene: THREE.Scene, arena: Arena): Environment 
   }
 
   const props = arena.props.map((p) => {
-    const obj = buildProp(p, theme);
-    obj.position.set(p.x, 0, p.z);
+    const village = VILLAGE_LOOKS.has(p.kind.look);
+    const obj = village ? buildVillageProp(p) : buildProp(p, theme);
+    obj.position.set(p.x, p.base, p.z);
     obj.userData.prop = p.id;
+    obj.userData.village = village;
     scene.add(obj);
     return obj;
+  });
+  // Drawn-only scenery: eaves, lattices, curtains, lanterns, blossom, water, petals.
+  const animate: Animate[] = [];
+  (arena.def.decor ?? []).forEach((d, i) => {
+    const obj = buildDecor(d, i, { props, animate });
+    if (obj) scene.add(obj);
   });
   // Torii: in Japan, two vermilion posts side by side get their crossbeams. The beams
   // belong to the first post, so they go when it breaks.
@@ -154,12 +168,13 @@ export function buildEnvironment(scene: THREE.Scene, arena: Arena): Environment 
       if (a.kind.look !== "pillar" || !b) return;
       props[i]!.add(toriiBeams(b.x - a.x, a.height, a.halfW));
     });
-  // Outlines on everything solid; props carry their own materials.
+  // Outlines on the older, cartoon props; the village is drawn without ink lines.
   for (const o of props)
-    o.traverse((m) => {
-      if (m instanceof THREE.Mesh) outlineOf(m.material as THREE.Material, 0.003);
-    });
-  return { props, sun };
+    if (!o.userData.village)
+      o.traverse((m) => {
+        if (m instanceof THREE.Mesh && !m.parent?.userData.decor) outlineOf(m.material as THREE.Material, 0.003);
+      });
+  return { props, sun, animate };
 }
 
 /** Kasagi (black top beam, ends swept up) over a vermilion nuki, spanning two posts `gap` apart. */
