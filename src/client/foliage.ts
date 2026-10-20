@@ -10,7 +10,7 @@ import { noOutline } from "./toon.ts";
 import { ROUGH_MEAN, photo } from "./villageTex.ts";
 
 type Rng = () => number;
-export type FoliageKind = "blossom" | "needles" | "bamboo";
+export type FoliageKind = "blossom" | "needles" | "bamboo" | "grass";
 
 /** Wind clock of every leaf (seconds), advanced by the village's animation. */
 export const windTime = { value: 0 };
@@ -137,7 +137,24 @@ function paintBamboo(g: CanvasRenderingContext2D, r: Rng): void {
   }
 }
 
-const PAINT: Record<FoliageKind, (g: CanvasRenderingContext2D, r: Rng) => void> = { blossom: paintBlossom, needles: paintNeedles, bamboo: paintBamboo };
+/** A tuft of grass: thin, tapering blades rising from the bottom edge and bending. */
+function paintGrass(g: CanvasRenderingContext2D, r: Rng): void {
+  for (let k = 0; k < 70; k++) {
+    const x = CELL * (0.12 + r() * 0.76);
+    const h = CELL * (0.45 + r() * 0.5);
+    const bend = (r() - 0.5) * CELL * 0.35;
+    const w = 3 + r() * 4;
+    const light = 26 + r() * 22;
+    g.fillStyle = `hsl(${78 + r() * 30}, ${40 + r() * 25}%, ${light}%)`;
+    g.beginPath();
+    g.moveTo(x - w / 2, CELL);
+    g.quadraticCurveTo(x - w / 3 + bend * 0.4, CELL - h * 0.55, x + bend, CELL - h);
+    g.quadraticCurveTo(x + w / 3 + bend * 0.4, CELL - h * 0.55, x + w / 2, CELL);
+    g.fill();
+  }
+}
+
+const PAINT: Record<FoliageKind, (g: CanvasRenderingContext2D, r: Rng) => void> = { blossom: paintBlossom, needles: paintNeedles, bamboo: paintBamboo, grass: paintGrass };
 const atlases = new Map<FoliageKind, THREE.DataTexture>();
 
 function atlas(kind: FoliageKind): THREE.DataTexture {
@@ -445,4 +462,48 @@ export function bambooClump(r: Rng, s: number): Tree {
   }
   const leaves = cards(r, clumps, { density: 60, size: [0.38, 0.55], shell: 1.4, hang: true, color: new THREE.Color("#ffffff"), tint: 0.12 });
   return { wood: mergeGeometries(wood), leaves };
+}
+
+/**
+ * Tufts of grass over the points given: two crossed upright cards each, rooted at
+ * the ground (they sway at the tip only), lit as a lawn (normals mostly up).
+ */
+export function grassTufts(r: Rng, points: { x: number; z: number }[]): THREE.BufferGeometry {
+  const pos: number[] = [];
+  const nor: number[] = [];
+  const uv: number[] = [];
+  const col: number[] = [];
+  const sw: number[] = [];
+  const idx: number[] = [];
+  const tint = new THREE.Color();
+  for (const p of points) {
+    const h = 0.16 + r() * 0.2;
+    const w = 0.3 + r() * 0.16;
+    const a0 = r() * Math.PI;
+    const cell = Math.floor(r() * 4);
+    const [u0, v0] = [(cell % 2) * 0.5, Math.floor(cell / 2) * 0.5];
+    tint.setHSL(0.22 + r() * 0.06, 0.3 + r() * 0.2, 0.36 + r() * 0.12).multiplyScalar(1.5);
+    for (const a of [a0, a0 + Math.PI / 2]) {
+      const dx = (Math.cos(a) * w) / 2;
+      const dz = (Math.sin(a) * w) / 2;
+      const base = pos.length / 3;
+      for (const [sx, sy] of [[-1, 0], [1, 0], [1, 1], [-1, 1]] as const) {
+        pos.push(p.x + dx * sx, sy * h, p.z + dz * sx);
+        // Up, leaning a little out of the card: soft, even light over the lawn.
+        nor.push(-Math.sin(a) * 0.25, 1, Math.cos(a) * 0.25);
+        uv.push(u0 + ((sx + 1) / 2) * 0.5, v0 + sy * 0.5);
+        col.push(tint.r, tint.g, tint.b);
+        sw.push(sy * 0.6);
+      }
+      idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+    }
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute("color", new THREE.Float32BufferAttribute(col, 3));
+  g.setAttribute("sway", new THREE.Float32BufferAttribute(sw, 1));
+  g.setIndex(idx);
+  return g;
 }

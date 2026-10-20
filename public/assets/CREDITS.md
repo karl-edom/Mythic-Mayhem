@@ -20,7 +20,8 @@ Chaque dossier contient trois images WebP : `diffuse.webp` (couleur, sRGB), `nor
 | `textures/planks/` | Planchers, marches en bois | [Hinoki Planks](https://polyhaven.com/a/hinoki_planks) | Charlotte Baglioni | CC0 1.0 | 1024 px ; diffuse calibrée | 62 Ko | 34 Ko | 4 Ko | 100 Ko |
 | `textures/dirt/` | Terre (sol) | [Dirt Floor](https://polyhaven.com/a/dirt_floor) | eye-candy.xyz | CC0 1.0 | 1024 px ; diffuse calibrée | 269 Ko | 412 Ko | 8 Ko | 689 Ko |
 | `textures/gravel/` | Gravier (sol du sanctuaire) | [Bicolour Gravel](https://polyhaven.com/a/bicolour_gravel) | Dimitrios Savva | CC0 1.0 | 1024 px ; diffuse calibrée | 499 Ko | 541 Ko | 241 Ko | 1282 Ko |
+| `textures/grass/` | Herbe (sol, au pied des touffes) | [Grass Ground](https://polyhaven.com/a/grass_ground) | Charlotte Baglioni | CC0 1.0 | 1024 px ; diffuse calibrée | 245 Ko | 496 Ko | 4 Ko | 744 Ko |
 | `textures/bark-sakura/` | Écorce des cerisiers | [Chinese Hackberry Bark](https://polyhaven.com/a/chinese_hackberry_bark) | Charlotte Baglioni | CC0 1.0 | 1024 px ; diffuse passée en niveaux de gris puis teintée | 96 Ko | 208 Ko | 2 Ko | 306 Ko |
 | `textures/bark-pine/` | Écorce des pins | [Pine Bark](https://polyhaven.com/a/pine_bark) | Dimitrios Savva | CC0 1.0 | 1024 px ; diffuse calibrée | 111 Ko | 397 Ko | 58 Ko | 566 Ko |
 
-**Poids total : 7,5 Mo** (7835950 octets).
+**Poids total : 8,2 Mo** (8597904 octets).

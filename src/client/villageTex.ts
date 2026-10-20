@@ -27,7 +27,7 @@ export const ROUGH_MEAN = 200 / 255;
  * read better: the roof tiles (kawara; no photo shows rows of round Japanese tiles)
  * and the tatami (the photo loses the dark cloth borders).
  */
-const PHOTOS: Record<string, number> = { plaster: 2, boards: 1.6, timber: 1, paving: 2, ashlar: 1.9, planks: 1.9, dirt: 2, gravel: 1.9, "bark-sakura": 1.2, "bark-pine": 1 };
+const PHOTOS: Record<string, number> = { plaster: 2, boards: 1.6, timber: 1, paving: 2, ashlar: 1.9, planks: 1.9, dirt: 2, gravel: 1.9, grass: 2.5, "bark-sakura": 1.2, "bark-pine": 1 };
 const photos = new Map<string, Surface>();
 
 /**
@@ -243,8 +243,8 @@ export const kawara = () =>
 
 /** Stone paving (ishidatami): irregular slabs in loose courses, mortar and moss in the joints. */
 export const paving = () => once("paving", paintPaving);
-/** The painted paving (the stream's ripples and the painted floor use it). */
-export const paintedPaving = () => painted("paving", paintPaving);
+/** The painted paving (the painted floor samples it). */
+const paintedPaving = () => painted("paving", paintPaving);
 function paintPaving(): Surface {
   const N = 512;
   const r = seeded(12);
@@ -356,6 +356,18 @@ export const planks = () =>
     return { map: p.color, normal: normalFrom(p.height, N, N, 2.5), metres: 1.1 };
   });
 
+/** Ripples for water: soft, tileable swells at two scales (a normal map only). */
+export const ripples = () =>
+  painted("ripples", () => {
+    const N = 512;
+    const big = fbm(51, N, 4, 3);
+    const small = fbm(52, N, 16, 3);
+    const h = new Float32Array(N * N);
+    for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) h[y * N + x] = big(x, y) * 0.7 + small(x, y) * 0.3;
+    const normal = normalFrom(h, N, N, 6);
+    return { map: normal, normal, metres: 3 };
+  });
+
 /** Woven cloth (curtains, awnings, banners): white, tinted by the material. */
 export const cloth = () =>
   once("cloth", () => {
@@ -378,13 +390,13 @@ export interface FloorPaint {
 
 /**
  * The painted floor and where the photo surfaces go on it (see villageFloor): `mask`
- * holds the share of paving (red), gravel (green) and earth (blue) at each pixel; the
- * rest (grass, moss, the stream bed) stays painted.
+ * holds the share of paving (red), gravel (green), earth (blue) and grass (alpha) at
+ * each pixel; the rest (moss, the stream bed) stays painted.
  */
 export interface FloorTextures {
   map: THREE.CanvasTexture;
   normal: THREE.CanvasTexture;
-  mask: THREE.CanvasTexture;
+  mask: THREE.DataTexture;
 }
 
 /**
@@ -408,8 +420,8 @@ function paintFloor(width: number, depth: number, paints: FloorPaint[]): FloorTe
   const W = Math.round(width * ppm);
   const H = Math.round(depth * ppm);
   const [c, g] = canvas(W, H);
-  const [mc, mg] = canvas(W, H);
-  const mask = mg.createImageData(W, H);
+  // (Raw bytes, not a canvas: a canvas would lose the colour wherever alpha is low.)
+  const mask = new Uint8Array(W * H * 4);
   const height = new Float32Array(W * H);
   const n = fbm(41, 512, 6, 5);
   const fine = fbm(42, 512, 48, 2);
@@ -435,7 +447,7 @@ function paintFloor(width: number, depth: number, paints: FloorPaint[]): FloorTe
       let col = colours.dirt.slice();
       let h = 0.3 + n(x % 512, y % 512) * 0.2;
       // Shares of the photo surfaces: each layer covers what is under it by t.
-      let [wp, wg, wd] = [0, 0, 1];
+      let [wp, wg, wd, wgr] = [0, 0, 1, 0];
       for (const l of layers) {
         if (l.kind === "dirt") continue;
         const edge = Math.min(x - l.x0, l.x1 - x, y - l.z0, l.z1 - y);
@@ -470,7 +482,8 @@ function paintFloor(width: number, depth: number, paints: FloorPaint[]): FloorTe
         }
         col = mixc(col, lc, t);
         h = h + (lh - h) * t;
-        [wp, wg, wd] = [wp * (1 - t) + (l.kind === "paving" ? t : 0), wg * (1 - t) + (l.kind === "gravel" ? t : 0), wd * (1 - t)];
+        const keep = 1 - t;
+        [wp, wg, wd, wgr] = [wp * keep + (l.kind === "paving" ? t : 0), wg * keep + (l.kind === "gravel" ? t : 0), wd * keep, wgr * keep + (l.kind === "grass" ? t : 0)];
       }
       // Ground grime and a little light/dark variation everywhere.
       const v = 0.9 + n(x % 512, y % 512) * 0.18;
@@ -480,18 +493,21 @@ function paintFloor(width: number, depth: number, paints: FloorPaint[]): FloorTe
       img.data[k + 2] = clamp(col[2]! * v);
       img.data[k + 3] = 255;
       height[y * W + x] = h;
-      mask.data[k] = wp * 255;
-      mask.data[k + 1] = wg * 255;
-      mask.data[k + 2] = wd * 255;
-      mask.data[k + 3] = 255;
+      mask[k] = wp * 255;
+      mask[k + 1] = wg * 255;
+      mask[k + 2] = wd * 255;
+      mask[k + 3] = wgr * 255;
     }
   g.putImageData(img, 0, 0);
-  mg.putImageData(mask, 0, 0);
   const map = tex(c, true);
   map.wrapS = map.wrapT = THREE.ClampToEdgeWrapping;
   const normal = normalFrom(height, W, H, 2.5);
   normal.wrapS = normal.wrapT = THREE.ClampToEdgeWrapping;
-  const weights = tex(mc, false);
-  weights.wrapS = weights.wrapT = THREE.ClampToEdgeWrapping;
+  const weights = new THREE.DataTexture(mask, W, H, THREE.RGBAFormat);
+  weights.flipY = true;
+  weights.generateMipmaps = true;
+  weights.minFilter = THREE.LinearMipmapLinearFilter;
+  weights.magFilter = THREE.LinearFilter;
+  weights.needsUpdate = true;
   return { map, normal, mask: weights };
 }

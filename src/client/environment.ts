@@ -63,7 +63,7 @@ export function buildEnvironment(scene: THREE.Scene, arena: Arena): Environment 
 
   // The arena floor inside the walls: painted from the arena's own plan when it has one.
   const painted = !!arena.def.decor?.some((d) => d.look.startsWith("paint-"));
-  if (painted) scene.add(villageFloor(halfW * 2, halfD * 2, arena.def.decor!));
+  if (painted) scene.add(villageFloor(halfW * 2, halfD * 2, arena.def.decor!, arena.props));
   const floorTex = theme === "village" ? pavingTexture() : theme === "japan" ? dirtTexture("#e6dcc6") : dirtTexture();
   floorTex.repeat.set(halfW / 3, halfD / 3);
   const floorMat = noOutline(new THREE.MeshStandardMaterial({ color: theme === "village" ? 0xffffff : 0xfff6e0, map: floorTex, roughness: 0.95 }));

@@ -155,6 +155,14 @@ Ajout du 2026-10-20. Vues depuis la caméra de combat, les tuiles des toits et d
 - **La collision ne change pas** : le relief dépasse de 5 à 10 cm au-dessus de la pente, qui reste la surface de jeu.
 - **Coût** : environ 170 000 sommets pour les 1 150 m² de toits de la carte.
 
+## Herbe et rivière
+
+Ajout du 2026-10-20.
+
+- **L'herbe** : au sol, une photo CC0 (*Grass Ground*, Poly Haven), 4ᵉ couche du mélange du sol (le masque passe en 4 canaux). Par-dessus, environ 4 000 touffes de brins en cartes croisées, peintes en code et agitées par le vent. Elles sont plantées seulement là où l'herbe est la peinture du dessus : ni dans le ruisseau, ni sur un chemin, ni sous un élément du décor. Elles n'ont pas d'ombre, pour rester légères.
+- **La rivière** : ses rides reprenaient le relief des pavés peints, d'où un aspect « carrelé ». Elle a maintenant un vrai relief de rides en deux couches, qui dérivent à des vitesses et des échelles différentes (surface et vernis), si bien qu'aucun motif ne se répète. L'eau est aussi un peu plus profonde de teinte.
+- **Poids** : 0,7 Mo (une texture). Aucun effet sur le jeu : l'herbe ne bloque ni les déplacements ni la vue.
+
 ## Limites connues
 
 - Le rendu est vérifié dans un navigateur sans carte graphique (SwiftShader). Sur une vraie machine, il faut mesurer la cadence ; la qualité adaptative est là pour ça.
