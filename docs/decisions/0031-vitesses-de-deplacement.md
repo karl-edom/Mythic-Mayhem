@@ -1,4 +1,4 @@
-# 0030 — Des vitesses de déplacement plus écartées
+# 0031 — Des vitesses de déplacement plus écartées
 
 Date : 2026-10-20. Statut : **acceptée** (« enchaîne oui » du porteur de projet).
 
