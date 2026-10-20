@@ -226,7 +226,7 @@ export class ArenaView {
     if (this.library) {
       const look = ch.look ?? defaultLook(f.kit.archetype);
       model = instantiate(this.library, look);
-      animator = new Animator(model.mixer, model.clips, weaponStyle(look), f.kit.specials.map((sp) => ch.moves[sp.id]?.pose));
+      animator = new Animator(model.mixer, model.clips, weaponStyle(look), f.kit.specials.map((sp) => ch.moves[sp.id]?.pose), model.scale);
       root.add(model.root);
       materials = model.materials;
       for (const m of materials) rimLight(m);

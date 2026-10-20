@@ -99,4 +99,8 @@ test("un look VRM nomme un fichier .vrm du pack, sans chemin", async () => {
   const look = (file: unknown) => parseCharacter({ name: "X", look: { model: "vrm", file, show: [] } }, "x").look;
   assert.deepEqual(look("naruto.vrm")?.file, "naruto.vrm");
   for (const bad of ["../naruto.vrm", "a/b.vrm", "naruto.glb", "", 42, undefined]) assert.equal(look(bad), undefined, String(bad));
+  // Height on screen: kept within 0.8–2.4 m, otherwise the usual size.
+  const sized = (height: unknown) => parseCharacter({ name: "X", look: { model: "vrm", file: "a.vrm", show: [], height } }, "x").look?.height;
+  assert.equal(sized(1.25), 1.25);
+  for (const bad of [0.3, 5, "1.2", undefined]) assert.equal(sized(bad), undefined, String(bad));
 });

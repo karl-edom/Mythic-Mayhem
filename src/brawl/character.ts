@@ -22,6 +22,11 @@ export interface Look {
   file?: string;
   /** A glow of this colour always round the body (Super Sonic's golden aura). */
   aura?: string;
+  /**
+   * Height on screen, metres (0.8 to 2.4; default 1.8): a small Sonic beside a tall
+   * Eggman. Display only: the body the simulation hits stays the same for everyone.
+   */
+  height?: number;
   /** Accessories to show (weapons, shields, hats…), by mesh name; all others are hidden. */
   show: string[];
   /** Colour multiplied over the model's texture ("#ffffff" = unchanged). */
@@ -139,6 +144,7 @@ function parseLook(v: unknown): Look | undefined {
   const tint = typeof o.tint === "string" && COLOR.test(o.tint) ? o.tint : "#ffffff";
   const look: Look = { model: o.model as ModelId, show, tint };
   if (typeof o.aura === "string" && COLOR.test(o.aura)) look.aura = o.aura;
+  if (typeof o.height === "number" && o.height >= 0.8 && o.height <= 2.4) look.height = o.height;
   if (look.model === "vrm") {
     if (typeof o.file !== "string" || !VRM_FILE.test(o.file)) return undefined;
     look.file = o.file;

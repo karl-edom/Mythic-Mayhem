@@ -60,7 +60,11 @@ export class Animator {
   /** Per special slot: the name of its signature animation, if the character has one. */
   private signatures: (string | undefined)[];
 
-  constructor(mixer: THREE.AnimationMixer, clips: Map<string, THREE.AnimationClip>, style: WeaponStyle, signatures: (string | undefined)[] = []) {
+  /** The model's size over the usual one: a smaller body takes shorter strides. */
+  private stride: number;
+
+  constructor(mixer: THREE.AnimationMixer, clips: Map<string, THREE.AnimationClip>, style: WeaponStyle, signatures: (string | undefined)[] = [], stride = 1) {
+    this.stride = stride;
     this.mixer = mixer;
     this.clips = clips;
     this.style = style;
@@ -93,7 +97,7 @@ export class Animator {
    * from the clip's measured stride speed when known, else from a fixed reference.
    */
   private pace(name: string, speed: number, fallback: number, min: number): number {
-    const natural = (this.clips.get(name)?.userData.naturalSpeed as number | undefined) ?? fallback;
+    const natural = ((this.clips.get(name)?.userData.naturalSpeed as number | undefined) ?? fallback) * this.stride;
     // Never more than MAX_STEPS steps a second (two per cycle): past that the legs blur
     // into a see-through flicker. A little foot sliding is the lesser evil.
     const cap = (this.len(name) * MAX_STEPS) / 2;
