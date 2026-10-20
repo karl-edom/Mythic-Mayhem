@@ -7,6 +7,7 @@
 import * as THREE from "three";
 import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { Arena } from "../brawl/arena.ts";
+import { barkMaterial, bambooClump, cedarTree, foliageMaterial, sakuraTree, type FoliageKind, type Tree } from "./foliage.ts";
 import { noOutline } from "./toon.ts";
 
 type Rng = () => number;
@@ -252,7 +253,7 @@ function paint(geo: THREE.BufferGeometry, color: THREE.Color, r: Rng, spread = 0
 }
 
 /** Broadleaf tree about 7 m tall: trunk, a few limbs, a crown of lumpy clusters. */
-export function broadleafGeometry(r: Rng, leaf = new THREE.Color("#5f9a3e")): THREE.BufferGeometry {
+export function broadleafGeometry(r: Rng, leaf = new THREE.Color("#5f9a3e"), detail = 2): THREE.BufferGeometry {
   const bark = new THREE.Color("#6b4a32");
   const parts: THREE.BufferGeometry[] = [];
   const trunk = new THREE.CylinderGeometry(0.22, 0.38, 3.2, 7);
@@ -268,7 +269,7 @@ export function broadleafGeometry(r: Rng, leaf = new THREE.Color("#5f9a3e")): TH
   }
   for (let i = 0; i < 9; i++) {
     const rad = 1.1 + r() * 0.8;
-    const blob = new THREE.IcosahedronGeometry(rad, 2);
+    const blob = new THREE.IcosahedronGeometry(rad, detail);
     const a = r() * Math.PI * 2;
     const d = i === 0 ? 0 : 0.8 + r() * 1.1;
     blob.scale(1, 0.82, 1);
@@ -336,6 +337,49 @@ function forest(
   inst.castShadow = shadows;
   inst.receiveShadow = true;
   return inst;
+}
+
+/**
+ * Real trees in a few variants, each drawn once for all its copies (instanced): wood
+ * and foliage share each copy's place, turn, size and tint.
+ */
+function cardForest(
+  make: (r: Rng) => Tree,
+  bark: "bark-sakura" | "bark-pine" | null,
+  wood: string,
+  kind: FoliageKind,
+  spots: { x: number; z: number; s: number }[],
+  land: Land,
+  r: Rng,
+): THREE.Group {
+  const g = new THREE.Group();
+  const variants = 3;
+  for (let v = 0; v < variants; v++) {
+    const mine = spots.filter((_, i) => i % variants === v);
+    if (!mine.length) continue;
+    const tree = make(r);
+    const woodMat = bark ? barkMaterial(bark, wood) : noOutline(new THREE.MeshStandardMaterial({ color: wood, roughness: 0.55 }));
+    const trunks = new THREE.InstancedMesh(tree.wood, woodMat, mine.length);
+    const leaves = new THREE.InstancedMesh(tree.leaves, foliageMaterial(kind), mine.length);
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const tint = new THREE.Color();
+    mine.forEach((p, i) => {
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), r() * Math.PI * 2);
+      m.compose(new THREE.Vector3(p.x, land.height(p.x, p.z) - 0.1, p.z), q, new THREE.Vector3(p.s, p.s * (0.9 + r() * 0.2), p.s));
+      trunks.setMatrixAt(i, m);
+      leaves.setMatrixAt(i, m);
+      const k = 0.85 + r() * 0.25;
+      leaves.setColorAt(i, tint.setRGB(k, k * (0.97 + r() * 0.06), k * (0.95 + r() * 0.08)));
+    });
+    for (const o of [trunks, leaves]) {
+      o.castShadow = false;
+      o.receiveShadow = false;
+      o.computeBoundingSphere();
+    }
+    g.add(trunks, leaves);
+  }
+  return g;
 }
 
 // ---------------------------------------------------------------------------
@@ -441,7 +485,8 @@ function bambooGeometry(r: Rng): THREE.BufferGeometry {
     // Feathery foliage: many small leaf sprays along the upper half, hanging out sideways.
     for (let k = 0; k < 7; k++) {
       const t = 0.45 + (k / 7) * 0.55;
-      const spray = new THREE.IcosahedronGeometry(0.45 + r() * 0.3, 1);
+      // (Coarse on purpose: these groves are only seen far off, in the haze.)
+      const spray = new THREE.IcosahedronGeometry(0.45 + r() * 0.3, 0);
       spray.scale(1.6, 0.45, 0.9);
       spray.rotateY(r() * Math.PI * 2);
       const at = new THREE.Vector3(0, h * t, 0).applyEuler(lean).add(base);
@@ -629,9 +674,23 @@ function buildJapan(scene: THREE.Scene, arena: Arena, land: Land, r: Rng, free: 
     const z = Math.sin(a) * (halfD + 12 + r() * 30);
     if (free(x, z, 10)) (r() < 0.55 ? sakura : bamboo).push({ x, z, s: 0.75 + r() * 0.35 });
   }
-  scene.add(forest(cedarGeometry(r), cedars, land, r, false));
-  scene.add(forest(broadleafGeometry(r, new THREE.Color("#f3b9cb")), sakura, land, r, true));
-  scene.add(forest(bambooGeometry(r), bamboo, land, r, false));
+  // The nearer trees, seen over the walls during a fight, are real trees (branches,
+  // bark, foliage cards, as in the village); the far ones stay simple, in the haze.
+  const near = (p: { x: number; z: number }) => Math.hypot(p.x, p.z) < span * 2.6;
+  const split = (spots: typeof cedars) => [spots.filter(near), spots.filter((p) => !near(p))] as const;
+  const [cedarNear, cedarFar] = split(cedars);
+  const [sakuraNear, sakuraFar] = split(sakura);
+  const [bambooNear, bambooFar] = split(bamboo);
+  scene.add(forest(cedarGeometry(r), cedarFar, land, r, false));
+  // (Far away in the haze: coarser blobs, a fifth of the triangles, the same look.)
+  scene.add(forest(broadleafGeometry(r, new THREE.Color("#f3b9cb"), 1), sakuraFar, land, r, true));
+  scene.add(forest(bambooGeometry(r), bambooFar, land, r, false));
+  // (Bamboo groves: two clumps a spot, they are cheap; the blobs they replace were broad.)
+  const grove = bambooNear.flatMap((p) => [p, { x: p.x + (r() - 0.5) * 7, z: p.z + (r() - 0.5) * 7, s: p.s * (0.85 + r() * 0.3) }]).filter((p) => free(p.x, p.z, 8));
+  const DETAIL = 0.6;
+  scene.add(cardForest((k) => cedarTree(k, 1, DETAIL), "bark-pine", "#4d3a2e", "needles", cedarNear, land, r));
+  scene.add(cardForest((k) => sakuraTree(k, 1.35, DETAIL), "bark-sakura", "#5a3f33", "blossom", sakuraNear, land, r));
+  scene.add(cardForest((k) => bambooClump(k, 1.6, DETAIL, 13, 2.2), null, "#8cae55", "bamboo", grove, land, r));
 
   // Pagoda and temple halls on the hill beyond the river.
   const tx = -span * 3.2;

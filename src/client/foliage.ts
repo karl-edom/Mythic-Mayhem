@@ -216,7 +216,11 @@ export function foliageMaterial(kind: FoliageKind): THREE.MeshStandardMaterial {
       .replace(
         "#include <begin_vertex>",
         `#include <begin_vertex>
+#ifdef USE_INSTANCING
+vec4 windWorld = modelMatrix * instanceMatrix * vec4( transformed, 1.0 );
+#else
 vec4 windWorld = modelMatrix * vec4( transformed, 1.0 );
+#endif
 float windPhase = windTime * 1.6 + windWorld.x * 0.35 + windWorld.z * 0.27;
 transformed.x += ( sin( windPhase ) * 0.06 + sin( windPhase * 3.7 + windWorld.y ) * 0.025 ) * sway;
 transformed.z += ( cos( windPhase * 0.8 ) * 0.05 + sin( windPhase * 4.3 + windWorld.x ) * 0.02 ) * sway;
@@ -372,6 +376,9 @@ const v3 = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
 // ---------------------------------------------------------------------------
 // The three trees of the village.
 
+/** Fewer, larger cards (detail < 1) cover about the same: for trees seen from afar. */
+const lod = (size: [number, number], detail: number): [number, number] => [size[0] / Math.sqrt(detail), size[1] / Math.sqrt(detail)];
+
 export interface Tree {
   wood: THREE.BufferGeometry;
   leaves: THREE.BufferGeometry;
@@ -382,7 +389,7 @@ export interface Tree {
  * the top of the trunk (`trunkTop` below the centre), forking into twigs, each twig
  * ending in a clump of blossom.
  */
-export function sakuraCrown(r: Rng, radius: number, trunkTop: number): Tree {
+export function sakuraCrown(r: Rng, radius: number, trunkTop: number, detail = 1): Tree {
   const wood: THREE.BufferGeometry[] = [];
   const clumps: Clump[] = [];
   const base = v3(0, -trunkTop, 0);
@@ -404,7 +411,7 @@ export function sakuraCrown(r: Rng, radius: number, trunkTop: number): Tree {
     }
   }
   clumps.push({ c: v3(0, radius * 0.35, 0), rad: v3(1.1, 0.75, 1.1).multiplyScalar(radius / 2.4), sway: 0.5 });
-  const leaves = cards(r, clumps, { density: 55, size: [0.45, 0.7], shell: 2.2, color: new THREE.Color("#ffffff"), tint: 0.12 });
+  const leaves = cards(r, clumps, { density: 55 * detail, size: lod([0.45, 0.7], detail), shell: 2.2, color: new THREE.Color("#ffffff"), tint: 0.12 });
   return { wood: mergeGeometries(wood), leaves };
 }
 
@@ -433,19 +440,19 @@ export function pineTree(r: Rng, s: number): Tree {
 }
 
 /** A clump of bamboo: tall culms with nodes, side twigs and hanging leaves. */
-export function bambooClump(r: Rng, s: number): Tree {
+export function bambooClump(r: Rng, s: number, detail = 1, culms = 7, spread = 1): Tree {
   const wood: THREE.BufferGeometry[] = [];
   const clumps: Clump[] = [];
-  const n = 7;
+  const n = culms;
   for (let k = 0; k < n; k++) {
     const hh = (5.2 + r() * 2.8) * s;
-    const x = (r() - 0.5) * 1.3;
-    const z = (r() - 0.5) * 1.3;
+    const x = (r() - 0.5) * 1.3 * spread;
+    const z = (r() - 0.5) * 1.3 * spread;
     const bend = v3(x * 0.5 + (r() - 0.5) * 0.4, 0, z * 0.5 + (r() - 0.5) * 0.4);
     const culm = curve(v3(x, 0, z), v3(x, hh * 0.5, z).addScaledVector(bend, 0.25), v3(x, hh, z).add(bend));
-    wood.push(branch(culm, 0.055, 0.03, 1, 10, 7));
-    // Nodes: a slight ring every 30 cm or so.
-    for (let y = 0.3; y < 0.97; y += 0.3 / hh + 0.04) {
+    wood.push(branch(culm, 0.055, 0.03, 1, detail >= 1 ? 10 : 4, detail >= 1 ? 7 : 5));
+    // Nodes: a slight ring every 30 cm or so (not on far clumps: they would not show).
+    for (let y = 0.3; detail >= 1 && y < 0.97; y += 0.3 / hh + 0.04) {
       const p = culm.getPointAt(y);
       const ring = new THREE.TorusGeometry(0.05 - y * 0.02, 0.008, 4, 8).rotateX(Math.PI / 2).translate(p.x, p.y, p.z);
       ring.deleteAttribute("uv");
@@ -460,7 +467,7 @@ export function bambooClump(r: Rng, s: number): Tree {
       clumps.push({ c: to, rad: v3(0.42, 0.3, 0.42), sway: 0.9 });
     }
   }
-  const leaves = cards(r, clumps, { density: 60, size: [0.38, 0.55], shell: 1.4, hang: true, color: new THREE.Color("#ffffff"), tint: 0.12 });
+  const leaves = cards(r, clumps, { density: 60 * detail, size: lod([0.38, 0.55], detail), shell: 1.4, hang: true, color: new THREE.Color("#ffffff"), tint: 0.12 });
   return { wood: mergeGeometries(wood), leaves };
 }
 
@@ -506,4 +513,34 @@ export function grassTufts(r: Rng, points: { x: number; z: number }[]): THREE.Bu
   g.setAttribute("sway", new THREE.Float32BufferAttribute(sw, 1));
   g.setIndex(idx);
   return g;
+}
+
+/** A whole cherry tree (trunk and crown), its foot at the origin: for the countryside. */
+export function sakuraTree(r: Rng, s: number, detail: number): Tree {
+  const trunk = curve(v3(0, 0, 0), v3(0.15, 1.2, 0.05), v3(-0.1, 2.3, 0.1), v3(0.05, 3.6, 0));
+  const crown = sakuraCrown(r, 2.4, 0.7, detail);
+  crown.wood.translate(0, 3, 0);
+  crown.leaves.translate(0, 3, 0);
+  const wood = mergeGeometries([branch(trunk, 0.34, 0.2, 1.2, 8, 8), crown.wood]);
+  for (const g of [wood, crown.leaves]) g.scale(s, s, s);
+  return { wood, leaves: crown.leaves };
+}
+
+/**
+ * A Japanese cedar (sugi): a straight trunk and dense tiers of needles narrowing to
+ * a point, about 14 m.
+ */
+export function cedarTree(r: Rng, s: number, detail: number): Tree {
+  const h = 14 * s;
+  const trunk = curve(v3(0, 0, 0), v3((r() - 0.5) * 0.2, h * 0.5, 0), v3((r() - 0.5) * 0.3, h, 0));
+  const clumps: Clump[] = [];
+  const tiers = 7;
+  for (let k = 0; k < tiers; k++) {
+    const t = 0.3 + (k / (tiers - 1)) * 0.68;
+    const p = trunk.getPointAt(t);
+    const w = (1 - t) * 3.4 * s + 0.35;
+    clumps.push({ c: p, rad: v3(w, 1.1 * s, w), sway: 0.25 });
+  }
+  const leaves = cards(r, clumps, { density: 30 * detail, size: lod([0.6, 0.9], detail), shell: 1.8, flat: 0.25, color: new THREE.Color("#ffffff"), tint: 0.08 });
+  return { wood: branch(trunk, 0.3 * s, 0.05, 1, 10, 7), leaves };
 }

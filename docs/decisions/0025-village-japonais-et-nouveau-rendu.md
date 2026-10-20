@@ -170,6 +170,14 @@ Ajout du 2026-10-20.
 - **L'enduit vieillit** : de la terre éclaboussée au pied des murs, une bande plus sombre sous le haut du mur et des coulures de pluie de longueurs inégales. C'est calculé dans le shader de l'enduit : pas d'image en plus. L'effet est volontairement discret, pour garder les murs clairs et lisibles.
 - **Les lanternes de pierre, les margelles des poteaux et les pas japonais** prennent la pierre photo à grande échelle : on voit le grain de la pierre, sans joints de maçonnerie. Avant, c'était un gris uni.
 
+## Arbres de l'arrière-plan (étape 2)
+
+Ajout du 2026-10-20.
+
+- **Autour des murs**, c'est-à-dire dans un rayon d'environ 80 m, là où on les voit pendant un combat, les arbres de la campagne sont maintenant de vrais arbres, comme dans le village : des cerisiers en fleurs (tronc en écorce photo, couronne en cartes) et des bosquets de bambous denses (13 cannes par touffe, deux touffes par emplacement). Chaque espèce existe en 3 variantes, chacune dessinée une seule fois pour toutes ses copies (instanciation), avec un feuillage allégé (60 % des cartes, plus grandes). Un cèdre du Japon (*sugi*) est prêt pour les cèdres proches.
+- **Au loin**, sur les collines, les arbres restent en volumes simples, noyés dans la brume. Ils sont même allégés : des sphères moins subdivisées, sans différence visible à cette distance.
+- **Bilan** : la scène passe de 3,3 à 2,2 millions de triangles tout en montrant de vrais arbres (82 000 cartes de feuillage au fond, 35 000 dans le village). Les arbres du fond ne portent ni ne reçoivent d'ombre.
+
 ## Limites connues
 
 - Le rendu est vérifié dans un navigateur sans carte graphique (SwiftShader). Sur une vraie machine, il faut mesurer la cadence ; la qualité adaptative est là pour ça.
