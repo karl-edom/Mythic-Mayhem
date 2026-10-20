@@ -60,7 +60,7 @@ function match(seconds: number, replay?: Command[][]): { log: Command[][]; hash:
     step(w, cmds);
   }
   const state = JSON.stringify({
-    fighters: w.fighters.map((f) => [f.pos, f.vel, f.hp, f.energy, f.lives, f.action]),
+    fighters: w.fighters.map((f) => [f.pos, f.vel, f.hp, f.energy, f.alive, f.action]),
     props: w.arena.props.map((p) => [p.alive, p.hp, p.x, p.z]),
     projectiles: w.projectiles,
     tick: w.tick,

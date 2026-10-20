@@ -1,6 +1,6 @@
 # 0026 — Multijoueur en ligne : options et plan proposé
 
-Date : 2026-10-20. Statut : **acceptée en partie**. Décidé : 4 joueurs, tous dans le même pays, modèle B (délai d'entrée). Restent ouvertes : la mise en relation et l'accès des amis à la page.
+Date : 2026-10-20. Statut : **acceptée en partie**. Décidé : 4 joueurs, tous dans le même pays, modèle B (délai d'entrée). Mise en relation : PeerJS. Reste ouvert : l'accès des amis à la page.
 
 > « Préparer la version multijoueur en ligne (pour jouer avec mes amis). »
 
@@ -103,3 +103,45 @@ En attendant ta réponse, l'étape 1 (déterminisme garanti) est utile quel que 
 - **Ce qui n'est pas prouvé ici.** Seul Chromium est disponible pour les tests. L'étape 2 (empreinte d'état échangée en partie) détectera tout écart réel entre vos navigateurs.
 
 **Prochaine étape (2 et 3) :** l'empreinte d'état, puis la boucle à délai d'entrée, testée d'abord sans réseau : plusieurs mondes dans la même page, avec latence, pertes et gigue simulées.
+
+## Arbitrage du 2026-10-20 (suite) : PeerJS
+
+> « go étape 2, et PeerJS pour la mise en relation »
+
+**Mise en relation : PeerJS.**
+- La bibliothèque PeerJS (licence MIT, environ 30 Ko) et son serveur public gratuit font se rencontrer les navigateurs.
+- Ensuite, les joueurs échangent directement entre eux (WebRTC) : le serveur ne voit passer aucune donnée de jeu.
+- Limite connue : c'est un service tiers sans garantie de disponibilité. S'il tombe, on pourra héberger le même serveur (PeerServer, MIT) sans changer le jeu.
+
+## Étape 2 faite : empreinte d'état et pas synchronisé, testés sur un réseau simulé
+
+Code : `src/net/`, indépendant du transport ; le transport et l'interface viennent à l'étape 3.
+
+- **`hash.ts` : empreinte d'état.**
+  - Elle couvre tout ce qui décide de la suite : combattants, éléments du décor, projectiles, zones, scores, tick.
+  - Les données fixes (kits, catalogue) et l'affichage (événements) n'y entrent pas.
+  - Le texte JSON écrit les nombres de la même façon dans tous les navigateurs ; l'empreinte est un FNV-1a sur 32 bits.
+- **`lockstep.ts` : pas synchronisé avec délai d'entrée.**
+  - **Horloge locale** : elle avance d'une image par frame, et la partie ne la dépasse jamais. Une commande tapée maintenant est prévue `délai` images plus tard et envoyée aux autres.
+  - **Attente** : la partie n'avance qu'avec les commandes de tous. Pendant une attente, l'horloge s'arrête et les appuis (saut, coup, esquive, saisie, technique) sont gardés pour la commande suivante : rien n'est perdu.
+  - **Pertes** : chaque message répète les 8 dernières images envoyées, donc une perte isolée ne coûte rien.
+  - **Désynchronisation** : chacun envoie son empreinte toutes les 60 images (une fois par seconde), et le premier écart est signalé.
+  - **Bots** : ils tournent sur chaque machine à l'identique, rien n'est envoyé pour eux.
+  - **`delayFor(latence)`** choisit le délai : nombre d'images que met une commande à arriver, plus une. Entre amis d'un même pays (15 à 25 ms) : **3 images, soit 50 ms**.
+- **Tests (`tests/lockstep.test.ts`, 8 tests).** Ils simulent quatre machines, chacune avec sa copie de la partie et un joueur joué par un bot local, reliées par des liens avec latence, gigue et pertes.
+
+| Conditions | Résultat |
+| --- | --- |
+| 4 joueurs, 20 ms ± 8, 1 % de pertes, délai 3 | même empreinte partout ; la partie tourne à plus de 94 % de la vitesse normale |
+| 40 ms ± 10, 1 % de pertes, délai 4 | identique ; plus de 94 % |
+| 5 % de pertes | identique ; quelques ralentissements |
+| latence (120 ms) plus longue que le délai | identique ; la partie attend les commandes en retard |
+| 2 joueurs et 2 bots | identique |
+| une machine faussée volontairement (1 PV de moins) | **désynchronisation détectée sur toutes les machines en moins d'une seconde** |
+
+**Ce qu'on a appris en route.** Sans horloge, la partie consommait d'un coup ses images d'avance au départ. Toute la marge du délai disparaissait et la partie tournait à 26 % de sa vitesse. L'horloge locale l'empêche.
+
+**Prochaine étape (3) : le vrai réseau.**
+- Le transport PeerJS.
+- Un salon : code de salle, choix des personnages, envoi des packs choisis, mesure de la latence pour régler le délai, départ commun.
+- Le branchement de la boucle de jeu, avec un message clair en cas de désynchronisation ou de déconnexion.
