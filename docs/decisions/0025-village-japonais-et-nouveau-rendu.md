@@ -204,6 +204,18 @@ Ajout du 2026-10-20, comparé sur un tableau des techniques : chaque apparence e
 - **Explosion** : de la fumée sombre qui monte et s'étale, en mélange normal et non additif, pour donner du contraste au feu. Les flammes sont moins blanches.
 - **Limites** : la roquette, la balle traçante et la lame en feu n'ont pas changé. Rayon, orbe et explosion restent très lumineux de près, parce que le halo lumineux amplifie le blanc additif.
 
+## Aura de charge d'énergie
+
+La colonne jaune plate (un cylindre additif) faisait « bon marché ». La charge est désormais une aura de ki façon anime de combat (`chargeAura` dans `src/client/moveFx.ts`) :
+
+- 16 langues de flamme à la couleur du personnage montent en tournant autour de la silhouette, assez transparentes pour laisser voir le corps ;
+- 22 grains d'énergie filent vers le haut ;
+- un halo doux derrière le corps et un cercle lumineux au sol qui battent au même rythme ;
+- 7 cailloux sombres se soulèvent du sol en tournant ;
+- le corps s'illumine légèrement de sa couleur au rythme de la charge (le flash blanc d'un coup reçu reste prioritaire).
+
+L'aura ne dépend que de l'horloge : elle boucle sans à-coup et se capture de façon reproductible. Indicateur visuel inchangé dans son sens : un joueur qui charge est immobile et vulnérable, le contre-jeu reste de le frapper. La posture de contre garde sa colonne pâle, pour ne pas confondre les deux. Coût : une quarantaine de sprites et 7 petits polyèdres par combattant, visibles seulement pendant la charge.
+
 ## Limites connues
 
 - Le rendu est vérifié dans un navigateur sans carte graphique (SwiftShader). Sur une vraie machine, il faut mesurer la cadence ; la qualité adaptative est là pour ça.

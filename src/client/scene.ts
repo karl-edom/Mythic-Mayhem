@@ -2,7 +2,7 @@
 // never changes the simulation. Readability first: every state that matters to
 // the opponent has a visual cue.
 //   strike → a trail that follows the weapon while the blow travels
-//   guard → bubble · guard broken → spinning stars · energy charge → aura column · counter stance → pale aura
+//   guard → bubble · guard broken → spinning stars · energy charge → ki aura (flames, motes, glowing ground, pebbles) · counter stance → pale aura
 //   invulnerable → blinking · area special → magic circle filling up until impact
 
 import * as THREE from "three";
@@ -21,7 +21,7 @@ import { WeaponTrail } from "./trail.ts";
 import { buildPizza } from "./pizza.ts";
 import { Vfx } from "./vfx.ts";
 import { PostFX } from "./postfx.ts";
-import { handLook, projectileLook, zoneFlames, type HandLook, type ProjectileLook } from "./moveFx.ts";
+import { chargeAura, handLook, projectileLook, zoneFlames, type HandLook, type ProjectileLook } from "./moveFx.ts";
 
 interface FighterView {
   root: THREE.Group;
@@ -37,6 +37,8 @@ interface FighterView {
   aura: THREE.Mesh;
   stars: THREE.Group;
   chargeOrb: THREE.Sprite;
+  /** The aura of an energy charge (flames, motes, glow on the ground, pebbles lifting). */
+  energy: ReturnType<typeof chargeAura>;
   /** Red glow while health is low (hits send the fighter further, rhythm v3). */
   lowHp: THREE.Sprite;
   /** Ribbon following the weapon during strikes (anime models). */
@@ -303,6 +305,9 @@ export class ArenaView {
       noOutline(new THREE.SpriteMaterial({ map: this.glow, color: 0xff9f1c, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })),
     );
     root.add(chargeOrb);
+    const energy = chargeAura(ch.colors.secondary);
+    energy.obj.visible = false;
+    root.add(energy.obj);
 
     // The looks of the specials that the model carries: a weapon drawn just for one, what
     // glows in the hand or along the blade.
@@ -355,7 +360,7 @@ export class ArenaView {
 
     this.scene.add(root);
     return {
-      root, model, animator, materials, shadow, ring, tag, guard, aura, stars, chargeOrb, lowHp, trail,
+      root, model, animator, materials, shadow, ring, tag, guard, aura, stars, chargeOrb, energy, lowHp, trail,
       flashUntil: 0, slashKey: "", wasAirborne: false, windupKey: "", frame: 0, moveFx, mainWeapons,
     };
   }
@@ -627,7 +632,14 @@ export class ArenaView {
     const a = f.action;
     const flashing = v.flashUntil > t;
     // (Unlit and toon materials of VRM avatars may have no emissive colour: no flash on those parts.)
-    for (const m of v.materials) m.emissive?.setHex(flashing ? 0xffffff : 0x000000);
+    // Charging energy, the body glows in its colour to the beat of the aura.
+    const glowing = f.action?.kind === "charge";
+    const glowColor = glowing ? new THREE.Color(this.characters[f.id]!.colors.secondary).multiplyScalar(0.08 + 0.06 * Math.sin(t * 18)) : null;
+    for (const m of v.materials) {
+      if (flashing) m.emissive?.setHex(0xffffff);
+      else if (glowColor) m.emissive?.copy(glowColor);
+      else m.emissive?.setHex(0x000000);
+    }
 
     const invulnerable = f.alive && (f.invulnerableUntil > t || (a?.kind === "dodge" && a.t < w.config.dodgeInvulnerable));
     // (The breaker is invulnerable too, but its shockwave already shows it: no blinking.)
@@ -646,9 +658,11 @@ export class ArenaView {
     const low = f.alive && f.hp / f.kit.stats.hp < 0.35;
     v.lowHp.visible = low;
     if (low) v.lowHp.material.opacity = 0.3 + 0.15 * Math.sin(t * 8);
-    // Energy charge: a column of the fighter's colour. Counter stance: a pale, slow,
+    // Energy charge: the aura (flames, motes, glow, pebbles). Counter stance: a pale, slow,
     // breathing column (careful: a blow struck now is answered in the back).
-    v.aura.visible = a?.kind === "charge" || a?.kind === "counter";
+    v.energy.obj.visible = a?.kind === "charge";
+    if (v.energy.obj.visible) v.energy.update(t);
+    v.aura.visible = a?.kind === "counter";
     if (v.aura.visible) {
       const m = v.aura.material as THREE.MeshBasicMaterial;
       const counter = a?.kind === "counter";
