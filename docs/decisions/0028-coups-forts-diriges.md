@@ -38,6 +38,10 @@ Le **coup aérien fort** prend la portée et la puissance du coup lourd (× 0,8 
 - Le coup sec est lu côté manette (`isFlick` dans `input.ts`). La simulation ne voit que la commande « coup fort » : déterminisme et réseau ne changent pas.
 - **Tests** (`tests/smash.test.ts`) : détection du coup sec ; balayage qui touche devant et derrière ; anti-aérien qui vise et soulève un adversaire au-dessus ; saut et coup fort pressés ensemble au sol, qui donnent le coup vers le haut sans sauter ; coup aérien fort (dégâts et démarrage).
 
+## Équilibrage
+
+La gauntlet de référence a été relancée sur les 16 packs locaux. Résultat : 15 personnages sur 16 dans la bande des 40-60 %. Seul Raphaël en sortait (61 %), sans doute parce que les bots se servent maintenant de l'anti-aérien automatique. Il a été réglé avec l'outil habituel (`node tools/brawl.ts --tune --only raphael`) : ses dégâts sont multipliés par 0,84, ce qui le ramène à 53 % de victoires pour 98,8 points de budget. Ce réglage ne vit que dans son pack local ; il a été publié dans l'artefact.
+
 ## Limites
 
 - **Les gestes ne changent pas avec la direction** : le corps bascule, mais c'est la même animation de coup lourd ou de coup aérien. Des animations propres par direction et par personnage, ce serait l'étape d'après, l'option « complète » qui n'a pas été retenue pour l'instant.
