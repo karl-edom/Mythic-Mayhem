@@ -70,6 +70,35 @@ function surf(s: Surface, color: THREE.ColorRepresentation, opts: Partial<THREE.
     }),
   );
 }
+/**
+ * Weather on a wall (plaster): earth splashed up from its foot (`from`, in the mesh's
+ * own height), and under its top (`to`) a damp band with uneven rain streaks.
+ */
+function weathered<T extends THREE.MeshStandardMaterial>(m: T, from: number, to: number): T {
+  m.onBeforeCompile = (shader) => {
+    shader.uniforms.wallFrom = { value: from };
+    shader.uniforms.wallTo = { value: to };
+    shader.vertexShader = shader.vertexShader
+      .replace("#include <common>", "#include <common>\nvarying vec3 wallLocal;\nvarying vec3 wallWorld;")
+      .replace("#include <begin_vertex>", "#include <begin_vertex>\nwallLocal = position;\nwallWorld = ( modelMatrix * vec4( position, 1.0 ) ).xyz;");
+    shader.fragmentShader = shader.fragmentShader
+      .replace("#include <common>", "#include <common>\nvarying vec3 wallLocal;\nvarying vec3 wallWorld;\nuniform float wallFrom, wallTo;")
+      .replace(
+        "#include <map_fragment>",
+        `#include <map_fragment>
+float wallUp = wallLocal.y - wallFrom;
+float wallSplash = ( 1.0 - smoothstep( 0.0, 0.5, wallUp ) ) * ( 0.75 + 0.25 * sin( wallWorld.x * 7.3 + wallWorld.z * 5.1 ) );
+diffuseColor.rgb = mix( diffuseColor.rgb, diffuseColor.rgb * vec3( 0.7, 0.63, 0.55 ), wallSplash * 0.8 );
+float wallDown = wallTo - wallLocal.y;
+float wallLane = fract( sin( floor( ( wallWorld.x + wallWorld.z ) * 9.0 ) * 12.9898 ) * 43758.5453 );
+float wallStreak = ( 1.0 - smoothstep( 0.0, 0.25 + wallLane * 1.1, wallDown ) ) * ( 0.35 + 0.65 * wallLane );
+diffuseColor.rgb *= 1.0 - 0.24 * max( wallStreak, 1.0 - smoothstep( 0.0, 0.22, wallDown ) );`,
+      );
+  };
+  m.customProgramCacheKey = () => "village-weathered";
+  return m;
+}
+
 function plain(color: THREE.ColorRepresentation, opts: Partial<THREE.MeshStandardMaterialParameters> = {}): THREE.MeshStandardMaterial {
   return noOutline(new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0, ...opts }));
 }
@@ -262,7 +291,7 @@ export function buildVillageProp(p: Prop): THREE.Group {
       const lower = Math.min(h, h > 1.2 ? 0.95 : h);
       g.add(mesh(worldUV(boxAt(w, lower, d), boards().metres, at), surf(boards(), "#ffffff")));
       if (h > lower + 0.05) {
-        g.add(mesh(worldUV(boxAt(w * 0.995, h - lower - 0.12, d * 0.96, 0, lower), plaster().metres, at), surf(plaster(), p.kind.color, { roughness: 0.95 })));
+        g.add(mesh(worldUV(boxAt(w * 0.995, h - lower - 0.12, d * 0.96, 0, lower), plaster().metres, at), weathered(surf(plaster(), p.kind.color, { roughness: 0.95 }), lower, h - 0.12)));
         g.add(mesh(worldUV(boxAt(w + 0.02, 0.1, d + 0.04, 0, lower - 0.02), 1, at), surf(timber(), "#6a4a32")));
         g.add(mesh(worldUV(boxAt(w + 0.02, 0.14, d + 0.06, 0, h - 0.14), 1, at), surf(timber(), "#5a3e2a")));
       }
@@ -276,7 +305,7 @@ export function buildVillageProp(p: Prop): THREE.Group {
     }
     case "plaster-wall": {
       const sill = h < 0.6;
-      g.add(mesh(worldUV(boxAt(w, h, d), plaster().metres, at), surf(plaster(), sill ? "#cdb898" : p.kind.color, { roughness: 0.95 })));
+      g.add(mesh(worldUV(boxAt(w, h, d), plaster().metres, at), weathered(surf(plaster(), sill ? "#cdb898" : p.kind.color, { roughness: 0.95 }), 0, h)));
       g.add(mesh(worldUV(boxAt(w + 0.02, Math.min(0.12, h), d + 0.05), 1, at), surf(timber(), "#5e4230")));
       if (!sill) {
         g.add(mesh(worldUV(boxAt(w + 0.02, 0.1, d + 0.05, 0, h - 0.1), 1, at), surf(timber(), "#5e4230")));
@@ -384,7 +413,7 @@ export function buildVillageProp(p: Prop): THREE.Group {
     }
     case "wood-post": {
       g.add(mesh(new THREE.CylinderGeometry(p.halfW * 0.92, p.halfW, h, 10).translate(0, h / 2, 0), surf(timber(), p.kind.color === "#6b4a32" ? "#7a5638" : p.kind.color)));
-      g.add(mesh(new THREE.CylinderGeometry(p.halfW * 1.15, p.halfW * 1.25, 0.12, 10).translate(0, 0.06, 0), plain("#8e887c", { roughness: 0.95 })));
+      g.add(mesh(worldUV(new THREE.CylinderGeometry(p.halfW * 1.15, p.halfW * 1.25, 0.12, 10).translate(0, 0.06, 0), ashlar().metres * 2), surf(ashlar(), "#c4bdb0", { roughness: 0.95 })));
       break;
     }
     case "torii-post": {
@@ -394,7 +423,7 @@ export function buildVillageProp(p: Prop): THREE.Group {
     }
     case "stone-lantern": {
       // Tōrō: base, shaft, platform, the fire box (lit), a curved roof, a jewel on top.
-      const stone = plain("#a8a296", { roughness: 0.95 });
+      const stone = surf(ashlar(), "#ece6d8", { roughness: 0.95 });
       const s = h / 1.9;
       const parts: [THREE.BufferGeometry, number][] = [
         [new THREE.CylinderGeometry(0.42 * s, 0.46 * s, 0.18 * s, 6), 0.09],
@@ -404,7 +433,7 @@ export function buildVillageProp(p: Prop): THREE.Group {
         [new THREE.ConeGeometry(0.46 * s, 0.32 * s, 6), 1.42],
         [new THREE.SphereGeometry(0.08 * s, 10, 8), 1.66],
       ];
-      for (const [geo, y] of parts) g.add(mesh(geo.translate(0, y * s, 0), stone));
+      for (const [geo, y] of parts) g.add(mesh(worldUV(geo.translate(0, y * s, 0), ashlar().metres * 2), stone));
       const fire = new THREE.Mesh(new THREE.CylinderGeometry(0.215 * s, 0.215 * s, 0.2 * s, 6, 1, true).translate(0, 1.09 * s, 0), noOutline(new THREE.MeshStandardMaterial({ color: "#ffd9a0", emissive: "#ff9a40", emissiveIntensity: 2.2, side: THREE.DoubleSide })));
       g.add(fire);
       break;
@@ -775,7 +804,7 @@ export function buildDecor(d: DecorPlacement, i: number, ctx: DecorContext): THR
         const st = new THREE.CylinderGeometry(0.42 * s, 0.48 * s, 0.22, 9);
         st.scale(1, 1, 0.8);
         st.translate(0, 0.08, 0);
-        g.add(mesh(st, plain("#9c968a", { roughness: 0.9 })));
+        g.add(mesh(worldUV(st, ashlar().metres * 2), surf(ashlar(), "#d2cbbd", { roughness: 0.9 })));
         break;
       }
       case "water": {

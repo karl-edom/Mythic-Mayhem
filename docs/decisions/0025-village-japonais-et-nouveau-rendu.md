@@ -163,6 +163,13 @@ Ajout du 2026-10-20.
 - **La rivière** : ses rides reprenaient le relief des pavés peints, d'où un aspect « carrelé ». Elle a maintenant un vrai relief de rides en deux couches, qui dérivent à des vitesses et des échelles différentes (surface et vernis), si bien qu'aucun motif ne se répète. L'eau est aussi un peu plus profonde de teinte.
 - **Poids** : 0,7 Mo (une texture). Aucun effet sur le jeu : l'herbe ne bloque ni les déplacements ni la vue.
 
+## Usure des murs et pierre des lanternes
+
+Ajout du 2026-10-20.
+
+- **L'enduit vieillit** : de la terre éclaboussée au pied des murs, une bande plus sombre sous le haut du mur et des coulures de pluie de longueurs inégales. C'est calculé dans le shader de l'enduit : pas d'image en plus. L'effet est volontairement discret, pour garder les murs clairs et lisibles.
+- **Les lanternes de pierre, les margelles des poteaux et les pas japonais** prennent la pierre photo à grande échelle : on voit le grain de la pierre, sans joints de maçonnerie. Avant, c'était un gris uni.
+
 ## Limites connues
 
 - Le rendu est vérifié dans un navigateur sans carte graphique (SwiftShader). Sur une vraie machine, il faut mesurer la cadence ; la qualité adaptative est là pour ça.
