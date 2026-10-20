@@ -22,6 +22,8 @@ export interface Look {
   file?: string;
   /** A glow of this colour always round the body (Super Sonic's golden aura). */
   aura?: string;
+  /** The main weapon's blade smoulders all the time and blazes at every blow (Shishio's Mugenjin). */
+  burning?: boolean;
   /**
    * Height on screen, metres (0.8 to 2.4; default 1.8): a small Sonic beside a tall
    * Eggman. Display only: the body the simulation hits stays the same for everyone.
@@ -57,7 +59,7 @@ export interface Character {
 }
 
 export interface MoveStyle {
-  /** Short text written on screen when the special starts (e.g. its name in kanji), ≤ 8 characters. */
+  /** The technique's name (e.g. in kanji), ≤ 8 characters. No longer shown on screen (2026-10-20): kept so packs stay valid. */
   callout?: string;
   /** Number of blade slashes drawn across the target when the special hits (0–12). */
   slashes?: number;
@@ -144,6 +146,7 @@ function parseLook(v: unknown): Look | undefined {
   const tint = typeof o.tint === "string" && COLOR.test(o.tint) ? o.tint : "#ffffff";
   const look: Look = { model: o.model as ModelId, show, tint };
   if (typeof o.aura === "string" && COLOR.test(o.aura)) look.aura = o.aura;
+  if (o.burning === true) look.burning = true;
   if (typeof o.height === "number" && o.height >= 0.8 && o.height <= 2.4) look.height = o.height;
   if (look.model === "vrm") {
     if (typeof o.file !== "string" || !VRM_FILE.test(o.file)) return undefined;
