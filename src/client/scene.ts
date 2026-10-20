@@ -856,7 +856,7 @@ export class ArenaView {
         const look = projectileLook(this.scene, style?.projectile, color, p.size, origin);
         if (look) {
           g = look.group;
-          this.looks.set(p, { look, kind: style!.projectile!, color });
+          this.looks.set(p, { look, kind: style?.projectile ?? "ball", color });
           if (style?.projectile === "bullet" || style?.projectile === "rocket") this.vfx.glint(origin, 0xffd27a, 1.2);
           if (style?.projectile === "beam") this.vfx.ring(origin, color, 1.6);
           this.projectiles.set(p, g);
@@ -894,7 +894,7 @@ export class ArenaView {
       const kind = this.looks.get(p)?.kind;
       if (kind === "fire" || kind === "rocket") {
         if (this.frame % 3 === 0) this.vfx.puff(g.position.clone().addScaledVector(dir, -0.4), kind === "rocket" ? 0.5 : 0.7);
-      } else if (kind !== "beam" && this.frame % 2 === 0) this.vfx.speedLines(g.position.clone(), dir, color);
+      } else if (kind !== "beam" && kind !== "ball" && this.frame % 2 === 0) this.vfx.speedLines(g.position.clone(), dir, color);
     }
     for (const [p, g] of this.projectiles)
       if (!seen.has(p)) {
@@ -907,7 +907,8 @@ export class ArenaView {
           else if (look.kind === "beam") {
             this.vfx.hit(at, look.color, true);
             this.vfx.ring(at, look.color, 3);
-          } else this.vfx.glint(at, 0xffd27a, 0.8);
+          } else if (look.kind === "ball") this.vfx.ring(at, look.color, 1.8);
+          else this.vfx.glint(at, 0xffd27a, 0.8);
         } else {
           this.vfx.ring(at, 0xffffff, 1.5);
           this.scene.remove(g);

@@ -190,6 +190,20 @@ Ajout du 2026-10-20. Les effets sont comparés sur un « tableau d'effets » : l
 - **Lisibilité d'abord** : une première version noyait les coups forts et le K.-O. dans le blanc, parce que le halo lumineux amplifie le blanc additif. Le flash a été réduit, les anneaux affinés et l'image d'impact teintée. On doit toujours voir les combattants.
 - **Coût** : quelques sprites de plus par coup et 4 petites textures peintes en code. Rien ne change pour la simulation.
 
+## Effets des techniques
+
+Ajout du 2026-10-20, comparé sur un tableau des techniques : chaque apparence est créée seule et avancée du même nombre d'images.
+
+- **Un petit émetteur de particules** (`Motes` dans `moveFx.ts`) sert aux braises, aux étincelles et aux grains d'énergie.
+- **Rayon** (type kamehameha) : de l'énergie qui coule le long du rayon (texture qui défile), un halo extérieur, des anneaux qui courent vers l'avant, des étincelles projetées par la tête et un point brûlant dans les mains.
+- **Boule de feu** : un cœur brillant, et des braises qu'elle perd derrière elle et qui retombent.
+- **Boule d'énergie** (apparence par défaut) : un anneau qui tourne, et une traînée de grains derrière elle à la place des traits de vitesse.
+- **Ki dans la main** : des grains attirés de tout autour vers la main, comme une charge d'anime.
+- **Orbe** (type rasengan) : deux couches de traînées de vent qui tournent sur des axes différents, et des grains en orbite. Le halo blanc, qui noyait le tout, a été réduit.
+- **Éclairs** (type chidori) : plus d'arcs, dont certains partent loin de la main en zigzag.
+- **Explosion** : de la fumée sombre qui monte et s'étale, en mélange normal et non additif, pour donner du contraste au feu. Les flammes sont moins blanches.
+- **Limites** : la roquette, la balle traçante et la lame en feu n'ont pas changé. Rayon, orbe et explosion restent très lumineux de près, parce que le halo lumineux amplifie le blanc additif.
+
 ## Limites connues
 
 - Le rendu est vérifié dans un navigateur sans carte graphique (SwiftShader). Sur une vraie machine, il faut mesurer la cadence ; la qualité adaptative est là pour ça.
