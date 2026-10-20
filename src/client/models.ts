@@ -59,18 +59,6 @@ async function loadSkyLight(base: string): Promise<void> {
     // Hosts that only serve common types get it wrapped in JSON, as the models.
     const buffer = EXT === "glb" ? await res.arrayBuffer() : Uint8Array.from(atob(((await res.json()) as { data: string }).data), (c) => c.charCodeAt(0)).buffer;
     const tex = new EXRLoader().parse(buffer) as unknown as { width: number; height: number; data: Uint16Array | Float32Array; type: THREE.TextureDataType };
-    // Toned down for a painted world: 60 % less colour and a touch warmer, or the blue
-    // of the sky floods every glossy surface (tiles, lacquer).
-    const half = tex.type === THREE.HalfFloatType;
-    const get = (i: number) => (half ? THREE.DataUtils.fromHalfFloat(tex.data[i]!) : tex.data[i]!);
-    const set = (i: number, v: number) => (tex.data[i] = half ? THREE.DataUtils.toHalfFloat(v) : v);
-    for (let i = 0; i < tex.data.length; i += 4) {
-      const r = get(i), g = get(i + 1), b = get(i + 2);
-      const l = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-      set(i, (l + (r - l) * 0.4) * 1.04);
-      set(i + 1, l + (g - l) * 0.4);
-      set(i + 2, (l + (b - l) * 0.4) * 0.92);
-    }
     const t = new THREE.DataTexture(tex.data, tex.width, tex.height, THREE.RGBAFormat, tex.type);
     t.mapping = THREE.EquirectangularReflectionMapping;
     t.colorSpace = THREE.LinearSRGBColorSpace;
