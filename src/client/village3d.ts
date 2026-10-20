@@ -144,6 +144,70 @@ function slab(c: THREE.Vector3[], thick: number, metres: number): THREE.BufferGe
 }
 
 /**
+ * Kawara in relief over a roof slope (corners as for slab: c0 → c1 along the eave,
+ * c3 above c0): rows of round tiles 25 cm apart over shallow pans, in courses that
+ * step down the slope, lined up with the kawara texture (4 rows and 3 courses a
+ * repeat); and, along the eave, a round end tile under each row.
+ */
+function kawaraRelief(c: THREE.Vector3[], metres: number): { tiles: THREE.BufferGeometry; ends: THREE.BufferGeometry } {
+  const across = c[0]!.distanceTo(c[1]!);
+  const along = c[0]!.distanceTo(c[3]!);
+  const ax = c[1]!.clone().sub(c[0]!).normalize();
+  const up = c[3]!.clone().sub(c[0]!).normalize();
+  const n = ax.clone().cross(up).normalize();
+  if (n.y < 0) n.negate();
+  const pitch = metres / 4;
+  const course = metres / 3;
+  // Round tile over the middle of each row, a shallow pan between; never below the slab.
+  const profile = (x: number) => 0.05 * Math.sqrt(Math.max(0, 1 - ((x - 0.5) / 0.22) ** 2)) + 0.015 * (1 - Math.cos(Math.PI * x) ** 2);
+  // Each course stands proud at its lower end, over the top of the next one down.
+  const lift = (sv: number) => 0.03 * (((along - sv) / course) % 1);
+  const us: number[] = [];
+  for (let u0 = 0; u0 < across; u0 += pitch) for (const f of [0, 0.15, 0.3, 0.5, 0.7, 0.85]) if (u0 + f * pitch < across) us.push(u0 + f * pitch);
+  us.push(across);
+  const ss = [0];
+  for (let k = Math.floor(along / course); k >= 1; k--) {
+    const sb = along - k * course;
+    if (sb > 0.01) ss.push(sb - 0.004, sb + 0.004);
+  }
+  ss.push(along);
+  const pos: number[] = [];
+  const uv: number[] = [];
+  for (const sv of ss)
+    for (const u of us) {
+      const h = 0.016 + profile((u / pitch) % 1) + lift(sv);
+      const p = c[0]!.clone().addScaledVector(ax, u).addScaledVector(up, sv).addScaledVector(n, h);
+      pos.push(p.x, p.y, p.z);
+      uv.push(u / metres, (along - sv) / metres);
+    }
+  const idx: number[] = [];
+  const row = us.length;
+  for (let j = 0; j < ss.length - 1; j++)
+    for (let i = 0; i < row - 1; i++) {
+      const a = j * row + i;
+      idx.push(a, a + 1, a + row + 1, a, a + row + 1, a + row);
+    }
+  const tiles = new THREE.BufferGeometry();
+  tiles.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  tiles.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  tiles.setIndex(idx);
+  tiles.computeVertexNormals();
+  // Facing up: flip the winding if the grid came out upside down.
+  if ((tiles.attributes.normal!.getY(0) ?? 1) < 0) {
+    for (let t = 0; t < idx.length; t += 3) [idx[t + 1], idx[t + 2]] = [idx[t + 2]!, idx[t + 1]!];
+    tiles.setIndex(idx);
+    tiles.computeVertexNormals();
+  }
+  const ends: THREE.BufferGeometry[] = [];
+  const turn = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), up);
+  for (let u = pitch / 2; u < across; u += pitch) {
+    const disc = new THREE.CylinderGeometry(0.06, 0.06, 0.05, 10).applyQuaternion(turn);
+    const p = c[0]!.clone().addScaledVector(ax, u).addScaledVector(up, -0.015).addScaledVector(n, 0.016 + 0.05 + lift(0) - 0.01);
+    ends.push(flat(disc.translate(p.x, p.y, p.z)));
+  }
+  return { tiles, ends: mergeGeometries(ends) };
+}
+/**
  * The four top corners of a ramp prop (local coordinates, centre of its footprint at
  * the origin, its bottom at y = 0): low edge first, going round.
  */
@@ -256,11 +320,16 @@ export function buildVillageProp(p: Prop): THREE.Group {
       const th = 0.16;
       // Raise the tiles a hair so they cover the collision surface exactly.
       const top = c.map((v) => v.clone().add(new THREE.Vector3(0, 0.04, 0)));
-      g.add(mesh(slab(top, th, kawara().metres), surf(kawara(), "#ffffff", { roughness: 0.55, metalness: 0.05 })));
+      const tile = () => surf(kawara(), "#ffffff", { roughness: 0.55, metalness: 0.05, normalScale: new THREE.Vector2(0.35, 0.35) });
+      g.add(mesh(slab(top, th, kawara().metres), tile()));
+      // The tiles themselves in relief over it, and their round ends along the eave.
+      const relief = kawaraRelief(top, kawara().metres);
+      g.add(mesh(relief.tiles, tile()));
+      if (relief.ends.attributes.position) g.add(mesh(relief.ends, plain("#454d59", { roughness: 0.45 })));
       const under = c.map((v) => v.clone().add(new THREE.Vector3(0, -th + 0.02, 0)));
       g.add(mesh(slab(under, 0.08, 1), surf(timber(), "#3e2c20")));
-      // Eave tiles: a rounded lip along the low edge.
-      const lip = new THREE.CylinderGeometry(0.09, 0.09, c[0]!.distanceTo(c[1]!), 10);
+      // A thin lip along the low edge, under the end tiles.
+      const lip = new THREE.CylinderGeometry(0.05, 0.05, c[0]!.distanceTo(c[1]!), 8);
       lip.rotateZ(Math.PI / 2);
       const mid = c[0]!.clone().add(c[1]!).multiplyScalar(0.5);
       const dir = c[1]!.clone().sub(c[0]!).normalize();

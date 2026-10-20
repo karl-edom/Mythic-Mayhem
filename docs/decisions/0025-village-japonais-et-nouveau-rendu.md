@@ -146,6 +146,15 @@ Ajout du 2026-10-20 (étape 1 de la piste A : de vrais arbres plutôt que des vo
 - Les arbres de l'arrière-plan (`landscape.ts`) sont encore les anciens volumes lisses : c'est l'étape 2.
 - La cadence reste à mesurer sur une vraie machine : le test alpha de milliers de cartes coûte surtout en remplissage de pixels.
 
+## Tuiles en relief
+
+Ajout du 2026-10-20. Vues depuis la caméra de combat, les tuiles des toits et des auvents passent sans cesse au premier plan. Peintes à plat, elles faisaient un quadrillage brillant.
+
+- **Les tuiles ont maintenant un vrai relief** : des rangées de tuiles rondes tous les 25 cm sur des tuiles creuses, en rangs qui descendent en gradins (33 cm), et une tuile d'about ronde au bord sous chaque rangée.
+- **Le relief suit la texture peinte**, qui reste dessus (avec un relief de texture atténué), et la photo n'a pas été retenue (voir plus haut).
+- **La collision ne change pas** : le relief dépasse de 5 à 10 cm au-dessus de la pente, qui reste la surface de jeu.
+- **Coût** : environ 170 000 sommets pour les 1 150 m² de toits de la carte.
+
 ## Limites connues
 
 - Le rendu est vérifié dans un navigateur sans carte graphique (SwiftShader). Sur une vraie machine, il faut mesurer la cadence ; la qualité adaptative est là pour ça.
