@@ -18,7 +18,9 @@
     "build": "vite build",
     "preview": "vite preview",
     "brawl:field": "node tools/brawl-field.ts",
-    "build:models": "node tools/build-models.ts"
+    "build:models": "node tools/build-models.ts",
+    "artifact": "node tools/artifact.ts build",
+    "artifact:packs": "node tools/artifact.ts packs"
   },
   "devDependencies": {
     "@gltf-transform/core": "4.5.1",

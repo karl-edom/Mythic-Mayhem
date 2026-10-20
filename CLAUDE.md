@@ -9,3 +9,16 @@
 - Toute nouvelle capacité précise son contre-jeu et son indicateur visuel.
 - Tout changement du contrat de combat commun est documenté et testé.
 - Aucune dépendance sans justifier son utilité, sa licence et son coût.
+
+## Page jouable (artefact)
+
+- **Un seul artefact**, toujours le même : https://claude.ai/artifact/74oM5qGR8uTv4dTqCf1oTw. Ne jamais en créer un autre : on le met à jour à cette adresse (outil Artifact, avec `url`).
+- **La source de vérité est la branche Git.** L'artefact n'est qu'une compilation de la branche telle qu'elle est poussée, plus les packs locaux.
+- **Les packs locaux ne vivent que dans l'artefact** (décision du 2026-10-20, option a). Si `packs/local/` est vide, les récupérer d'abord : lire la page publiée (outil Artifact, `read` avec `path: "index.html"`), puis `npm run artifact:packs -- <fichier enregistré>`. Ne pas écraser des packs locaux existants sans `--force` et sans raison.
+- **Pour publier :**
+  1. `git pull` sur la branche ;
+  2. tout commiter et pousser : `npm run artifact` refuse de compiler sinon ;
+  3. lancer `npm run artifact`, qui produit `dist/artifact/index.html` et la liste `dist/artifact/files.json` ;
+  4. publier `dist/artifact/index.html` à l'adresse ci-dessus, avec `root: "dist/artifact"` et les fichiers de `files.json` (seulement ceux qui ont changé suffisent : les autres restent en place).
+- **Tout changement de `packs/local/`** (réglage, nouveau personnage) doit être suivi d'une publication. Sinon il est perdu à la fin de la session.
+- Dire au porteur de projet quel commit a été publié.
