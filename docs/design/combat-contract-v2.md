@@ -43,7 +43,7 @@ Règle du projet : toute capacité précise son contre-jeu et son indicateur vis
 
 ## 3. Garde-fous du validateur (`src/brawl/validate.ts`)
 
-- bornes sur chaque nombre (PV 700–1600, vitesse 4–9 m/s, etc.) ;
+- bornes sur chaque nombre (PV 700–1600, vitesse 3,5–10 m/s, etc.) ;
 - au plus **3 coups légers**, 1 à 3 spéciales ;
 - premier coup léger : démarrage ≥ 0,08 s ; attaque lourde : démarrage ≥ 0,35 s ;
 - chaque coup léger recule ≥ 4, le dernier **éjecte** (recul ≥ 12) : l'échange finit toujours à distance, donc pas de boucle infinie ;

@@ -57,7 +57,7 @@ export function randomFighter(r: () => number, id: string): FighterKit {
     archetype: pick(r, ARCHETYPES),
     stats: {
       hp: range(r, 750, 1500, 0),
-      moveSpeed: range(r, 4, 6.5),
+      moveSpeed: range(r, 4, 9),
       jumpSpeed: range(r, 8, 12),
       weight: range(r, 0.8, 1.3),
       radius: range(r, 0.4, 0.7),

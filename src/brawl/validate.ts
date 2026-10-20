@@ -12,7 +12,7 @@ export const MAX_SPECIALS = 3;
 /** Hard limits on every number a fighter kit may contain. */
 const LIMITS = {
   hp: [700, 1600],
-  moveSpeed: [3.5, 8],
+  moveSpeed: [3.5, 10],
   jumpSpeed: [6, 14],
   weight: [0.7, 1.4],
   radius: [0.35, 0.8],
