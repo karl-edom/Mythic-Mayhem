@@ -1,7 +1,7 @@
 // Signature moves of the swordsmen: each special a character is known for gets its own
 // animation, chosen by name in character.json (`moves.{id}.pose`). The basic blows stay
 // those of the weapon style; only the specials change. Clips are named after the move:
-// "@gatotsu" for its start-up, then by phase: ":rush" (the charge), ":leap" (in the
+// "@gatotsu" for its start-up, then by phase: ":rush" (the charge), ":dive" (in the
 // air) and ":land", ":wait" (counter stance), ":strike" and ":miss".
 
 import * as THREE from "three";
@@ -59,7 +59,7 @@ export function signaturePoses(hipsRest: THREE.Vector3, bones: BoneTable = SWORD
   const stake = armed(over(tucked, { spine: [0.75, 0, 0], head: [-0.6, 0, 0], leftUpperLeg: [-0.5, 0, 0.2], leftLowerLeg: [0.9, 0, 0], rightUpperLeg: [0.1, 0, -0.15], rightLowerLeg: [0.8, 0, 0] }), {
     at: [-0.02, 0.3, 0.4], blade: [0, -1, 0.35], edge: [1, 0, 0], two: false, pole: [-1, 0, 0],
   });
-  clip("@gatotsu-sanshiki:leap", [[0, sanCrouch], [0.3, upThrust, "out"], [0.55, mix(upThrust, turnDown, 0.6)], [0.8, turnDown], [1, stake, "in"]], 1.0);
+  clip("@gatotsu-sanshiki:dive", [[0, sanCrouch], [0.3, upThrust, "out"], [0.55, mix(upThrust, turnDown, 0.6)], [0.8, turnDown], [1, stake, "in"]], 1.0);
   const pinned = armed(kneel, { at: [-0.02, -0.15, 0.5], blade: [0, -1, 0.25], edge: [1, 0, 0], two: false, pole: [-1, 0, 0] });
   clip("@gatotsu-sanshiki:land", [[0, stake], [0.15, pinned, "in"], [0.5, pinned], [1, stance]], 0.8, { impact: 0.15 });
 
@@ -150,7 +150,7 @@ export function signaturePoses(hipsRest: THREE.Vector3, bones: BoneTable = SWORD
   const crouch = armed(over(low, { spine: [0.5, 0, 0], head: [-0.35, 0, 0], leftUpperLeg: [-1.2, -0.1, 0.45], leftLowerLeg: [1.8, 0, 0], rightUpperLeg: [-0.7, 0.1, -0.45], rightLowerLeg: [1.6, 0, 0] }, [0, -0.36, 0]), { at: [-0.25, 0.12, -0.05], blade: [-0.2, -0.3, -1], edge: [0, -1, 0] });
   clip("@leo-flip", [[0, stance], [0.42, crouch], [1, crouch]], 0.5, { impact: 0.42 });
   const overhead = armed(over(tucked, { spine: [0.2, 0, 0] }), { at: [0, 0.85, 0.1], blade: [0, 0.6, -0.8], edge: [0, 1, 0.3] });
-  clip("@leo-flip:leap", [[0, crouch], ...somersault(tuck, 0.15, 0.7, 1), [0.85, overhead], [1, overhead]], 1.0, { linear: true });
+  clip("@leo-flip:dive", [[0, crouch], ...somersault(tuck, 0.15, 0.7, 1), [0.85, overhead], [1, overhead]], 1.0, { linear: true });
   const cut = armed(kneel, { at: [0.0, 0.18, 0.5], blade: [0, -0.55, 1], edge: [0, -1, -0.4] });
   clip("@leo-flip:land", [[0, overhead], [0.15, cut, "in"], [0.45, cut], [1, stance]], 0.8, { impact: 0.15 });
 
@@ -256,7 +256,7 @@ export function fistSignatures(hipsRest: THREE.Vector3, bones: BoneTable = SWORD
   clip("@uzumaki-rendan", [[0, stance], [0.42, spring], [1, spring]], 0.5, { impact: 0.42 });
   const ball = fists(over(tucked, { leftUpperLeg: [-2.0, 0, 0.1], leftLowerLeg: [2.2, 0, 0], rightUpperLeg: [-2.0, 0, -0.1], rightLowerLeg: [2.2, 0, 0], spine: [0.6, 0, 0] }), { r: [-0.12, 0.2, 0.3], l: [0.12, 0.2, 0.3] });
   const axe = fists(over(tucked, { rightUpperLeg: [-2.6, 0, -0.1], rightLowerLeg: [0.1, 0, 0], leftUpperLeg: [0.2, 0, 0.1], leftLowerLeg: [0.6, 0, 0], spine: [-0.15, 0, 0] }), { r: [-0.35, 0.35, 0.0], l: [0.35, 0.35, 0.0], rPole: [-1, 0, 0], lPole: [1, 0, 0] });
-  clip("@uzumaki-rendan:leap", [[0, spring], ...somersault(ball, 0.12, 0.82, 2), [1, axe]], 1.0, { linear: true });
+  clip("@uzumaki-rendan:dive", [[0, spring], ...somersault(ball, 0.12, 0.82, 2), [1, axe]], 1.0, { linear: true });
   const heel = fists(over(base, { rightUpperLeg: [-1.0, 0, -0.1], rightLowerLeg: [0.1, 0, 0], rightFoot: [0.3, 0, 0], leftUpperLeg: [-0.6, 0, 0.1], leftLowerLeg: [1.4, 0, 0], spine: [0.35, 0, 0] }, [0, -0.32, 0]), { r: [-0.35, 0.3, 0.0], l: [0.35, 0.3, 0.0] });
   clip("@uzumaki-rendan:land", [[0, axe], [0.15, heel, "in"], [0.45, heel], [1, stance]], 0.8, { impact: 0.15 });
 
@@ -269,13 +269,13 @@ export function fistSignatures(hipsRest: THREE.Vector3, bones: BoneTable = SWORD
   // kick on the way down.
   const kick = fists(over(tucked, { rightUpperLeg: [-1.3, 0, -0.1], rightLowerLeg: [0.2, 0, 0], leftUpperLeg: [-0.4, 0, 0.1], leftLowerLeg: [1.6, 0, 0], spine: [0.2, 0, 0] }), { r: [-0.3, 0.45, -0.1], l: [0.3, 0.45, -0.1] });
   clip("@homing", [[0, stance], [1, spring]], 0.12, { impact: 0.42 });
-  clip("@homing:leap", [[0, spring], ...somersault(ball, 0.08, 0.85, 3), [1, kick]], 1.0, { linear: true });
+  clip("@homing:dive", [[0, spring], ...somersault(ball, 0.08, 0.85, 3), [1, kick]], 1.0, { linear: true });
   clip("@homing:land", [[0, kick], [0.2, kick, "in"], [1, stance]], 0.5, { impact: 0.1 });
   // Drill Dive (Knuckles): up in a ball, then diving head first, both fists ahead, and
   // a punch into the ground on landing.
   const dive = fists(over(tucked, { leftUpperLeg: [0.1, 0, 0.1], leftLowerLeg: [0.3, 0, 0], rightUpperLeg: [0.1, 0, -0.1], rightLowerLeg: [0.3, 0, 0], spine: [-0.1, 0, 0], head: [0.5, 0, 0] }), { r: [-0.1, 0.75, 0.55], l: [0.1, 0.75, 0.55] });
   clip("@drill-dive", [[0, stance], [1, spring]], 0.15, { impact: 0.42 });
-  clip("@drill-dive:leap", [[0, spring], ...somersault(ball, 0.05, 0.55, 1), [0.7, dive, "in"], [1, dive]], 1.0, { linear: true });
+  clip("@drill-dive:dive", [[0, spring], ...somersault(ball, 0.05, 0.55, 1), [0.7, dive, "in"], [1, dive]], 1.0, { linear: true });
   const slam = fists(over(crouchDeep, { spine: [0.7, 0, 0] }, [0, -0.1, 0]), { r: [-0.05, -0.35, 0.5], l: [0.05, -0.35, 0.5] });
   clip("@drill-dive:land", [[0, dive], [0.15, slam, "in"], [0.5, slam], [1, stance]], 0.7, { impact: 0.15 });
 

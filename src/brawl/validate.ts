@@ -4,7 +4,7 @@
 
 import { Reader } from "../sim/validate.ts";
 import { fighterBudget, type BrawlBudget, type BrawlCostTable } from "./budget.ts";
-import { ARCHETYPES, FIGHTER_SCHEMA_VERSION, leapFlightTime, type Archetype, type FighterKit, type Special, type SpecialDelivery, type Strike } from "./kit.ts";
+import { ARCHETYPES, FIGHTER_SCHEMA_VERSION, type Archetype, type FighterKit, type Special, type SpecialDelivery, type Strike } from "./kit.ts";
 
 export const MAX_LIGHT_HITS = 3;
 export const MAX_SPECIALS = 3;
@@ -33,11 +33,13 @@ const LIMITS = {
   projectileRange: [3, 25],
   rushDistance: [2, 12],
   rushSpeed: [8, 40],
-  castRange: [0, 15],
-  areaRadius: [0.5, 5],
-  areaDelay: [0, 2],
-  leapRange: [0, 15],
-  leapHeight: [1, 12],
+  diveDistance: [2, 14],
+  diveSpeed: [12, 45],
+  burstRadius: [0.8, 4],
+  castRange: [0, 12],
+  trapRadius: [0.8, 3.5],
+  trapArm: [0.3, 2],
+  trapLifetime: [1, 8],
   counterWindow: [0.1, 1.2],
 } as const satisfies Record<string, readonly [number, number]>;
 
@@ -91,20 +93,27 @@ function readDelivery(r: Reader, v: unknown, path: string): SpecialDelivery | un
         speed: r.num(o, "speed", path, LIMITS.rushSpeed),
         size: r.num(o, "size", path, LIMITS.size),
       };
-    case "area":
+    case "dive":
       return {
-        type: "area",
+        type: "dive",
+        distance: r.num(o, "distance", path, LIMITS.diveDistance),
+        speed: r.num(o, "speed", path, LIMITS.diveSpeed),
+        size: r.num(o, "size", path, LIMITS.size),
+      };
+    case "burst":
+      return { type: "burst", radius: r.num(o, "radius", path, LIMITS.burstRadius) };
+    case "trap":
+      return {
+        type: "trap",
         castRange: r.num(o, "castRange", path, LIMITS.castRange),
-        radius: r.num(o, "radius", path, LIMITS.areaRadius),
-        delay: r.num(o, "delay", path, LIMITS.areaDelay),
+        radius: r.num(o, "radius", path, LIMITS.trapRadius),
+        arm: r.num(o, "arm", path, LIMITS.trapArm),
+        lifetime: r.num(o, "lifetime", path, LIMITS.trapLifetime),
       };
+    case "area":
     case "leap":
-      return {
-        type: "leap",
-        range: r.num(o, "range", path, LIMITS.leapRange),
-        height: r.num(o, "height", path, LIMITS.leapHeight),
-        radius: r.num(o, "radius", path, LIMITS.areaRadius),
-      };
+      r.errors.push(`${path}.type: "${o.type}" n'existe plus (décision 0029) : "leap" devient "dive", "area" devient "burst" (autour de soi) ou "trap" (piège posé)`);
+      return undefined;
     case "counter":
       return { type: "counter", window: r.num(o, "window", path, LIMITS.counterWindow) };
     default:
@@ -153,10 +162,11 @@ function designErrors(kit: FighterKit): string[] {
   if (kit.heavy.recovery < MIN_RECOVERY.heavy) errors.push(`heavy.recovery: au moins ${MIN_RECOVERY.heavy} s, un coup raté doit pouvoir se punir`);
   kit.specials.forEach((sp, i) => {
     const d = sp.delivery;
-    const telegraph = sp.startup + (d.type === "area" ? d.delay : d.type === "leap" ? leapFlightTime(d.height) : 0);
+    // A trap shows from the moment it is set: its arming time is telegraph too.
+    const telegraph = sp.startup + (d.type === "trap" ? d.arm : 0);
     if (sp.recovery < MIN_RECOVERY.special) errors.push(`specials[${i}].recovery: au moins ${MIN_RECOVERY.special} s, une spéciale ratée doit pouvoir se punir`);
     if (sp.guardBreak && telegraph < MIN_GUARD_BREAK_TELEGRAPH)
-      errors.push(`specials[${i}]: une spéciale brise-garde doit être télégraphiée au moins ${MIN_GUARD_BREAK_TELEGRAPH} s (démarrage + délai)`);
+      errors.push(`specials[${i}]: une spéciale brise-garde doit être télégraphiée au moins ${MIN_GUARD_BREAK_TELEGRAPH} s (démarrage, plus l'armement pour un piège)`);
   });
   const ids = kit.specials.map((s) => s.id);
   if (new Set(ids).size !== ids.length) errors.push("specials: identifiants en double");

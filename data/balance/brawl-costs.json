@@ -34,16 +34,19 @@
     "projectileSpeedFactor": 0.01,
     "projectileSpeedBase": 15,
     "rushDistanceFactor": 0.03,
+    "diveDistanceFactor": 0.03,
     "areaCastRangeFactor": 0.02,
     "areaRadiusFactor": 0.1,
     "areaDelayDiscountPerSecond": 0.3,
     "areaMaxDelayDiscount": 0.4,
+    "trapLifetimeFactor": 0.05,
     "counterWindowFactor": 0.5,
     "deliveryFactor": {
       "projectile": 1.313,
       "rush": 0.2878,
-      "area": 0.6889,
-      "leap": 0.6889,
+      "dive": 0.5,
+      "burst": 0.6889,
+      "trap": 0.6889,
       "counter": 0.6
     },
     "extraSpecialWeights": [

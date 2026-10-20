@@ -301,7 +301,7 @@ function swordClips(hipsRest: THREE.Vector3, oneHand: boolean): Map<string, THRE
   const crouch = armed(over(low, { spine: [0.5, 0, 0], head: [-0.35, 0, 0], leftUpperLeg: [-1.2, -0.1, 0.45], leftLowerLeg: [1.8, 0, 0], rightUpperLeg: [-0.7, 0.1, -0.45], rightLowerLeg: [1.6, 0, 0] }, [0, -0.36, 0]), {
     at: [-0.25, 0.12, -0.05], blade: [-0.2, -0.3, -1], edge: [0, -1, 0],
   });
-  const takeoff = keyClip("@special:leap", [[0, stance], [0.42, crouch], [1, crouch]], 0.5, hipsRest, { impact: 0.42 });
+  const takeoff = keyClip("@special:dive", [[0, stance], [0.42, crouch], [1, crouch]], 0.5, hipsRest, { impact: 0.42 });
   const rising = armed({ hips: [0, 0, 0], bones: { spine: [-0.1, 0, 0], head: [0.05, 0, 0], leftUpperLeg: [-0.2, 0, 0.1], leftLowerLeg: [0.3, 0, 0], leftFoot: [0.6, 0, 0], rightUpperLeg: [0.1, 0, -0.1], rightLowerLeg: [0.4, 0, 0], rightFoot: [0.6, 0, 0] } }, {
     at: [0.0, 0.95, 0.1], blade: [0, 1, 0.15], edge: [0, 0, 1],
   });
@@ -309,10 +309,10 @@ function swordClips(hipsRest: THREE.Vector3, oneHand: boolean): Map<string, THRE
   const dive = armed(over(tucked, { spine: [0.55, 0, 0], chest: [0.15, 0, 0], head: [-0.45, 0, 0], leftUpperLeg: [-0.7, 0, 0.2], leftLowerLeg: [1.0, 0, 0], rightUpperLeg: [0.2, 0, -0.15], rightLowerLeg: [0.9, 0, 0] }), {
     at: [0.0, 0.85, 0.15], blade: [0, 0.75, -0.6], edge: [0, 1, 0.5],
   });
-  const leapClip = keyClip("@leap", [[0, crouch], [0.25, rising, "out"], [0.55, peak], [0.85, dive], [1, dive]], 1.0, hipsRest);
+  const leapClip = keyClip("@dive", [[0, crouch], [0.25, rising, "out"], [0.55, peak], [0.85, dive], [1, dive]], 1.0, hipsRest);
   const kneel: Pose = over(deep, { rightUpperLeg: [0.2, 0.1, -0.25], rightLowerLeg: [1.7, 0, 0], rightFoot: [0.5, 0, 0], spine: [0.55, 0, 0] }, [0, -0.45, 0.12]);
   const hammer = armed(kneel, { at: [0.0, 0.18, 0.5], blade: [0, -0.55, 1], edge: [0, -1, -0.4] });
-  const land = keyClip("@leap:land", [[0, dive], [0.15, hammer, "in"], [0.45, hammer], [1, stance]], 0.8, hipsRest, { impact: 0.15 });
+  const land = keyClip("@dive:land", [[0, dive], [0.15, hammer, "in"], [0.45, hammer], [1, stance]], 0.8, hipsRest, { impact: 0.15 });
 
   // ---- Dragon Coil Flash (counter): a low waiting stance, the blade back along the hip
   // as if sheathed; caught, a full turn and a flat cut.
@@ -393,9 +393,9 @@ function swordClips(hipsRest: THREE.Vector3, oneHand: boolean): Map<string, THRE
     ["@light2", light2],
     ["@heavy", heavy],
     ["@aerial", aerial],
-    ["@special:leap", takeoff],
-    ["@leap", leapClip],
-    ["@leap:land", land],
+    ["@special:dive", takeoff],
+    ["@dive", leapClip],
+    ["@dive:land", land],
     ["@special:counter", enterWait],
     ["@counter", poseClip("@counter", wait, waitB, 1.2, hipsRest)],
     ["@counter:strike", counterStrike],
@@ -482,14 +482,14 @@ export function staffPoses(hipsRest: THREE.Vector3, bones: BoneTable = SWORDSMAN
 
   // ---- Pole vault (leap): plant the long end ahead, swing up over it, come down smashing.
   const plant = held(over(lunge, { spine: [0.4, 0, 0], head: [-0.3, 0, 0] }, [0, -0.28, 0.05]), [0, 0.55, 0.25], [0, -0.85, 0.55]);
-  const takeoff = keyClip("@special:leap", [[0, stance], [0.42, plant, "in"], [1, plant]], 0.5, hipsRest, { impact: 0.42 });
+  const takeoff = keyClip("@special:dive", [[0, stance], [0.42, plant, "in"], [1, plant]], 0.5, hipsRest, { impact: 0.42 });
   const vault = held({ hips: [0, 0, 0], bones: { spine: [-0.2, 0, 0], head: [0.1, 0, 0], leftUpperLeg: [-0.9, 0, 0.15], leftLowerLeg: [0.6, 0, 0], rightUpperLeg: [-0.7, 0, -0.15], rightLowerLeg: [0.5, 0, 0] } }, [0, 0.55, 0.08], [0, -1, 0.25]);
   const top = held(over(tucked, { spine: [0.25, 0, 0], head: [-0.2, 0, 0] }), [0, 0.78, 0.0], [0, 0.6, -1]);
   const dive = held(over(tucked, { spine: [0.5, 0, 0], head: [-0.4, 0, 0], leftUpperLeg: [-0.7, 0, 0.2], leftLowerLeg: [1.0, 0, 0], rightUpperLeg: [0.2, 0, -0.15], rightLowerLeg: [0.9, 0, 0] }), [0, 0.85, 0.12], [0, 0.8, -0.6]);
-  const leapClip = keyClip("@leap", [[0, plant], [0.3, vault, "out"], [0.6, top], [0.88, dive], [1, dive]], 1.0, hipsRest);
+  const leapClip = keyClip("@dive", [[0, plant], [0.3, vault, "out"], [0.6, top], [0.88, dive], [1, dive]], 1.0, hipsRest);
   const kneel: Pose = over(deep, { rightUpperLeg: [0.2, 0.1, -0.25], rightLowerLeg: [1.7, 0, 0], rightFoot: [0.5, 0, 0], spine: [0.55, 0, 0] }, [0, -0.45, 0.12]);
   const slam = held(kneel, [0, 0.16, 0.48], [0, -0.5, 1]);
-  const land = keyClip("@leap:land", [[0, dive], [0.15, slam, "in"], [0.45, slam], [1, stance]], 0.8, hipsRest, { impact: 0.15 });
+  const land = keyClip("@dive:land", [[0, dive], [0.15, slam, "in"], [0.45, slam], [1, stance]], 0.8, hipsRest, { impact: 0.15 });
 
   // ---- Whirl (area): the staff spun level round the body, twice.
   const spinAt = (yaw: number): Pose => held(over(low, { hips: [0, yaw, 0], spine: [0.15, 0, 0] }, [0, -0.2, 0]), [-0.18, 0.4, 0.18], [-1, 0.05, 0.25]);
@@ -530,9 +530,9 @@ export function staffPoses(hipsRest: THREE.Vector3, bones: BoneTable = SWORDSMAN
     ["@light2", light2],
     ["@heavy", heavy],
     ["@aerial", aerial],
-    ["@special:leap", takeoff],
-    ["@leap", leapClip],
-    ["@leap:land", land],
+    ["@special:dive", takeoff],
+    ["@dive", leapClip],
+    ["@dive:land", land],
     ["@special:area", whirl],
     ["@special:rush", enterCharge],
     ["@rush", rush],

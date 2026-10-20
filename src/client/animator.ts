@@ -161,10 +161,10 @@ export class Animator {
       case "special": {
         const sp = f.kit.specials[a.slot]!;
         const del = sp.delivery;
-        // After a leap's touchdown or a counter: the closing blow, from its impact on.
-        if (a.fired && (del.type === "leap" || del.type === "counter")) {
+        // After a dive or a counter: the closing blow, from its impact on.
+        if (a.fired && (del.type === "dive" || del.type === "counter")) {
           const clip =
-            del.type === "leap" ? this.phase(a.slot, ":land", "@leap:land", "2H_Melee_Attack_Chop")
+            del.type === "dive" ? this.phase(a.slot, ":land", "@dive:land", "2H_Melee_Attack_Chop")
             : a.countered ? this.phase(a.slot, ":strike", "@counter:strike", "2H_Melee_Attack_Spin")
             : this.phase(a.slot, ":miss", "@counter:miss", "Block");
           const d = this.len(clip);
@@ -178,17 +178,20 @@ export class Animator {
           `@special:${del.type}`,
           del.type === "projectile" ? "Spellcast_Shoot"
           : del.type === "rush" ? "1H_Melee_Attack_Stab"
-          : del.type === "leap" ? "Jump_Start"
+          : del.type === "dive" ? "Jump_Start"
           : del.type === "counter" ? "Blocking"
-          : del.castRange <= 0.5 ? "2H_Melee_Attack_Spin" : "Spellcast_Long",
+          : del.type === "burst" ? "2H_Melee_Attack_Spin" : "Spellcast_Long",
         );
         return this.strike(clip, `special${a.slot}`, sp.startup, sp.startup + sp.recovery);
       }
-      case "leap": {
-        const clip = this.phase(a.slot, ":leap", "@leap", "");
+      case "dive": {
+        // The flight clip over the dive's full length (it may end sooner, on a hit).
+        const del = f.kit.specials[a.slot]!.delivery;
+        const time = del.type === "dive" ? del.distance / del.speed : 0.3;
+        const clip = this.phase(a.slot, ":dive", "@dive", "");
         return clip
-          ? { clip, key: "leap", from: 0, duration: a.time, fade: 0.05 }
-          : { clip: "Jump_Idle", key: "leap", loop: true, fade: 0.08 };
+          ? { clip, key: "dive", from: 0, duration: time, fade: 0.05 }
+          : { clip: "Jump_Idle", key: "dive", loop: true, fade: 0.08 };
       }
       case "counter":
         return { clip: this.phase(a.slot, ":wait", "@counter", "Blocking"), key: "counter", loop: true, fade: 0.05 };

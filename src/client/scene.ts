@@ -141,7 +141,7 @@ export class ArenaView {
   private looks = new Map<object, { look: ProjectileLook; kind: string; color: string }>();
   private zones = new Map<
     object,
-    { group: THREE.Group; circle: THREE.Mesh; fill: THREE.Mesh; center: THREE.Vector3; color: string; look?: string; fire?: THREE.Group; leap?: boolean; owner: number; radius: number }
+    { group: THREE.Group; circle: THREE.Mesh; fill: THREE.Mesh; core: THREE.Mesh; fire?: THREE.Group }
   >();
   private camPos = new THREE.Vector3(0, 6, 14);
   private camLook = new THREE.Vector3();
@@ -525,6 +525,16 @@ export class ArenaView {
           this.vfx.ring(new THREE.Vector3(f.pos.x, f.pos.y + 0.1, f.pos.z), 0xffffff, 1.4);
           break;
         }
+        case "blast": {
+          // A burst, or a trap going off: a shockwave on the ground the size of the blast.
+          const { color, look } = this.moveStyle(e.unit, e.slot);
+          const at = new THREE.Vector3(e.center.x, e.center.y + 0.05, e.center.z);
+          if (look) this.explosion(at.clone().setY(at.y + 0.6), e.radius * 0.6);
+          this.vfx.groundWave(at, color, e.radius * 2);
+          this.vfx.ring(at.clone().setY(at.y + 0.9), color, e.radius * 2);
+          this.vfx.shake = Math.max(this.vfx.shake, 0.12 * e.radius);
+          break;
+        }
         case "respawn":
           this.vfx.groundWave(new THREE.Vector3(w.fighters[e.unit]!.pos.x, 0, w.fighters[e.unit]!.pos.z), 0x9fe6ff, 2.5);
           break;
@@ -674,7 +684,7 @@ export class ArenaView {
     v.stars.rotation.y = t * 6;
 
     // A special under way: its own weapon in hand, its light in the fist or on the blade.
-    const slot = a && (a.kind === "special" || a.kind === "rush" || a.kind === "leap" || a.kind === "counter") ? a.slot : -1;
+    const slot = a && (a.kind === "special" || a.kind === "rush" || a.kind === "dive" || a.kind === "counter") ? a.slot : -1;
     let swapped = false;
     for (const fx of v.moveFx) {
       const on = fx.slot === slot && f.alive;
@@ -945,7 +955,19 @@ export class ArenaView {
     this.vfx.shake = Math.max(this.vfx.shake, 0.3 * size);
   }
 
-  /** Area specials: a magic circle in the owner's colour, filling up until the strike. */
+  /** A special's colour and zone look (fire, blast), from the character sheet. */
+  private moveStyle(owner: number, slot: number): { color: string; look?: string } {
+    const ch = this.characters[owner]!;
+    const id = this.world.fighters[owner]!.kit.specials[slot]?.id;
+    const style = id ? ch.moves[id] : undefined;
+    const look = style?.zone;
+    return { color: look === "fire" ? "#ff6a1a" : look === "blast" ? "#ff3a2a" : (style?.color ?? ch.colors.primary), look };
+  }
+
+  /**
+   * Traps: a circle in the owner's colour that fills up while it arms, and a glowing
+   * core at its centre; armed, the circle is whole and blinks, faster as its time runs out.
+   */
   private syncZones(): void {
     const seen = new Set<object>();
     const t = this.world.time;
@@ -953,11 +975,7 @@ export class ArenaView {
       seen.add(z);
       let entry = this.zones.get(z);
       if (!entry) {
-        const ch = this.characters[z.owner]!;
-        const id = this.world.fighters[z.owner]!.kit.specials[z.slot]?.id;
-        const style = id ? ch.moves[id] : undefined;
-        const look = style?.zone;
-        const color = look === "fire" ? "#ff6a1a" : look === "blast" ? "#ff3a2a" : (style?.color ?? ch.colors.primary);
+        const { color, look } = this.moveStyle(z.owner, z.slot);
         const group = new THREE.Group();
         const circle = new THREE.Mesh(
           new THREE.PlaneGeometry(z.radius * 2, z.radius * 2),
@@ -967,34 +985,38 @@ export class ArenaView {
           new THREE.CircleGeometry(z.radius, 48),
           noOutline(new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.25, depthWrite: false, blending: THREE.AdditiveBlending })),
         );
+        const core = new THREE.Mesh(
+          new THREE.OctahedronGeometry(0.22),
+          noOutline(new THREE.MeshBasicMaterial({ color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })),
+        );
         circle.rotation.x = fill.rotation.x = -Math.PI / 2;
         fill.position.y = 0.01;
-        group.add(circle, fill);
+        core.position.y = 0.35;
+        group.add(circle, fill, core);
         group.position.set(z.center.x, z.center.y + 0.04, z.center.z);
         this.scene.add(group);
-        entry = { group, circle, fill, center: group.position.clone(), color, look, leap: z.leap, owner: z.owner, radius: z.radius };
+        entry = { group, circle, fill, core };
         if (look === "fire") {
           entry.fire = zoneFlames(z.radius);
           group.add(entry.fire);
         }
         this.zones.set(z, entry);
       }
-      const k = Math.min(1, (t - z.createdAt) / Math.max(1e-6, z.triggerAt - z.createdAt));
-      entry.fill.scale.setScalar(Math.max(0.01, k));
-      entry.circle.rotation.z = t * 1.5;
-      (entry.circle.material as THREE.MeshBasicMaterial).opacity = 0.5 + 0.5 * k;
-      (entry.fire?.userData.flicker as ((t: number, k: number) => void) | undefined)?.(t, k);
+      const arming = Math.min(1, (t - z.createdAt) / Math.max(1e-6, z.armedAt - z.createdAt));
+      const left = Math.max(0, z.triggerAt - t);
+      // Armed: blinks, from twice a second to eight times in the last second.
+      const blink = arming < 1 ? 0 : 0.5 + 0.5 * Math.sin(t * Math.PI * 2 * (left < 1 ? 8 : 2));
+      entry.fill.scale.setScalar(Math.max(0.01, arming));
+      (entry.fill.material as THREE.MeshBasicMaterial).opacity = arming < 1 ? 0.18 : 0.15 + 0.25 * blink;
+      entry.circle.rotation.z = t * (arming < 1 ? 0.6 : 2);
+      (entry.circle.material as THREE.MeshBasicMaterial).opacity = arming < 1 ? 0.35 + 0.3 * arming : 0.6 + 0.4 * blink;
+      entry.core.rotation.y = t * 3;
+      entry.core.scale.setScalar(arming < 1 ? 0.6 + 0.4 * arming : 1 + 0.3 * blink);
+      (entry.fire?.userData.flicker as ((t: number, k: number) => void) | undefined)?.(t, arming);
     }
+    // Gone (gone off, or its owner knocked out): the blast itself is drawn on its event.
     for (const [z, e] of this.zones)
       if (!seen.has(z)) {
-        // The circle resolves: a burst of light where it struck (of fire, an explosion).
-        const radius = (z as { radius: number }).radius;
-        // (A leap cut short in the air takes its circle away without striking.)
-        const owner = this.world.fighters[e.owner]!;
-        const landed = !e.leap || Math.hypot(owner.pos.x - e.center.x, owner.pos.z - e.center.z) < e.radius + 0.5;
-        if (e.look && landed) this.explosion(e.center.clone().setY(e.center.y + 0.6), radius * 0.6);
-        this.vfx.groundWave(e.center, e.color, (z as { radius: number }).radius * 1.6);
-        this.vfx.ring(e.center.clone().setY(e.center.y + 1), e.color, (z as { radius: number }).radius * 1.5);
         this.scene.remove(e.group);
         this.zones.delete(z);
       }
