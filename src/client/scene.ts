@@ -15,7 +15,7 @@ import { FIGHTER_HEIGHT, bodyCenter, lockTarget, type BrawlWorld, type Fighter }
 import { Animator } from "./animator.ts";
 import { applyWear, damageStage, propColor, wearLean } from "./damage.ts";
 import { buildEnvironment } from "./environment.ts";
-import { attachWeapon, defaultLook, instantiate, proceduralEnv, weaponStyle, type ModelInstance, type ModelLibrary } from "./models.ts";
+import { attachWeapon, defaultLook, instantiate, proceduralEnv, skyLight, weaponStyle, type ModelInstance, type ModelLibrary } from "./models.ts";
 import { glowTexture, magicCircleTexture, noOutline, toon } from "./toon.ts";
 import { WeaponTrail } from "./trail.ts";
 import { buildPizza } from "./pizza.ts";
@@ -201,8 +201,13 @@ export class ArenaView {
     this.outline = new OutlineEffect(renderer, { defaultThickness: 0.003, defaultColor: [0.08, 0.06, 0.1], defaultAlpha: 1 });
     this.post = new PostFX(renderer, this.scene, this.camera, this.outline);
     this.vfx = new Vfx(this.scene);
-    // A soft studio reflection for the physically lit models (shell, steel, lacquer).
-    if (!proceduralEnv.map) proceduralEnv.map = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
+    // The light of an outdoor sky (HDRI) for everything physically lit; a studio made in
+    // code if it could not be loaded.
+    if (!proceduralEnv.map) {
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      proceduralEnv.map = skyLight.hdr ? pmrem.fromEquirectangular(skyLight.hdr).texture : pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+      pmrem.dispose();
+    }
     // Image-based light for everything physically lit: soft reflections and fill.
     this.scene.environment = proceduralEnv.map;
     this.scene.environmentIntensity = 0.35;
