@@ -124,3 +124,25 @@ La gauntlet de référence inclut désormais le village. Elle a été relancée 
 - Deux en sortaient, Conker (76 %) et Donatello (66 %). Leurs dégâts ont été réduits par `--tune` : ils sont maintenant à 53 % et 50 %.
 
 Les packs sont dans `packs/local/` et ne sont donc pas commités.
+
+## Correctif : on traversait les murs et les planchers (2026-10-20)
+
+Signalé en jeu : « on peut un peu traverser les murs en sautant (sol de l'étage, mur des maisons) ». Une recherche systématique sur la carte l'a confirmé et a trouvé quatre causes. Elle lance des milliers de sauts, doubles sauts, esquives en l'air et éjections contre chacun des 159 murs du village.
+
+| Cause | Correctif (contrat de collision commun) | Test |
+| --- | --- | --- |
+| Rien n'arrêtait un saut par-dessous : la tête traversait le plancher de l'étage, puis on se posait dessus | **Plafond** : en montant, la tête bute contre le dessous de ce qui est au-dessus (plancher, toit, poutre), et la montée s'arrête | « on ne traverse pas un plancher en sautant dessous » |
+| En l'air, la tolérance de marche (0,45 m) laissait le corps entrer dans un volume (l'auvent) ; ce volume le recrachait ensuite par la face la plus proche, à travers le mur | La marche ne vaut qu'**au sol**. En l'air, un volume bloque dès que le corps le chevauche, et on ne se pose dessus qu'en arrivant par le dessus. Un corps resté enfoncé de moins d'une marche est remonté sur la surface | « on ne se pose pas sur un mur coiffé d'un autre mur » |
+| Un corps enfoncé dans un volume épais en sortait par la face la plus proche, parfois le côté opposé | Il sort **par le côté d'où il vient** | « enfoncé dans un volume épais, on en sort par le côté d'où l'on vient » |
+| Éjecté à 25-30 m/s, on parcourait 0,5 m en une image : plus que la moitié d'un mur fin | Un déplacement rapide est **découpé en petits pas**, chacun vérifié contre les murs | « éjecté à pleine vitesse contre un mur fin, on reste du bon côté » |
+
+Il faut aussi une **hauteur libre** : on ne peut pas monter ni se tenir sur un dessus qui n'a pas la hauteur d'un corps (1,8 m) libre au-dessus, à l'endroit où l'on pose le pied. Par exemple, le haut d'un mur du rez-de-chaussée, juste sous le mur de l'étage.
+
+**Conséquence sur la carte.** La fenêtre de l'étage ne laissait que 1,2 m de passage, alors qu'on la franchissait pour sortir sur l'auvent. Elle devient une **baie ouverte du plancher à l'avant-toit** (2 m) : le passage étage → auvent → rue reste possible, sans traverser de mur.
+
+**Contre-jeu et indicateur.** Rien de nouveau : ce sont les murs et les planchers qui tiennent enfin. Un saut sous un plancher s'arrête net, tête contre le plancher.
+
+**Vérification.**
+- La recherche ne trouve **aucune traversée sur 6 600 essais** (11 tirages de 600), contre 3 à 6 sur 600 avant les correctifs.
+- Le parcours porte → escalier → étage → baie → auvent → rue fonctionne dans les deux sens.
+- Les 96 tests passent.

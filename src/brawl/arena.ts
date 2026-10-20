@@ -207,7 +207,7 @@ export function distToProp(p: Prop, x: number, z: number): number {
 }
 
 /** Pushes a circle of radius r at (pos.x, pos.z) out of the prop. Returns true if it moved. */
-export function pushOut(p: Prop, pos: { x: number; z: number }, r: number): boolean {
+export function pushOut(p: Prop, pos: { x: number; z: number }, r: number, from?: { x: number; z: number }): boolean {
   if (p.kind.shape.type === "cylinder") {
     const dx = pos.x - p.x;
     const dz = pos.z - p.z;
@@ -231,13 +231,17 @@ export function pushOut(p: Prop, pos: { x: number; z: number }, r: number): bool
     pos.z = cz + (dz / d) * r;
     return true;
   }
-  // Centre inside the box: leave by the nearest face.
+  // Centre inside the box: leave by the side it came from (a fast body may be past the
+  // middle of a thick volume, and the nearest face would put it through to the far
+  // side); without a way in known, by the nearest face.
   const exits = [
     { d: pos.x - (p.x - p.halfW), x: p.x - p.halfW - r, z: pos.z },
     { d: p.x + p.halfW - pos.x, x: p.x + p.halfW + r, z: pos.z },
     { d: pos.z - (p.z - p.halfD), x: pos.x, z: p.z - p.halfD - r },
     { d: p.z + p.halfD - pos.z, x: pos.x, z: p.z + p.halfD + r },
-  ].sort((a, b) => a.d - b.d);
+  ];
+  if (from) for (const e of exits) e.d = Math.hypot(e.x - from.x, e.z - from.z);
+  exits.sort((a, b) => a.d - b.d);
   pos.x = exits[0]!.x;
   pos.z = exits[0]!.z;
   return true;

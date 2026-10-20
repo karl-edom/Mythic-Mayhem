@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildArena, validateArena, type ArenaDef } from "../src/brawl/arena.ts";
+import { buildArena, pushOut, validateArena, type ArenaDef } from "../src/brawl/arena.ts";
 import type { FighterKit } from "../src/brawl/kit.ts";
 import { loadArenas, loadBrawlCosts, loadPropCatalog } from "../src/brawl/load.ts";
 import { randomRoster } from "../src/brawl/generate.ts";
 import { rng } from "../src/sim/math.ts";
 import { runDuel } from "../src/brawl/match.ts";
-import { canSee, createBrawl, step, type BrawlWorld, type Command } from "../src/brawl/world.ts";
+import { FIGHTER_HEIGHT, canSee, createBrawl, step, type BrawlWorld, type Command } from "../src/brawl/world.ts";
 
 const catalog = loadPropCatalog();
 const strike = { damage: 50, startup: 0.1, active: 0.1, recovery: 0.2, reach: 1, size: 0.6, hitstun: 0.3, knockback: 2 };
@@ -314,4 +314,53 @@ test("le validateur lit hauteurs, dimensions et décor, et refuse les valeurs ho
   }
   assert.equal(validateArena(arena([{ kind: "platform", x: 0, z: 0, y: -1 }]), catalog).ok, false);
   assert.equal(validateArena({ ...arena([]), decor: [{ look: "<script>", x: 0, z: 0 }] }, catalog).ok, false);
+});
+
+test("on ne traverse pas un plancher en sautant dessous : la tête bute", () => {
+  const floor = { kind: "platform", x: 0, z: 0, y: 2.2, w: 4, d: 4, h: 0.3 };
+  for (const v of [6, 8, 11, 14]) {
+    const w = world([floor], 0, 12);
+    const f = w.fighters[0]!;
+    f.vel.y = v;
+    let head = 0;
+    for (let i = 0; i < 120; i++) {
+      step(w, []);
+      head = Math.max(head, f.pos.y + FIGHTER_HEIGHT);
+    }
+    assert.ok(head <= 2.2 + 1e-6, `élan ${v} : la tête monte à ${head.toFixed(2)} m, au-dessus du plancher (2,2 m)`);
+    assert.equal(f.pos.y, 0, `élan ${v} : retombé au sol, pas sur le plancher`);
+  }
+});
+
+test("on ne se pose pas sur un mur coiffé d'un autre mur : il bloque à toute hauteur de saut", () => {
+  // Le mur du rez-de-chaussée (2,6 m) et celui de l'étage (à partir de 2,85 m), comme au village.
+  const low = { kind: "wall", x: 0, z: 0, w: 0.3, d: 6, h: 2.6 };
+  const high = { kind: "wall", x: 0, z: 0, y: 2.85, w: 0.3, d: 6, h: 2.5 };
+  for (const v of [5, 7, 8, 9, 10]) {
+    const w = world([low, high], -1.2, 12);
+    const f = w.fighters[0]!;
+    f.vel.y = v;
+    run(w, 1.5, () => [{ unit: 0, move: { x: 1, z: 0 } }]);
+    assert.ok(f.pos.x < 0, `élan ${v} : passé de l'autre côté du mur (x = ${f.pos.x.toFixed(2)}, y = ${f.pos.y.toFixed(2)})`);
+  }
+});
+
+test("éjecté à pleine vitesse contre un mur fin, on reste du bon côté", () => {
+  const thin = { kind: "wall", x: 0, z: 0, w: 0.2, d: 8, h: 3 };
+  for (const speed of [15, 22, 30, 40]) {
+    const w = world([thin], -1, 12);
+    const f = w.fighters[0]!;
+    f.vel = { x: speed, y: 1, z: 0 };
+    f.action = { kind: "knockdown", until: w.time + 2 } as never;
+    run(w, 0.5);
+    assert.ok(f.pos.x < 0, `à ${speed} m/s : passé à travers le mur (x = ${f.pos.x.toFixed(2)})`);
+  }
+});
+
+test("enfoncé dans un volume épais, on en sort par le côté d'où l'on vient", () => {
+  const thick = buildArena(arena([{ kind: "platform", x: 0, z: 0, w: 4, d: 1.4, h: 1 }]), catalog).props[0]!;
+  // Entré par le côté z > 0, le centre a déjà dépassé le milieu du volume.
+  const pos = { x: 0, z: -0.3 };
+  pushOut(thick, pos, 0.4, { x: 0, z: 0.9 });
+  assert.ok(pos.z > 0.7, `ressorti côté entrée (z = ${pos.z.toFixed(2)})`);
 });

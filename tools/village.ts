@@ -112,13 +112,11 @@ function machiya(cx: number, cz: number, w: number, d: number, face: 1 | -1, n: 
   ramp("wood-stairs", x0 + T, x0 + T + stairLen, sz0, sz1, UP - FLOOR1, "+x", FLOOR1);
   const upstairs = box("wood-floor", x0 + T, x1 - T, sz1, fz(T), 0.25, STOREY);
   box("wood-floor", x0 + T + stairLen, x1 - T, sz0, sz1, 0.25, STOREY);
-  // Upstairs walls: a wide window at the front (a low sill), opening onto the canopy.
+  // Upstairs walls: a wide bay at the front, open from the floor to the eaves (2 m, a
+  // body's height and more), onto the canopy: the way out over the street.
   const win = 2.6;
   box("plaster-wall", x0, cx - win / 2, front, fz(T), UPWALL, UP);
   box("plaster-wall", cx + win / 2, x1, front, fz(T), UPWALL, UP);
-  const sill = box("plaster-wall", cx - win / 2, cx + win / 2, front, fz(T), 0.35, UP);
-  box("plaster-wall", cx - win / 2, cx + win / 2, front, fz(T), UPWALL - 1.55, UP + 1.55);
-  deco({ look: "rail", x: cx, z: front + face * 0.1, y: UP + 0.35, w: win, h: 0.5, yaw: face > 0 ? 0 : Math.PI, on: sill });
   box("plaster-wall", x0, x1, back, back + face * T, UPWALL, UP);
   box("plaster-wall", x0, x0 + T, front, back, UPWALL, UP);
   box("plaster-wall", x1 - T, x1, front, back, UPWALL, UP);

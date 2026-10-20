@@ -585,7 +585,8 @@ function faceTarget(w: BrawlWorld, f: Fighter): void {
 }
 
 /** Keeps a fighter inside the walls and out of props it is not standing above. */
-function clampToArena(w: BrawlWorld, f: Fighter): void {
+/** Keeps the fighter out of walls and props and inside the arena; true if it struck one. */
+function clampToArena(w: BrawlWorld, f: Fighter, from?: { x: number; z: number }): boolean {
   const r = f.kit.stats.radius;
   const { halfW, halfD, props } = w.arena;
   const speed = Math.hypot(f.vel.x, f.vel.z);
@@ -593,18 +594,19 @@ function clampToArena(w: BrawlWorld, f: Fighter): void {
   for (const p of props)
     // Blocked by a volume the body overlaps in height: not one it stands on (or steps
     // onto), not one hanging above its head.
-    if (p.alive && f.pos.y + STEP_UP < topAtContact(p, f) && f.pos.y + FIGHTER_HEIGHT > p.base && pushOut(p, f.pos, r)) struck = p;
+    if (p.alive && blocks(w, p, f) && pushOut(p, f.pos, r, from)) struck = p;
   const x = Math.max(-halfW + r, Math.min(halfW - r, f.pos.x));
   const z = Math.max(-halfD + r, Math.min(halfD - r, f.pos.z));
   if (x !== f.pos.x || z !== f.pos.z) struck ??= null;
   f.pos.x = x;
   f.pos.z = z;
-  if (struck === undefined) return;
+  if (struck === undefined) return false;
   // Knockback into a wall or prop stops dead; hard enough, it hurts (and crates give way).
   f.vel.x = 0;
   f.vel.z = 0;
   const stunned = f.action?.kind === "hitstun" || f.action?.kind === "knockdown";
   if (stunned && speed >= w.config.slamMinSpeed) slam(w, f, speed, struck);
+  return true;
 }
 
 /** Wall slam: extra damage credited to whoever sent the fighter flying. */
@@ -617,9 +619,48 @@ function slam(w: BrawlWorld, f: Fighter, speed: number, prop: Prop | null): void
   damage(w, src, f, amount);
 }
 
+/**
+ * Whether a volume stops the fighter sideways: it overlaps the body in height, and the
+ * body cannot step onto it. Stepping up (STEP_UP) is for feet on the ground: in the air
+ * the body would slip inside the volume, and be pushed out of it later on whichever side
+ * is nearest, through a wall. In the air one lands on a top only from above. A top capped
+ * by something less than a body's height above (a ground-floor wall under the wall
+ * upstairs) is no step either.
+ */
+function blocks(w: BrawlWorld, p: Prop, f: Fighter): boolean {
+  const top = topAtContact(p, f);
+  if (f.pos.y >= top || f.pos.y + FIGHTER_HEIGHT <= p.base) return false;
+  const step = grounded(f) ? STEP_UP : 0.05;
+  return f.pos.y + step < top || !roomOnTop(w, p, f.pos.x, f.pos.z);
+}
+
+/**
+ * Whether a body has room to stand on the prop where it would set foot (the point of its
+ * footprint nearest to (x, z)): nothing over that spot lower than a body's height.
+ */
+function roomOnTop(w: BrawlWorld, p: Prop, x: number, z: number): boolean {
+  const px = Math.max(p.x - p.halfW, Math.min(p.x + p.halfW, x));
+  const pz = Math.max(p.z - p.halfD, Math.min(p.z + p.halfD, z));
+  const top = surfaceAt(p, px, pz);
+  for (const q of w.arena.props)
+    if (q !== p && q.alive && q.base >= top - 0.05 && q.base < top + FIGHTER_HEIGHT && distToProp(q, px, pz) < 0.05) return false;
+  return true;
+}
+
 /** Height of the prop's top where the fighter touches it (matters for ramps and their sides). */
 function topAtContact(p: Prop, f: Fighter): number {
   return surfaceAt(p, f.pos.x, f.pos.z);
+}
+
+/**
+ * Underside of the lowest volume over the fighter's head that starts at or above `head`
+ * (Infinity if none): a floor upstairs, a roof, a beam.
+ */
+function ceilingAbove(w: BrawlWorld, f: Fighter, head: number): number {
+  let low = Infinity;
+  for (const p of w.arena.props)
+    if (p.alive && p.base >= head - 0.05 && p.base < low && distToProp(p, f.pos.x, f.pos.z) < f.kit.stats.radius * 0.6) low = p.base;
+  return low;
 }
 
 /** Height of the highest top under the fighter that is not above `y` (+ a small tolerance). */
@@ -628,7 +669,7 @@ function supportHeight(w: BrawlWorld, f: Fighter, y = f.pos.y): number {
   for (const p of w.arena.props) {
     if (!p.alive || distToProp(p, f.pos.x, f.pos.z) >= f.kit.stats.radius * 0.5) continue;
     const s = surfaceAt(p, f.pos.x, f.pos.z);
-    if (s > top && s <= y + 0.05) top = s;
+    if (s > top && s <= y + 0.05 && roomOnTop(w, p, f.pos.x, f.pos.z)) top = s;
   }
   return top;
 }
@@ -1278,15 +1319,28 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
 function physics(w: BrawlWorld, f: Fighter): void {
   const c = w.config;
   const dt = 1 / c.tickRate;
-  f.pos.x += f.vel.x * dt;
-  f.pos.z += f.vel.z * dt;
+  let dx = f.vel.x * dt;
+  let dz = f.vel.z * dt;
   if (f.pos.y > f.floor + 1e-6 || f.vel.y > 0) {
     // Air momentum (frozen during a dodge or a rush, which move the body themselves).
     if (f.action?.kind !== "dodge" && f.action?.kind !== "rush") {
-      f.pos.x += f.drift.x * dt;
-      f.pos.z += f.drift.z * dt;
+      dx += f.drift.x * dt;
+      dz += f.drift.z * dt;
     }
   } else if (f.drift.x !== 0 || f.drift.z !== 0) f.drift = { x: 0, y: 0, z: 0 };
+  // A fast body (thrown, knocked away) moves in short steps, each checked against the
+  // walls: in one stride it could pass the middle of a thin wall and be pushed out on
+  // the far side.
+  const stride = f.kit.stats.radius * 0.4;
+  const n = Math.max(1, Math.ceil(Math.hypot(dx, dz) / stride));
+  const from = { x: f.pos.x, z: f.pos.z };
+  for (let i = 0; i < n; i++) {
+    from.x = f.pos.x;
+    from.z = f.pos.z;
+    f.pos.x += dx / n;
+    f.pos.z += dz / n;
+    if (i < n - 1 && clampToArena(w, f, from)) break;
+  }
   const sp = Math.hypot(f.vel.x, f.vel.z);
   if (sp > 0) {
     const k = Math.max(0, sp - c.friction * dt) / sp;
@@ -1294,7 +1348,7 @@ function physics(w: BrawlWorld, f: Fighter): void {
     f.vel.z *= k;
   }
   const wasGrounded = f.pos.y <= f.floor + 1e-6 && f.vel.y <= 0;
-  clampToArena(w, f);
+  clampToArena(w, f, from);
   if (wasGrounded) {
     // Walking: climb steps and slopes up to STEP_UP, follow them down by as much; a bigger drop is a fall.
     const support = supportHeight(w, f, f.pos.y + STEP_UP);
@@ -1304,11 +1358,28 @@ function physics(w: BrawlWorld, f: Fighter): void {
       return;
     }
   }
+  // Carried up a slope or onto a step while leaving the ground (a jump or a blow as it
+  // walked onto it): the feet sank into it by less than a step; set them on its top,
+  // rather than leave the body inside a volume that would later push it out sideways.
+  const under = supportHeight(w, f, f.pos.y + STEP_UP);
+  if (under > f.pos.y) {
+    f.pos.y = under;
+    if (f.vel.y < 0) f.vel.y = 0;
+  }
   f.floor = supportHeight(w, f);
   if (f.pos.y > f.floor || f.vel.y > 0) {
     const before = f.pos.y;
     f.vel.y -= c.gravity * dt;
     f.pos.y += f.vel.y * dt;
+    // Rising into something overhead (an upper floor, a roof): the head stops at its
+    // underside, the climb ends there.
+    if (f.vel.y > 0) {
+      const ceiling = ceilingAbove(w, f, before + FIGHTER_HEIGHT);
+      if (f.pos.y + FIGHTER_HEIGHT > ceiling) {
+        f.pos.y = Math.max(before, ceiling - FIGHTER_HEIGHT);
+        f.vel.y = 0;
+      }
+    }
     // Measured from the height before this tick's fall, so a fast fall cannot pass through a top.
     f.floor = supportHeight(w, f, Math.max(before, f.pos.y));
     if (f.pos.y <= f.floor) {
