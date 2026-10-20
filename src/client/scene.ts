@@ -226,6 +226,18 @@ export class ArenaView {
       root.add(model.root);
       materials = model.materials;
       for (const m of materials) rimLight(m);
+      // An aura of the character's own (look.aura): a soft halo round the body, pulsing.
+      if (look.aura) {
+        const halo = new THREE.Sprite(
+          noOutline(new THREE.SpriteMaterial({ map: this.glow, color: look.aura, transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false })),
+        );
+        halo.scale.set(1.9, 2.5, 1);
+        halo.position.y = FIGHTER_HEIGHT * 0.52;
+        halo.onBeforeRender = () => {
+          halo.material.opacity = 0.26 + 0.08 * Math.sin(performance.now() * 0.011);
+        };
+        root.add(halo);
+      }
     } else {
       // Fallback while models are unavailable: a coloured capsule.
       const m = toon(ch.colors.primary);

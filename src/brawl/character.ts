@@ -20,6 +20,8 @@ export interface Look {
   model: ModelId;
   /** model "vrm": the avatar file, next to character.json. */
   file?: string;
+  /** A glow of this colour always round the body (Super Sonic's golden aura). */
+  aura?: string;
   /** Accessories to show (weapons, shields, hats…), by mesh name; all others are hidden. */
   show: string[];
   /** Colour multiplied over the model's texture ("#ffffff" = unchanged). */
@@ -77,9 +79,10 @@ export const SIGNATURE_POSES = [
   "kamehameha", "kaioken", "genkidama",
   "galick-ho", "big-bang", "final-flash",
   "rasengan", "kawarimi", "uzumaki-rendan",
+  "spin-ball", "homing", "drill-dive",
 ] as const;
 
-export const PROJECTILE_LOOKS = ["pizza", "beam", "fire", "bullet", "rocket"] as const;
+export const PROJECTILE_LOOKS = ["pizza", "beam", "fire", "bullet", "rocket", "tornado"] as const;
 export const ZONE_LOOKS = ["fire", "blast"] as const;
 export const HAND_LOOKS = ["ki", "orb", "lightning", "fire"] as const;
 
@@ -135,6 +138,7 @@ function parseLook(v: unknown): Look | undefined {
   const show = Array.isArray(o.show) ? o.show.filter((s): s is string => typeof s === "string" && /^[A-Za-z0-9_]{1,40}$/.test(s)).slice(0, 20) : [];
   const tint = typeof o.tint === "string" && COLOR.test(o.tint) ? o.tint : "#ffffff";
   const look: Look = { model: o.model as ModelId, show, tint };
+  if (typeof o.aura === "string" && COLOR.test(o.aura)) look.aura = o.aura;
   if (look.model === "vrm") {
     if (typeof o.file !== "string" || !VRM_FILE.test(o.file)) return undefined;
     look.file = o.file;
