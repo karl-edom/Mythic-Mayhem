@@ -432,6 +432,32 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
         dispose: done,
       };
     }
+    case "disc": {
+      // A cutting disc (Kienzan): a flat ring of light, razor-thin, spinning on itself,
+      // with a white edge and a soft glow round it.
+      const disc = new THREE.Group();
+      const ring = new THREE.Mesh(
+        new THREE.RingGeometry(size * 0.35, size, 48),
+        noOutline(new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })),
+      );
+      const edge = new THREE.Mesh(
+        new THREE.TorusGeometry(size, size * 0.05, 6, 48),
+        noOutline(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })),
+      );
+      ring.rotation.x = edge.rotation.x = -Math.PI / 2;
+      const halo = new THREE.Sprite(additive(glow, color, 0.45));
+      halo.scale.set(size * 3, size * 1.2, 1);
+      disc.add(ring, edge, halo);
+      group.add(disc);
+      return {
+        group,
+        update(t) {
+          ring.rotation.z = edge.rotation.z = t * 30;
+          disc.rotation.z = 0.06 * Math.sin(t * 9);
+        },
+        dispose: done,
+      };
+    }
     case "bullet": {
       // A tracer: a short bright streak along its path.
       const geo = new THREE.CylinderGeometry(0.025, 0.025, 0.9, 6);
@@ -742,6 +768,44 @@ export function zoneFlames(radius: number): THREE.Group {
       (f.userData.flicker as (t: number) => void)(t);
       f.scale.setScalar(0.3 + 0.9 * k);
     }
+  };
+  return g;
+}
+
+/**
+ * A vortex over a trap (Kamui): twisted veils of light turning round its centre and
+ * drawn in toward it, a dark eye in the middle. `userData.flicker(t, k)`: k, 0 to 1,
+ * is how far it has armed (it grows with it).
+ */
+export function zoneVortex(radius: number, color: string): THREE.Group {
+  const g = new THREE.Group();
+  const veils: THREE.Mesh[] = [];
+  for (let i = 0; i < 3; i++) {
+    const m = new THREE.Mesh(
+      new THREE.CircleGeometry(radius * (1 - i * 0.22), 48),
+      noOutline(new THREE.MeshBasicMaterial({ map: swirlTexture(), color, transparent: true, opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })),
+    );
+    m.rotation.x = -Math.PI / 2;
+    m.position.y = 0.3 + i * 0.35;
+    veils.push(m);
+    g.add(m);
+  }
+  const eye = new THREE.Mesh(
+    new THREE.SphereGeometry(radius * 0.18, 16, 12),
+    noOutline(new THREE.MeshBasicMaterial({ color: 0x120818, transparent: true, opacity: 0.9 })),
+  );
+  eye.position.y = 0.9;
+  const rim = new THREE.Sprite(additive(glow, color, 0.6));
+  rim.scale.setScalar(radius * 0.9);
+  rim.position.y = 0.9;
+  g.add(rim, eye);
+  g.userData.flicker = (t: number, k: number) => {
+    veils.forEach((m, i) => {
+      m.rotation.z = t * (2.5 + i * 1.5) * (i % 2 ? -1 : 1);
+      m.scale.setScalar((0.4 + 0.6 * k) * (1 - 0.08 * Math.sin(t * 6 + i)));
+    });
+    eye.scale.setScalar(0.3 + 0.7 * k);
+    rim.scale.setScalar(radius * (0.5 + 0.5 * k) * (1 + 0.1 * Math.sin(t * 8)));
   };
   return g;
 }
