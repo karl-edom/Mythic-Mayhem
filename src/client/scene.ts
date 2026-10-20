@@ -420,6 +420,7 @@ export class ArenaView {
           break;
         }
         case "ko":
+          this.vfx.impact(this.center(w.fighters[e.target]!), this.characters[e.killer]?.colors.secondary ?? 0xffffff);
           this.vfx.hit(this.center(w.fighters[e.target]!), 0xffffff, true);
           this.vfx.ring(this.center(w.fighters[e.target]!), 0xff4d4d, 6);
           this.slowUntil = now + 900;

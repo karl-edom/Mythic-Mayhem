@@ -6,6 +6,107 @@ import * as THREE from "three";
 import { flameTexture } from "./moveFx.ts";
 import { glowTexture, noOutline, starTexture, toon } from "./toon.ts";
 
+// ---------------------------------------------------------------------------
+// Textures painted once: an anime impact burst (sharp rays), a soft shockwave ring,
+// a spark streak (bright head, fading tail) and a hexagonal guard.
+
+const painted = new Map<string, THREE.CanvasTexture>();
+function paintTexture(key: string, w: number, h: number, draw: (g: CanvasRenderingContext2D) => void): THREE.CanvasTexture {
+  const hit = painted.get(key);
+  if (hit) return hit;
+  const c = document.createElement("canvas");
+  c.width = w;
+  c.height = h;
+  draw(c.getContext("2d")!);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  painted.set(key, t);
+  return t;
+}
+
+/** Sharp rays of uneven length round a hot core: the « bam » of an anime impact. */
+const burstTexture = () =>
+  paintTexture("burst", 256, 256, (g) => {
+    let seed = 7;
+    const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+    g.translate(128, 128);
+    const rays = 14;
+    for (let i = 0; i < rays; i++) {
+      const a = (i / rays) * Math.PI * 2 + (r() - 0.5) * 0.25;
+      const len = 60 + r() * 66;
+      const w = 0.09 + r() * 0.06;
+      const grad = g.createLinearGradient(0, 0, Math.cos(a) * len, Math.sin(a) * len);
+      grad.addColorStop(0, "rgba(255,255,255,1)");
+      grad.addColorStop(0.6, "rgba(255,255,255,0.85)");
+      grad.addColorStop(1, "rgba(255,255,255,0)");
+      g.fillStyle = grad;
+      g.beginPath();
+      g.moveTo(Math.cos(a - w) * 14, Math.sin(a - w) * 14);
+      g.lineTo(Math.cos(a) * len, Math.sin(a) * len);
+      g.lineTo(Math.cos(a + w) * 14, Math.sin(a + w) * 14);
+      g.fill();
+    }
+    const core = g.createRadialGradient(0, 0, 0, 0, 0, 40);
+    core.addColorStop(0, "rgba(255,255,255,1)");
+    core.addColorStop(0.5, "rgba(255,255,255,0.8)");
+    core.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = core;
+    g.fillRect(-40, -40, 80, 80);
+  });
+
+/** A shockwave: clear inside, a bright thin front, a soft wake behind it. */
+const ringTexture = () =>
+  paintTexture("ring", 256, 256, (g) => {
+    const grad = g.createRadialGradient(128, 128, 0, 128, 128, 128);
+    grad.addColorStop(0, "rgba(255,255,255,0)");
+    grad.addColorStop(0.78, "rgba(255,255,255,0)");
+    grad.addColorStop(0.88, "rgba(255,255,255,0.3)");
+    grad.addColorStop(0.94, "rgba(255,255,255,1)");
+    grad.addColorStop(0.985, "rgba(255,255,255,0)");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 256, 256);
+  });
+
+/** A spark streak, pointing up: white-hot head, a tail that thins and fades. */
+const sparkTexture = () =>
+  paintTexture("spark", 32, 128, (g) => {
+    const grad = g.createLinearGradient(0, 0, 0, 128);
+    grad.addColorStop(0, "rgba(255,255,255,1)");
+    grad.addColorStop(0.25, "rgba(255,255,255,0.9)");
+    grad.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = grad;
+    g.beginPath();
+    g.moveTo(16, 0);
+    g.quadraticCurveTo(30, 10, 16, 128);
+    g.quadraticCurveTo(2, 10, 16, 0);
+    g.fill();
+  });
+
+/** A hexagonal guard: a bright rim and a faint fill. */
+const hexTexture = () =>
+  paintTexture("hex", 256, 256, (g) => {
+    const hex = (rad: number) => {
+      g.beginPath();
+      for (let i = 0; i <= 6; i++) {
+        const a = (i / 6) * Math.PI * 2 + Math.PI / 6;
+        const x = 128 + Math.cos(a) * rad;
+        const y = 128 + Math.sin(a) * rad;
+        if (i) g.lineTo(x, y);
+        else g.moveTo(x, y);
+      }
+    };
+    hex(116);
+    g.fillStyle = "rgba(255,255,255,0.18)";
+    g.fill();
+    g.lineWidth = 10;
+    g.strokeStyle = "rgba(255,255,255,1)";
+    g.stroke();
+    hex(84);
+    g.lineWidth = 3;
+    g.strokeStyle = "rgba(255,255,255,0.6)";
+    g.stroke();
+  });
+
 interface Effect {
   obj: THREE.Object3D;
   age: number;
@@ -38,60 +139,109 @@ export class Vfx {
     return new THREE.Sprite(m);
   }
 
-  /** Hit: white star, coloured streaks flying out, a shockwave ring for big hits. */
+  /**
+   * Hit: a white-hot flash, an anime burst of sharp rays (white over the attacker's
+   * colour), sparks that fly off, fall and stretch with their speed, a shockwave ring.
+   */
   hit(pos: THREE.Vector3, color: THREE.ColorRepresentation, big: boolean): void {
-    const size = big ? 2.4 : 1.5;
-    const star = this.sprite(this.star, 0xffffff);
-    star.position.copy(pos);
-    star.material.rotation = Math.random() * Math.PI;
-    this.add(star, big ? 0.22 : 0.16, (k) => {
-      star.scale.setScalar(size * (0.5 + k * 0.8));
-      star.material.opacity = 1 - k;
+    const size = big ? 2.6 : 1.6;
+    const flash = this.sprite(this.glow, 0xffffff, 0.7);
+    flash.position.copy(pos);
+    this.add(flash, 0.07, (k) => {
+      flash.scale.setScalar(size * (0.45 + k * 0.25));
+      flash.material.opacity = 0.7 * (1 - k);
     });
-    const tinted = this.sprite(this.star, color, 0.9);
-    tinted.position.copy(pos);
-    tinted.material.rotation = Math.random() * Math.PI;
-    this.add(tinted, big ? 0.3 : 0.2, (k) => {
-      tinted.scale.setScalar(size * 1.3 * (0.6 + k));
-      tinted.material.opacity = 0.9 * (1 - k);
+    const spin = Math.random() * Math.PI;
+    const back = this.sprite(burstTexture(), color);
+    back.position.copy(pos);
+    back.material.rotation = spin + 0.2;
+    this.add(back, big ? 0.26 : 0.18, (k) => {
+      back.scale.setScalar(size * 1.35 * (0.55 + Math.sqrt(k) * 0.7));
+      back.material.opacity = 1 - k * k;
     });
-    const n = big ? 12 : 7;
-    for (let i = 0; i < n; i++) {
-      const a = Math.random() * Math.PI * 2;
-      const dir = new THREE.Vector3(Math.cos(a), Math.sin(a) * 0.8 + 0.2, Math.sin(a * 1.7)).normalize();
-      const streak = this.sprite(this.glow, color);
-      streak.position.copy(pos);
-      const speed = (big ? 9 : 6) * (0.6 + Math.random() * 0.6);
-      this.add(streak, 0.25, (k, dt) => {
-        streak.position.addScaledVector(dir, speed * dt * (1 - k));
-        streak.scale.set(0.12, 0.6 * (1 - k) + 0.05, 1);
-        streak.material.rotation = Math.atan2(dir.y, dir.x) - Math.PI / 2;
-        streak.material.opacity = 1 - k;
-      });
-    }
+    const burst = this.sprite(burstTexture(), 0xffffff);
+    burst.position.copy(pos);
+    burst.material.rotation = spin;
+    this.add(burst, big ? 0.18 : 0.13, (k) => {
+      burst.scale.setScalar(size * (0.5 + Math.sqrt(k) * 0.6));
+      burst.material.opacity = 1 - k;
+    });
+    this.sparks(pos, color, big ? 16 : 9, big ? 11 : 7);
     if (big) this.ring(pos, color, 3.2);
     this.shake = Math.max(this.shake, big ? 0.35 : 0.12);
   }
 
-  /** Blocked hit: a cold flash of hexagonal light. */
+  /** Sparks: fly off, fall, stretched along their motion as seen on screen. */
+  private sparks(pos: THREE.Vector3, color: THREE.ColorRepresentation, count: number, speed: number): void {
+    for (let i = 0; i < count; i++) {
+      const v = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.9 - 0.15, Math.random() - 0.5).normalize().multiplyScalar(speed * (0.5 + Math.random() * 0.7));
+      const s = this.sprite(sparkTexture(), i % 3 === 0 ? 0xffffff : color);
+      const at = pos.clone();
+      s.position.copy(at);
+      const life = 0.22 + Math.random() * 0.18;
+      this.add(s, life, (k, dt) => {
+        v.y -= 18 * dt;
+        v.multiplyScalar(Math.exp(-dt * 3));
+        at.addScaledVector(v, dt);
+        s.position.copy(at);
+        const len = 0.12 + v.length() * 0.05;
+        s.scale.set(0.09 * (1 - k * 0.5), len * (1 - k * 0.6), 1);
+        s.material.opacity = 1 - k * k;
+      });
+      s.onBeforeRender = (_r, _s, cam) => {
+        const a = at.clone().project(cam);
+        const b = at.clone().add(v.clone().multiplyScalar(0.05)).project(cam);
+        s.material.rotation = Math.atan2(b.y - a.y, b.x - a.x) - Math.PI / 2;
+      };
+    }
+  }
+
+  /**
+   * Impact frame (a K.O.): for a blink, a huge burst of rays over everything around
+   * the victim, the « freeze » of anime fighters and Smash.
+   */
+  impact(pos: THREE.Vector3, color: THREE.ColorRepresentation): void {
+    for (const [tint, size, life, turn, alpha] of [[color, 8, 0.2, 0.15, 0.75], [0xffffff, 4.5, 0.12, 0, 0.55]] as const) {
+      const s = this.sprite(burstTexture(), tint);
+      s.material.depthTest = false;
+      s.renderOrder = 9;
+      s.position.copy(pos);
+      s.material.rotation = Math.random() * Math.PI + turn;
+      this.add(s, life, (k) => {
+        s.scale.setScalar(size * (0.8 + k * 0.35));
+        s.material.opacity = alpha * (k < 0.3 ? 1 : 1 - (k - 0.3) / 0.7);
+      });
+    }
+  }
+
+  /** Blocked hit: a hexagonal guard flashes up, sparks glance off it. */
   block(pos: THREE.Vector3): void {
-    const flash = this.sprite(this.glow, 0x7fdcff);
-    flash.position.copy(pos);
-    this.add(flash, 0.18, (k) => {
-      flash.scale.setScalar(1.6 + k);
-      flash.material.opacity = 1 - k;
+    const hex = this.sprite(hexTexture(), 0x8fe4ff);
+    hex.position.copy(pos);
+    hex.material.rotation = (Math.random() - 0.5) * 0.3;
+    this.add(hex, 0.22, (k) => {
+      const pop = k < 0.2 ? 0.7 + (k / 0.2) * 0.35 : 1.05 + (k - 0.2) * 0.15;
+      hex.scale.setScalar(1.9 * pop);
+      hex.material.opacity = k < 0.2 ? 1 : 1 - (k - 0.2) / 0.8;
     });
-    this.ring(pos, 0x9fe6ff, 1.6);
+    const flash = this.sprite(this.glow, 0x7fdcff, 0.8);
+    flash.position.copy(pos);
+    this.add(flash, 0.12, (k) => {
+      flash.scale.setScalar(1.4 + k);
+      flash.material.opacity = 0.8 * (1 - k);
+    });
+    this.sparks(pos, 0xbff6ff, 6, 6);
     this.shake = Math.max(this.shake, 0.06);
   }
 
   /** Expanding ring facing the camera. */
   ring(pos: THREE.Vector3, color: THREE.ColorRepresentation, size: number): void {
-    const m = noOutline(new THREE.MeshBasicMaterial({ color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.8, 1, 48), m);
+    const m = noOutline(new THREE.MeshBasicMaterial({ color, map: ringTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+    const ring = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), m);
     ring.position.copy(pos);
-    this.add(ring, 0.28, (k) => {
-      ring.scale.setScalar(size * (0.3 + k));
+    this.add(ring, 0.3, (k) => {
+      // Fast out, slowing down: a burst, not a steady growth.
+      ring.scale.setScalar(size * (0.25 + (1 - (1 - k) ** 3) * 0.8));
       m.opacity = 1 - k;
     });
     ring.onBeforeRender = (_r, _s, cam) => ring.quaternion.copy(cam.quaternion);
@@ -99,14 +249,26 @@ export class Vfx {
 
   /** Ground shockwave (landing a heavy blow, knockdown, area special). */
   groundWave(pos: THREE.Vector3, color: THREE.ColorRepresentation, size: number): void {
-    const m = noOutline(new THREE.MeshBasicMaterial({ color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.85, 1, 64), m);
+    const m = noOutline(new THREE.MeshBasicMaterial({ color, map: ringTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    const ring = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), m);
     ring.rotation.x = -Math.PI / 2;
     ring.position.copy(pos).setY(pos.y + 0.05);
-    this.add(ring, 0.4, (k) => {
-      ring.scale.setScalar(size * (0.2 + k));
-      m.opacity = 0.9 * (1 - k);
+    this.add(ring, 0.45, (k) => {
+      ring.scale.setScalar(size * (0.2 + (1 - (1 - k) ** 3) * 0.9));
+      m.opacity = 0.95 * (1 - k);
     });
+    // The ground kicks up: dust thrown out along the front.
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + Math.random() * 0.4;
+      const d = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
+      const s = new THREE.Sprite(noOutline(new THREE.SpriteMaterial({ map: this.glow, color: 0xe8dcc0, transparent: true, opacity: 0.5, depthWrite: false })));
+      const at = pos.clone().setY(pos.y + 0.25);
+      this.add(s, 0.5, (k) => {
+        s.position.copy(at).addScaledVector(d, size * (0.2 + (1 - (1 - k) ** 3) * 0.85));
+        s.scale.setScalar(0.5 + k * size * 0.35);
+        s.material.opacity = 0.5 * (1 - k);
+      });
+    }
   }
 
   /** Blade arc in front of the fighter, tilted per combo hit. */

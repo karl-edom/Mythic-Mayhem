@@ -178,6 +178,18 @@ Ajout du 2026-10-20.
 - **Au loin**, sur les collines, les arbres restent en volumes simples, noyés dans la brume. Ils sont même allégés : des sphères moins subdivisées, sans différence visible à cette distance.
 - **Bilan** : la scène passe de 3,3 à 2,2 millions de triangles tout en montrant de vrais arbres (82 000 cartes de feuillage au fond, 35 000 dans le village). Les arbres du fond ne portent ni ne reçoivent d'ombre.
 
+## Effets d'attaque
+
+Ajout du 2026-10-20. Les effets sont comparés sur un « tableau d'effets » : le jeu est mis en pause, chaque effet est déclenché à la main et figé au même instant de sa vie, avec la même caméra.
+
+- **Impact** : une explosion de rayons pointus façon anime (blanche, sur une gerbe à la couleur de l'attaquant), un éclair blanc bref et des étincelles qui jaillissent, retombent et s'étirent selon leur vitesse. Avant, c'était une étoile floue et des traits flous.
+- **Coup bloqué** : un bouclier hexagonal translucide qui apparaît d'un coup, et des étincelles qui rebondissent dessus. Avant, c'était une lueur ronde.
+- **K.-O.** : une image d'impact, c'est-à-dire une immense gerbe de rayons à la couleur du vainqueur pendant un éclair (0,2 s), par-dessus le reste.
+- **Ondes de choc** (coups forts, mises à terre, contre-attaques) : un anneau dégradé à front net qui part vite et ralentit. Au sol, la poussière est projetée le long du front.
+- **Traînée d'arme** : elle est lissée le long d'une courbe et non plus en segments cassés, avec une couleur pleine et un bord blanc chauffé.
+- **Lisibilité d'abord** : une première version noyait les coups forts et le K.-O. dans le blanc, parce que le halo lumineux amplifie le blanc additif. Le flash a été réduit, les anneaux affinés et l'image d'impact teintée. On doit toujours voir les combattants.
+- **Coût** : quelques sprites de plus par coup et 4 petites textures peintes en code. Rien ne change pour la simulation.
+
 ## Limites connues
 
 - Le rendu est vérifié dans un navigateur sans carte graphique (SwiftShader). Sur une vraie machine, il faut mesurer la cadence ; la qualité adaptative est là pour ça.

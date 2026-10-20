@@ -8,6 +8,10 @@ import { noOutline } from "./toon.ts";
 /** Samples kept along the ribbon, and how long a sample lasts once the strike stops. */
 const SAMPLES = 24;
 const LIFE = 0.2;
+/** Points drawn along the ribbon: the samples, smoothed along a curve. */
+const POINTS = 48;
+/** Across the ribbon, from the hilt to the edge: where the bands meet (0 = base, 1 = tip). */
+const ROWS = [0, 0.72, 1];
 
 interface Sample {
   base: THREE.Vector3;
@@ -25,15 +29,17 @@ export class WeaponTrail {
 
   constructor() {
     const geo = new THREE.BufferGeometry();
-    this.positions = new Float32Array(SAMPLES * 2 * 3);
-    this.colors = new Float32Array(SAMPLES * 2 * 4);
+    this.positions = new Float32Array(POINTS * ROWS.length * 3);
+    this.colors = new Float32Array(POINTS * ROWS.length * 4);
     geo.setAttribute("position", new THREE.BufferAttribute(this.positions, 3));
     geo.setAttribute("color", new THREE.BufferAttribute(this.colors, 4));
     const index: number[] = [];
-    for (let i = 0; i < SAMPLES - 1; i++) {
-      const a = i * 2;
-      index.push(a, a + 1, a + 2, a + 1, a + 3, a + 2);
-    }
+    const n = ROWS.length;
+    for (let i = 0; i < POINTS - 1; i++)
+      for (let j = 0; j < n - 1; j++) {
+        const a = i * n + j;
+        index.push(a, a + 1, a + n, a + 1, a + n + 1, a + n);
+      }
     geo.setIndex(index);
     this.mesh = new THREE.Mesh(
       geo,
@@ -50,7 +56,7 @@ export class WeaponTrail {
 
   /**
    * One frame: while `active`, the current blade segment (world space) is added; old
-   * samples fade out. `color` tints the outer edge (the core stays white).
+   * samples fade out. `color` tints the ribbon; its edge (the tip side) is white-hot.
    */
   update(base: THREE.Vector3, tip: THREE.Vector3, active: boolean, dt: number, color: THREE.ColorRepresentation): void {
     for (const s of this.samples) s.age += dt;
@@ -60,17 +66,26 @@ export class WeaponTrail {
     this.mesh.visible = n >= 2;
     if (!this.mesh.visible) return;
     this.color.set(color);
-    for (let i = 0; i < SAMPLES; i++) {
-      // Unused slots collapse onto the newest sample (degenerate, invisible triangles).
-      const s = this.samples[Math.min(i, n - 1)]!;
-      const along = n > 1 ? Math.min(i, n - 1) / (n - 1) : 1; // 0 = oldest, 1 = newest
-      const fade = Math.max(0, 1 - s.age / LIFE) * along;
-      s.base.toArray(this.positions, i * 6);
-      s.tip.toArray(this.positions, i * 6 + 3);
-      // Base edge: faint coloured; tip edge: bright, white-hot near the newest sample.
-      const tipColor = this.color.clone().lerp(this.white, along * 0.6);
-      this.colors.set([this.color.r, this.color.g, this.color.b, fade * 0.15], i * 8);
-      this.colors.set([tipColor.r, tipColor.g, tipColor.b, fade * 0.95], i * 8 + 4);
+    // Smooth curves through the samples (a few frames make a round sweep, not a fan of cuts).
+    const bases = new THREE.CatmullRomCurve3(this.samples.map((s) => s.base), false, "centripetal");
+    const tips = new THREE.CatmullRomCurve3(this.samples.map((s) => s.tip), false, "centripetal");
+    const b = new THREE.Vector3();
+    const t = new THREE.Vector3();
+    const p = new THREE.Vector3();
+    const c = new THREE.Color();
+    for (let i = 0; i < POINTS; i++) {
+      const along = i / (POINTS - 1); // 0 = oldest, 1 = newest
+      bases.getPoint(along, b);
+      tips.getPoint(along, t);
+      const age = this.samples[Math.min(n - 1, Math.round(along * (n - 1)))]!.age;
+      const fade = Math.max(0, 1 - age / LIFE) * along ** 0.8;
+      ROWS.forEach((row, j) => {
+        p.lerpVectors(b, t, row).toArray(this.positions, (i * ROWS.length + j) * 3);
+        // Faint at the hilt, full colour across, white-hot along the edge.
+        const alpha = row === 0 ? 0 : row < 1 ? 0.55 : 1;
+        c.copy(this.color).lerp(this.white, row === 1 ? 0.35 + along * 0.55 : 0.1);
+        this.colors.set([c.r, c.g, c.b, fade * alpha], (i * ROWS.length + j) * 4);
+      });
     }
     const geo = this.mesh.geometry;
     geo.attributes.position!.needsUpdate = true;
