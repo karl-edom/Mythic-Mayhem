@@ -4,6 +4,7 @@
 // Pure: no I/O, the browser runs the same checks as the tools.
 
 import { Reader } from "../sim/validate.ts";
+import { hyp } from "../sim/math.ts";
 
 export type PropShape =
   | { type: "box"; width: number; depth: number; height: number }
@@ -200,10 +201,10 @@ export function groundHeight(arena: Arena, x: number, z: number, below = Infinit
 
 /** Horizontal distance from (x, z) to the prop's footprint (0 inside). */
 export function distToProp(p: Prop, x: number, z: number): number {
-  if (p.kind.shape.type === "cylinder") return Math.max(0, Math.hypot(x - p.x, z - p.z) - p.halfW);
+  if (p.kind.shape.type === "cylinder") return Math.max(0, hyp(x - p.x, z - p.z) - p.halfW);
   const dx = Math.max(0, Math.abs(x - p.x) - p.halfW);
   const dz = Math.max(0, Math.abs(z - p.z) - p.halfD);
-  return Math.hypot(dx, dz);
+  return hyp(dx, dz);
 }
 
 /** Pushes a circle of radius r at (pos.x, pos.z) out of the prop. Returns true if it moved. */
@@ -211,7 +212,7 @@ export function pushOut(p: Prop, pos: { x: number; z: number }, r: number, from?
   if (p.kind.shape.type === "cylinder") {
     const dx = pos.x - p.x;
     const dz = pos.z - p.z;
-    const d = Math.hypot(dx, dz);
+    const d = hyp(dx, dz);
     const min = p.halfW + r;
     if (d >= min) return false;
     const nx = d > 1e-9 ? dx / d : 1;
@@ -224,7 +225,7 @@ export function pushOut(p: Prop, pos: { x: number; z: number }, r: number, from?
   const cz = Math.max(p.z - p.halfD, Math.min(p.z + p.halfD, pos.z));
   const dx = pos.x - cx;
   const dz = pos.z - cz;
-  const d = Math.hypot(dx, dz);
+  const d = hyp(dx, dz);
   if (d >= r) return false;
   if (d > 1e-9) {
     pos.x = cx + (dx / d) * r;
@@ -240,7 +241,7 @@ export function pushOut(p: Prop, pos: { x: number; z: number }, r: number, from?
     { d: pos.z - (p.z - p.halfD), x: pos.x, z: p.z - p.halfD - r },
     { d: p.z + p.halfD - pos.z, x: pos.x, z: p.z + p.halfD + r },
   ];
-  if (from) for (const e of exits) e.d = Math.hypot(e.x - from.x, e.z - from.z);
+  if (from) for (const e of exits) e.d = hyp(e.x - from.x, e.z - from.z);
   exits.sort((a, b) => a.d - b.d);
   pos.x = exits[0]!.x;
   pos.z = exits[0]!.z;

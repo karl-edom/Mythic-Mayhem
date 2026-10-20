@@ -4,6 +4,7 @@
 // rebuilt when a prop breaks. Pure: same results in the browser and the tools.
 
 import { distToProp, surfaceAt, type Arena } from "./arena.ts";
+import { hyp } from "../sim/math.ts";
 
 /** Grid cell size, metres. */
 const CELL = 0.5;
@@ -61,7 +62,7 @@ const centre = (g: Grid, c: number) => ({ x: g.x0 + ((c % g.cols) + 0.5) * CELL,
 /** True if a straight walk from a to b crosses no blocked cell. */
 export function walkClear(arena: Arena, a: { x: number; z: number }, b: { x: number; z: number }): boolean {
   const g = grid(arena);
-  const n = Math.ceil(Math.hypot(b.x - a.x, b.z - a.z) / (CELL * 0.5));
+  const n = Math.ceil(hyp(b.x - a.x, b.z - a.z) / (CELL * 0.5));
   for (let k = 1; k <= n; k++) {
     const t = k / n;
     if (g.blocked[cellOf(g, a.x + (b.x - a.x) * t, a.z + (b.z - a.z) * t)]) return false;

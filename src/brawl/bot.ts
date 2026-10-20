@@ -4,6 +4,7 @@
 import { distToProp, segmentInterval, surfaceAt, type Arena } from "./arena.ts";
 import { findPath, walkClear } from "./nav.ts";
 import { STEP_UP, canBreak, canSee, grabbable, grounded, hdist, lockTarget, type BrawlWorld, type Command, type Fighter } from "./world.ts";
+import { hyp } from "../sim/math.ts";
 
 export interface BrawlBotParams {
   /** Chance per decision to react to an incoming heavy or special (dodge or guard). */
@@ -75,7 +76,7 @@ function routeUp(arena: Arena, to: { x: number; z: number }, minTop: number): { 
     const at = (k: number) =>
       p.rise!.axis === "x" ? { x: p.x + p.rise!.sign * k, z: p.z } : { x: p.x, z: p.z + p.rise!.sign * k };
     const top = at(half + 1);
-    const d = Math.hypot(top.x - to.x, top.z - to.z);
+    const d = hyp(top.x - to.x, top.z - to.z);
     if (!best || d < best.d) best = { pts: [at(-half - 1), at(half - 0.3), top], d };
   }
   return best?.pts ?? null;
@@ -93,7 +94,7 @@ function chasePoint(w: BrawlWorld, me: Fighter, bot: BrawlBot, foe: Fighter): { 
   }
   const r = bot.route;
   if (!r || r.points.length === 0) return foe.pos;
-  if (Math.hypot(me.pos.x - r.points[0]!.x, me.pos.z - r.points[0]!.z) < 1) r.points.shift();
+  if (hyp(me.pos.x - r.points[0]!.x, me.pos.z - r.points[0]!.z) < 1) r.points.shift();
   return r.points[0] ?? foe.pos;
 }
 
@@ -123,9 +124,9 @@ function steerAround(w: BrawlWorld, me: Fighter, goal: { x: number; z: number })
     { x: p.x + p.halfW + m, z: p.z + p.halfD + m },
   ];
   const cost = (c: { x: number; z: number }) =>
-    Math.hypot(c.x - me.pos.x, c.z - me.pos.z) + Math.hypot(goal.x - c.x, goal.z - c.z);
+    hyp(c.x - me.pos.x, c.z - me.pos.z) + hyp(goal.x - c.x, goal.z - c.z);
   // Skip a corner we are already standing at, so we move on to the next leg.
-  const usable = corners.filter((c) => Math.hypot(c.x - me.pos.x, c.z - me.pos.z) > 0.6);
+  const usable = corners.filter((c) => hyp(c.x - me.pos.x, c.z - me.pos.z) > 0.6);
   return (usable.length ? usable : corners).sort((a, b) => cost(a) - cost(b))[0]!;
 }
 
@@ -142,13 +143,13 @@ function navigate(w: BrawlWorld, me: Fighter, bot: BrawlBot, goal: { x: number; 
     return steerAround(w, me, goal);
   }
   const p = bot.path;
-  if (!p || w.time > p.until || Math.hypot(p.goal.x - goal.x, p.goal.z - goal.z) > 1.5) {
+  if (!p || w.time > p.until || hyp(p.goal.x - goal.x, p.goal.z - goal.z) > 1.5) {
     const pts = findPath(w.arena, me.pos, goal);
     bot.path = pts ? { points: pts, goal: { ...goal }, until: w.time + 0.4 } : null;
   }
   const path = bot.path;
   if (!path) return steerAround(w, me, goal);
-  while (path.points.length > 1 && Math.hypot(me.pos.x - path.points[0]!.x, me.pos.z - path.points[0]!.z) < 0.5) path.points.shift();
+  while (path.points.length > 1 && hyp(me.pos.x - path.points[0]!.x, me.pos.z - path.points[0]!.z) < 0.5) path.points.shift();
   return path.points[0] ?? goal;
 }
 
@@ -163,14 +164,14 @@ function walkTo(w: BrawlWorld, me: Fighter, bot: BrawlBot, goal: { x: number; z:
   const to = navigate(w, me, bot, goal);
   const dx = to.x - me.pos.x;
   const dz = to.z - me.pos.z;
-  const d = Math.hypot(dx, dz) || 1;
+  const d = hyp(dx, dz) || 1;
   const dir = { x: dx / d, z: dz / d };
   if (w.time < bot.detourUntil) {
     cmd.move = { x: dir.x * 0.3 - dir.z * bot.strafe, z: dir.z * 0.3 + dir.x * bot.strafe };
     return;
   }
   cmd.move = dir;
-  const moved = Math.hypot(me.pos.x - bot.prevPos.x, me.pos.z - bot.prevPos.z);
+  const moved = hyp(me.pos.x - bot.prevPos.x, me.pos.z - bot.prevPos.z);
   bot.stuckTicks = moved < (me.kit.stats.moveSpeed / w.config.tickRate) * 0.3 ? bot.stuckTicks + 1 : 0;
   if (bot.stuckTicks > 8) {
     bot.stuckTicks = 0;

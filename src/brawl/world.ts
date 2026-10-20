@@ -7,6 +7,7 @@ import {
   EYE_HEIGHT, OPEN_ARENA, buildArena, distToProp, groundHeight, pushOut, sightBlocked, spansHeight, surfaceAt, type Arena, type Prop,
 } from "./arena.ts";
 import { leapFlightTime, type FighterKit, type Special, type Strike } from "./kit.ts";
+import { cosSin, hyp, powi } from "../sim/math.ts";
 
 export interface V3 {
   x: number;
@@ -442,8 +443,8 @@ export interface BrawlWorld {
   events: BrawlEvent[];
 }
 
-const hlen = (v: V3) => Math.hypot(v.x, v.z);
-export const hdist = (a: V3, b: V3) => Math.hypot(a.x - b.x, a.z - b.z);
+const hlen = (v: V3) => hyp(v.x, v.z);
+export const hdist = (a: V3, b: V3) => hyp(a.x - b.x, a.z - b.z);
 
 function hnorm(v: V3, fallback: V3): V3 {
   const l = hlen(v);
@@ -613,7 +614,7 @@ function faceTarget(w: BrawlWorld, f: Fighter): void {
 function clampToArena(w: BrawlWorld, f: Fighter, from?: { x: number; z: number }): boolean {
   const r = f.kit.stats.radius;
   const { halfW, halfD, props } = w.arena;
-  const speed = Math.hypot(f.vel.x, f.vel.z);
+  const speed = hyp(f.vel.x, f.vel.z);
   let struck: Prop | null | undefined; // undefined = nothing, null = arena wall
   for (const p of props)
     // Blocked by a volume the body overlaps in height: not one it stands on (or steps
@@ -751,7 +752,7 @@ export const bodyCenter = (f: Fighter): V3 => ({ x: f.pos.x, y: f.pos.y + FIGHTE
 /** True if a sphere touches the fighter's vertical capsule. */
 function sphereTouches(c: V3, r: number, f: Fighter): boolean {
   const y = Math.max(f.pos.y + f.kit.stats.radius, Math.min(f.pos.y + FIGHTER_HEIGHT - f.kit.stats.radius, c.y));
-  return Math.hypot(c.x - f.pos.x, c.y - y, c.z - f.pos.z) <= r + f.kit.stats.radius;
+  return hyp(c.x - f.pos.x, c.y - y, c.z - f.pos.z) <= r + f.kit.stats.radius;
 }
 
 /** Centre of a strike's hitbox for a fighter. */
@@ -852,7 +853,7 @@ function applyHit(w: BrawlWorld, src: Fighter, target: Fighter, hit: HitSpec, fr
   // Combo wear: hit again before being free, stunned for less each time.
   const stunned = ta?.kind === "hitstun" || ta?.kind === "knockdown";
   target.combo = stunned ? target.combo + 1 : 0;
-  const stun = hit.hitstun * Math.max(c.comboStunFloor, c.comboStunDecay ** target.combo);
+  const stun = hit.hitstun * Math.max(c.comboStunFloor, powi(c.comboStunDecay, target.combo));
   // Knockback grows as health drops (the nod to Smash's percentage): late hits send fighters flying.
   const lost = 1 - Math.max(0, target.hp) / target.kit.stats.hp;
   const speed = (hit.knockback / target.kit.stats.weight) * (1 + c.knockbackLowHpBonus * lost);
@@ -975,7 +976,7 @@ function aimAt(w: BrawlWorld, f: Fighter, from: V3): V3 {
   if (!t) return { ...f.facing };
   const c = bodyCenter(t);
   const d = { x: c.x - from.x, y: c.y - from.y, z: c.z - from.z };
-  const l = Math.hypot(d.x, d.y, d.z);
+  const l = hyp(d.x, d.y, d.z);
   return l > 1e-9 ? { x: d.x / l, y: d.y / l, z: d.z / l } : { ...f.facing };
 }
 
@@ -1080,7 +1081,7 @@ function startAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, heavyP
       f.vel.y = f.kit.stats.jumpSpeed * c.airJumpFactor;
       // A second jump can change direction at once, toward the stick.
       const mv = cmd.move;
-      if (mv && Math.hypot(mv.x, mv.z) > 0.1) {
+      if (mv && hyp(mv.x, mv.z) > 0.1) {
         const d = hnorm({ x: mv.x, y: 0, z: mv.z }, f.facing);
         const sp = Math.max(hlen(f.drift), f.kit.stats.moveSpeed * 0.8);
         f.drift = { x: d.x * sp, y: 0, z: d.z * sp };
@@ -1123,7 +1124,7 @@ function startAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, heavyP
  */
 function moveBy(w: BrawlWorld, f: Fighter, cmd: Command | undefined, factor: number): void {
   const mv = cmd?.move;
-  const amount = mv ? Math.min(1, Math.hypot(mv.x, mv.z)) : 0;
+  const amount = mv ? Math.min(1, hyp(mv.x, mv.z)) : 0;
   if (mv && amount > 1e-6) {
     const dir = hnorm({ x: mv.x, y: 0, z: mv.z }, f.facing);
     const speed = f.kit.stats.moveSpeed * factor * amount;
@@ -1139,14 +1140,14 @@ function airSteer(w: BrawlWorld, f: Fighter, cmd: Command | undefined): void {
   const c = w.config;
   const dt = 1 / c.tickRate;
   const mv = cmd?.move;
-  const amount = mv ? Math.min(1, Math.hypot(mv.x, mv.z)) : 0;
+  const amount = mv ? Math.min(1, hyp(mv.x, mv.z)) : 0;
   const d = f.drift;
   if (mv && amount > 0.1) {
     const dir = hnorm({ x: mv.x, y: 0, z: mv.z }, f.facing);
     const top = Math.max(f.kit.stats.moveSpeed * amount, Math.min(hlen(d), f.kit.stats.moveSpeed));
     const tx = dir.x * top - d.x;
     const tz = dir.z * top - d.z;
-    const l = Math.hypot(tx, tz);
+    const l = hyp(tx, tz);
     const k = l > 1e-9 ? Math.min(1, (c.airAccel * dt) / l) : 0;
     d.x += tx * k;
     d.z += tz * k;
@@ -1298,7 +1299,7 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
         f.vel.y = f.kit.stats.jumpSpeed * (cmd?.jumpHeld ? 1 : c.shortHopFactor);
         // The jump takes off with the run's speed, in the stick's direction.
         const mv = cmd?.move;
-        const amount = mv ? Math.min(1, Math.hypot(mv.x, mv.z)) : 0;
+        const amount = mv ? Math.min(1, hyp(mv.x, mv.z)) : 0;
         if (mv && amount > 0.1) {
           const d = hnorm({ x: mv.x, y: 0, z: mv.z }, f.facing);
           f.drift = { x: d.x * f.kit.stats.moveSpeed * amount, y: 0, z: d.z * f.kit.stats.moveSpeed * amount };
@@ -1397,7 +1398,7 @@ function physics(w: BrawlWorld, f: Fighter): void {
   // walls: in one stride it could pass the middle of a thin wall and be pushed out on
   // the far side.
   const stride = f.kit.stats.radius * 0.4;
-  const n = Math.max(1, Math.ceil(Math.hypot(dx, dz) / stride));
+  const n = Math.max(1, Math.ceil(hyp(dx, dz) / stride));
   const from = { x: f.pos.x, z: f.pos.z };
   for (let i = 0; i < n; i++) {
     from.x = f.pos.x;
@@ -1406,7 +1407,7 @@ function physics(w: BrawlWorld, f: Fighter): void {
     f.pos.z += dz / n;
     if (i < n - 1 && clampToArena(w, f, from)) break;
   }
-  const sp = Math.hypot(f.vel.x, f.vel.z);
+  const sp = hyp(f.vel.x, f.vel.z);
   if (sp > 0) {
     const k = Math.max(0, sp - c.friction * dt) / sp;
     f.vel.x *= k;
@@ -1483,12 +1484,12 @@ function buffered(w: BrawlWorld, f: Fighter, cmd: Command | undefined): Command 
  * Holding along the launch changes nothing.
  */
 function influence(w: BrawlWorld, f: Fighter, move: { x: number; z: number } | undefined): void {
-  const sp = Math.hypot(f.vel.x, f.vel.z);
-  const m = move ? Math.hypot(move.x, move.z) : 0;
+  const sp = hyp(f.vel.x, f.vel.z);
+  const m = move ? hyp(move.x, move.z) : 0;
   if (sp < 1e-6 || m < 0.3) return;
   const across = (f.vel.x * move!.z - f.vel.z * move!.x) / (sp * m);
   const a = w.config.diMaxAngle * across;
-  const [cs, sn] = [Math.cos(a), Math.sin(a)];
+  const [cs, sn] = cosSin(a);
   const [x, z] = [f.vel.x, f.vel.z];
   f.vel.x = x * cs - z * sn;
   f.vel.z = x * sn + z * cs;
@@ -1589,6 +1590,17 @@ function stepZones(w: BrawlWorld): void {
   });
 }
 
+/**
+ * The stick as the simulation sees it: each axis on 255 steps (8 bits), the same for a
+ * local pad and for a command received over the network, so every player simulates the
+ * very same input (decision 0026).
+ */
+export function quantizeCommand(cmd: Command): Command {
+  if (!cmd.move) return cmd;
+  const q = (v: number) => Math.round(Math.max(-1, Math.min(1, v)) * 127) / 127;
+  return { ...cmd, move: { x: q(cmd.move.x), z: q(cmd.move.z) } };
+}
+
 /** Advances the world by one tick. Commands for dead or unknown units are ignored. */
 export function step(w: BrawlWorld, commands: Command[]): void {
   if (w.over) return;
@@ -1596,7 +1608,7 @@ export function step(w: BrawlWorld, commands: Command[]): void {
   const dt = 1 / c.tickRate;
   w.tick++;
   w.time = w.tick / c.tickRate;
-  const byUnit = new Map(commands.map((cmd) => [cmd.unit, cmd]));
+  const byUnit = new Map(commands.map((cmd) => [cmd.unit, quantizeCommand(cmd)]));
 
   for (const f of w.fighters) {
     if (!f.alive) {
@@ -1649,7 +1661,7 @@ export function step(w: BrawlWorld, commands: Command[]): void {
     if (f.action?.kind === "knockdown" && (guardPressed || cmd?.dodge) && w.time - f.techTriedAt >= c.techLockout) {
       f.techTriedAt = w.time;
       const mv = cmd?.move;
-      f.techMove = mv && Math.hypot(mv.x, mv.z) > 0.3 ? { x: mv.x, z: mv.z } : null;
+      f.techMove = mv && hyp(mv.x, mv.z) > 0.3 ? { x: mv.x, z: mv.z } : null;
     }
     // Hitlag: frozen in place; presses made meanwhile stay buffered.
     if (f.hitlagUntil > w.time) continue;

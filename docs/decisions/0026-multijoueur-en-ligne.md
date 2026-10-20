@@ -1,6 +1,6 @@
 # 0026 — Multijoueur en ligne : options et plan proposé
 
-Date : 2026-10-20. Statut : **proposée** (en attente d'arbitrage du porteur de projet).
+Date : 2026-10-20. Statut : **acceptée en partie**. Décidé : 4 joueurs, tous dans le même pays, modèle B (délai d'entrée). Restent ouvertes : la mise en relation et l'accès des amis à la page.
 
 > « Préparer la version multijoueur en ligne (pour jouer avec mes amis). »
 
@@ -78,3 +78,28 @@ Les mesures portent sur une partie à 4 combattants pilotés par des bots, dans 
 4. **Accès** : on partage la page publiée avec tes amis ?
 
 En attendant ta réponse, l'étape 1 (déterminisme garanti) est utile quel que soit le choix, sauf l'option A. C'est par elle que je commencerais.
+
+## Arbitrage du 2026-10-20
+
+> « 4 joueurs, même pays, ok délai d'entrée, go étape 1 »
+
+- **Jusqu'à 4 joueurs**, tous dans le même pays : un délai d'entrée de 2 à 3 images devrait suffire.
+- **Modèle B** (délai d'entrée), avec une liaison directe entre chaque paire de joueurs (WebRTC).
+- **Encore ouvertes :** la mise en relation (question 3) et l'accès des amis à la page (question 4).
+
+## Étape 1 faite : la simulation est la même dans tous les navigateurs
+
+- **Fonctions mathématiques.**
+  - Les 30 `Math.hypot` de la simulation (`world.ts`, `bot.ts`, `arena.ts`, `nav.ts`, `sim/math.ts`) passent par `hyp()`, qui calcule la racine carrée de la somme des carrés.
+  - La puissance `**` (usure du combo) passe par `powi()`, une multiplication répétée.
+  - Le sinus et le cosinus (influence de trajectoire) passent par `cosSin()`, une série de Taylor. Écart avec `Math.sin` et `Math.cos` : moins de 2 × 10⁻⁷ au pire, bien moins pour les petits angles employés.
+  - Ces fonctions sont dans `src/sim/math.ts`. Elles n'utilisent que les opérations arrondies à l'identique partout (+, −, ×, ÷, `Math.sqrt`, `Math.round`).
+- **Stick sur 8 bits.** À l'entrée de chaque image (`quantizeCommand`), chaque axe du stick est arrondi sur 255 crans. Une manette locale et une commande reçue du réseau donnent donc exactement la même simulation.
+- **Tests (`tests/determinism.test.ts`).**
+  - Aucune fonction à risque dans les fichiers de la simulation : le test lit le code et refuse `Math.hypot`, `sin`, `pow`, `**`, `random`…
+  - Précision de `cosSin`.
+  - Arrondi du stick.
+  - **Rejeu** : une partie de 20 s à 4 joueurs dans le village, rejouée à partir de ses commandes passées par du JSON (comme sur le réseau), donne la même empreinte d'état.
+- **Ce qui n'est pas prouvé ici.** Seul Chromium est disponible pour les tests. L'étape 2 (empreinte d'état échangée en partie) détectera tout écart réel entre vos navigateurs.
+
+**Prochaine étape (2 et 3) :** l'empreinte d'état, puis la boucle à délai d'entrée, testée d'abord sans réseau : plusieurs mondes dans la même page, avec latence, pertes et gigue simulées.
