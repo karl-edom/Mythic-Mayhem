@@ -306,6 +306,38 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
         },
       };
     }
+    case "tornado": {
+      // A twister standing on the ground (Sonic Wind): three helical bands of light that
+      // widen toward the top, spinning fast, swaying a little as it travels.
+      const h = size * 4;
+      const twister = new THREE.Group();
+      twister.position.y = -size; // its foot on the ground (the projectile flies at body height)
+      const mat = noOutline(new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.75, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+      const core = noOutline(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false }));
+      for (let k = 0; k < 3; k++) {
+        const pts: THREE.Vector3[] = [];
+        for (let i = 0; i <= 48; i++) {
+          const u = i / 48;
+          const a = u * Math.PI * 5 + (k * Math.PI * 2) / 3;
+          const r = size * (0.25 + 1.4 * u * u);
+          pts.push(new THREE.Vector3(Math.cos(a) * r, u * h, Math.sin(a) * r));
+        }
+        twister.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 96, size * 0.06, 5, false), k === 0 ? core : mat));
+      }
+      const swirl = new THREE.Sprite(additive(glow, color, 0.5));
+      swirl.scale.set(size * 2.4, h, 1);
+      swirl.position.y = h / 2;
+      twister.add(swirl);
+      group.add(twister);
+      return {
+        group,
+        update(t) {
+          twister.rotation.y = t * 18;
+          twister.rotation.z = 0.08 * Math.sin(t * 7);
+        },
+        dispose: done,
+      };
+    }
     case "bullet": {
       // A tracer: a short bright streak along its path.
       const geo = new THREE.CylinderGeometry(0.025, 0.025, 0.9, 6);

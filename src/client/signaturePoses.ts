@@ -260,5 +260,24 @@ export function fistSignatures(hipsRest: THREE.Vector3, bones: BoneTable = SWORD
   const heel = fists(over(base, { rightUpperLeg: [-1.0, 0, -0.1], rightLowerLeg: [0.1, 0, 0], rightFoot: [0.3, 0, 0], leftUpperLeg: [-0.6, 0, 0.1], leftLowerLeg: [1.4, 0, 0], spine: [0.35, 0, 0] }, [0, -0.32, 0]), { r: [-0.35, 0.3, 0.0], l: [0.35, 0.3, 0.0] });
   clip("@uzumaki-rendan:land", [[0, axe], [0.15, heel, "in"], [0.45, heel], [1, stance]], 0.8, { impact: 0.15 });
 
+  // Spin Dash (Sonic): down on the haunches, revving, then curled into a ball that
+  // spins on itself as it rolls at the foe.
+  const rev = fists(over(crouchDeep, { spine: [0.6, 0, 0], head: [-0.2, 0, 0] }), { r: [-0.15, 0.1, 0.25], l: [0.15, 0.1, 0.25] });
+  clip("@spin-ball", [[0, stance], [0.45, rev], [1, ball]], 0.35, { impact: 0.42 });
+  clip("@spin-ball:rush", [...somersault(ball, 0, 1, 1)], 0.16, { linear: true, loop: true });
+  // Homing Attack: a spring, then a ball turning three times in the air, opening into a
+  // kick on the way down.
+  const kick = fists(over(tucked, { rightUpperLeg: [-1.3, 0, -0.1], rightLowerLeg: [0.2, 0, 0], leftUpperLeg: [-0.4, 0, 0.1], leftLowerLeg: [1.6, 0, 0], spine: [0.2, 0, 0] }), { r: [-0.3, 0.45, -0.1], l: [0.3, 0.45, -0.1] });
+  clip("@homing", [[0, stance], [1, spring]], 0.12, { impact: 0.42 });
+  clip("@homing:leap", [[0, spring], ...somersault(ball, 0.08, 0.85, 3), [1, kick]], 1.0, { linear: true });
+  clip("@homing:land", [[0, kick], [0.2, kick, "in"], [1, stance]], 0.5, { impact: 0.1 });
+  // Drill Dive (Knuckles): up in a ball, then diving head first, both fists ahead, and
+  // a punch into the ground on landing.
+  const dive = fists(over(tucked, { leftUpperLeg: [0.1, 0, 0.1], leftLowerLeg: [0.3, 0, 0], rightUpperLeg: [0.1, 0, -0.1], rightLowerLeg: [0.3, 0, 0], spine: [-0.1, 0, 0], head: [0.5, 0, 0] }), { r: [-0.1, 0.75, 0.55], l: [0.1, 0.75, 0.55] });
+  clip("@drill-dive", [[0, stance], [1, spring]], 0.15, { impact: 0.42 });
+  clip("@drill-dive:leap", [[0, spring], ...somersault(ball, 0.05, 0.55, 1), [0.7, dive, "in"], [1, dive]], 1.0, { linear: true });
+  const slam = fists(over(crouchDeep, { spine: [0.7, 0, 0] }, [0, -0.1, 0]), { r: [-0.05, -0.35, 0.5], l: [0.05, -0.35, 0.5] });
+  clip("@drill-dive:land", [[0, dive], [0.15, slam, "in"], [0.5, slam], [1, stance]], 0.7, { impact: 0.15 });
+
   return out;
 }
