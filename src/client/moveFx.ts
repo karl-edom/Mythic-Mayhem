@@ -589,3 +589,67 @@ export function zoneFlames(radius: number): THREE.Group {
   };
   return g;
 }
+
+/**
+ * The aura of a fighter charging energy, round its feet (fighter space, 1.8 m tall):
+ * tongues of flame in its colour licking up round the body, motes of energy shooting
+ * up, a glowing circle on the ground and pebbles lifting off it. Driven by the clock
+ * alone (`update(t)`), so it loops seamlessly; `obj.visible` turns it on and off.
+ */
+export function chargeAura(color: string): { obj: THREE.Group; update(t: number): void } {
+  const obj = new THREE.Group();
+  const seed = (i: number, k: number) => ((Math.sin(i * 12.9898 + k * 78.233) * 43758.5453) % 1 + 1) % 1;
+  const back = new THREE.Sprite(additive(glow, color, 0.18));
+  back.position.y = 1.0;
+  obj.add(back);
+  const flames = Array.from({ length: 16 }, (_, i) => {
+    const s = new THREE.Sprite(additive(flameTexture(), color, 0));
+    obj.add(s);
+    return { s, a: (i / 16) * Math.PI * 2 + seed(i, 1), r: 0.42 + seed(i, 2) * 0.2, phase: seed(i, 3), speed: 1.4 + seed(i, 4) * 0.6 };
+  });
+  const motes = Array.from({ length: 22 }, (_, i) => {
+    const s = new THREE.Sprite(additive(glow, i % 3 === 0 ? 0xffffff : color, 0));
+    obj.add(s);
+    return { s, a: seed(i, 5) * Math.PI * 2, r: 0.2 + seed(i, 6) * 0.5, phase: seed(i, 7), speed: 2 + seed(i, 8) * 1.5 };
+  });
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
+    noOutline(new THREE.MeshBasicMaterial({ map: glow, color, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false })),
+  );
+  ground.position.y = 0.03;
+  obj.add(ground);
+  const rock = new THREE.MeshStandardMaterial({ color: 0x4a443c, roughness: 0.9 });
+  const pebbles = Array.from({ length: 7 }, (_, i) => {
+    const m = new THREE.Mesh(new THREE.DodecahedronGeometry(0.04 + seed(i, 9) * 0.035, 0), rock);
+    obj.add(m);
+    return { m, a: seed(i, 10) * Math.PI * 2, r: 0.5 + seed(i, 11) * 0.5, phase: seed(i, 12), spin: 3 + seed(i, 13) * 5 };
+  });
+  return {
+    obj,
+    update(t) {
+      const beat = 0.5 + 0.5 * Math.sin(t * 18);
+      back.scale.set(1.6 + 0.2 * beat, 2.6 + 0.3 * beat, 1);
+      for (const f of flames) {
+        const p = (t * f.speed + f.phase) % 1;
+        const a = f.a + t * 1.2;
+        f.s.position.set(Math.cos(a) * f.r * (1 - p * 0.3), 0.15 + p * 1.75, Math.sin(a) * f.r * (1 - p * 0.3));
+        f.s.scale.set(0.26 * (1 - p * 0.5), 0.7 + p * 0.8, 1);
+        f.s.material.opacity = 0.32 * Math.sin(Math.PI * p);
+      }
+      for (const m of motes) {
+        const p = (t * m.speed + m.phase) % 1;
+        m.s.position.set(Math.cos(m.a) * m.r, p * 2.5, Math.sin(m.a) * m.r);
+        m.s.scale.set(0.06, 0.08 + 0.22 * (1 - p), 1);
+        m.s.material.opacity = (1 - p) * 0.9;
+      }
+      ground.scale.setScalar(2.2 + 0.4 * beat);
+      (ground.material as THREE.MeshBasicMaterial).opacity = 0.7 + 0.3 * beat;
+      for (const pb of pebbles) {
+        const p = (t * 0.6 + pb.phase) % 1;
+        pb.m.position.set(Math.cos(pb.a) * pb.r, 0.05 + p * 1.1 + 0.03 * Math.sin(t * 9 + pb.a), Math.sin(pb.a) * pb.r);
+        pb.m.rotation.set(t * pb.spin, t * pb.spin * 0.7, 0);
+        pb.m.scale.setScalar(p < 0.85 ? 1 : (1 - p) / 0.15);
+      }
+    },
+  };
+}
