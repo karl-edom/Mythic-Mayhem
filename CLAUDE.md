@@ -15,6 +15,7 @@
 - **Un seul artefact**, toujours le même : https://claude.ai/artifact/74oM5qGR8uTv4dTqCf1oTw. Ne jamais en créer un autre : on le met à jour à cette adresse (outil Artifact, avec `url`).
 - **La source de vérité est la branche Git.** L'artefact n'est qu'une compilation de la branche telle qu'elle est poussée, plus les packs locaux.
 - **Les packs locaux ne vivent que dans l'artefact** (décision du 2026-10-20, option a). Si `packs/local/` est vide, les récupérer d'abord : lire la page publiée (outil Artifact, `read` avec `path: "index.html"`), puis `npm run artifact:packs -- <fichier enregistré>`. Ne pas écraser des packs locaux existants sans `--force` et sans raison.
+- **Avatars VRM des packs** (look `"model": "vrm"`) : publiés à côté de la page sous `packs/<id>/<fichier>.vrm.json`. Pour les récupérer, les lire aussi (outil Artifact, `read` avec `paths`, dans le même dossier que la page enregistrée) avant `npm run artifact:packs` : la commande les remet dans `packs/local/<id>/`. Elle liste ceux qui manquent.
 - **Pour publier :**
   1. `git pull` sur la branche ;
   2. tout commiter et pousser : `npm run artifact` refuse de compiler sinon ;

@@ -802,11 +802,11 @@ async function boot(): Promise<void> {
   await photos;
   if (library) {
     // The packs' VRM avatars (a few MB each), before portraits and showcase use them.
-    const looks = playable.flatMap((r) => (r.character.look ? [r.character.look] : []));
-    if (looks.some((l) => l.model === "vrm")) {
+    const packs = playable.flatMap((r) => (r.character.look ? [{ dir: r.dir, look: r.character.look }] : []));
+    if (packs.some((p) => p.look.model === "vrm")) {
       label.textContent = "Chargement des avatars…";
       fill.style.width = "0%";
-      await loadVrmModels(library, looks, (done, total) => {
+      await loadVrmModels(library, packs, (done, total) => {
         fill.style.width = `${(100 * done) / total}%`;
       });
     }

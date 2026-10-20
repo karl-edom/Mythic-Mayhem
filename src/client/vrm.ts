@@ -21,13 +21,25 @@ const VRMUtils = (ThreeVrm as unknown as {
   VRMUtils: { removeUnnecessaryVertices(root: THREE.Object3D): void; rotateVRM0(vrm: VRM): void };
 }).VRMUtils;
 
-/** The VRM files of the local packs, by file name (bundled by Vite as URLs). */
-const files = import.meta.glob(["/packs/local/*/*.vrm", "!/packs/local/_vrm/*"], { query: "?url", import: "default", eager: true }) as Record<string, string>;
+/** "json" on hosts that serve no .glb/.vrm files (the published page): wrapped in JSON. */
+const EXT = (import.meta.env?.VITE_MODEL_EXT as string | undefined) ?? "glb";
 
-/** URL of a pack's VRM file, or undefined if no pack ships it. */
-export function vrmUrl(file: string): string | undefined {
-  for (const [path, url] of Object.entries(files)) if (path.endsWith(`/${file}`)) return url;
-  return undefined;
+/**
+ * Where a pack's VRM file is: in development, the file itself (packs/local/<id>/<file>);
+ * on the published page, next to it as packs/<id>/<file>.json (see tools/artifact.ts).
+ */
+export function vrmUrl(packDir: string, file: string): string {
+  const id = packDir.split("/").filter(Boolean).at(-1)!;
+  return EXT === "glb" ? `${packDir}/${file}` : new URL(`packs/${id}/${file}.json`, document.baseURI).href;
+}
+
+/** The file's bytes, unwrapped from its JSON on the published page. */
+async function fetchBytes(url: string): Promise<ArrayBuffer> {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${url} : HTTP ${res.status}`);
+  if (EXT === "glb") return res.arrayBuffer();
+  const { glb } = (await res.json()) as { glb: string };
+  return Uint8Array.from(atob(glb), (c) => c.charCodeAt(0)).buffer;
 }
 
 export interface VrmRig {
@@ -42,7 +54,19 @@ export interface VrmRig {
 export async function loadVrm(url: string): Promise<VrmRig> {
   const loader = new GLTFLoader();
   loader.register((parser) => new VRMLoaderPlugin(parser));
-  const gltf = await loader.loadAsync(url);
+  const bytes = await fetchBytes(url);
+  // Textures through <img> elements rather than fetch(blob:), which such hosts refuse
+  // (the loader picks its image loader when the parse starts, synchronously).
+  const g = globalThis as { createImageBitmap?: unknown };
+  const saved = g.createImageBitmap;
+  g.createImageBitmap = undefined;
+  let parsing: Promise<{ scene: THREE.Group; userData: Record<string, unknown> }>;
+  try {
+    parsing = loader.parseAsync(bytes, "");
+  } finally {
+    g.createImageBitmap = saved;
+  }
+  const gltf = await parsing;
   const vrm = gltf.userData.vrm as VRM;
   VRMUtils.removeUnnecessaryVertices(gltf.scene);
   // VRM 0.x avatars face −Z: a half turn, as VRM 1.0 ones (no-op for those).

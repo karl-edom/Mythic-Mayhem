@@ -153,6 +153,22 @@ function packsCommand(file: string, force: boolean): void {
     writeFileSync(to, JSON.stringify(data, null, 2) + "\n");
   }
   console.log(`${packs.size / 2} packs écrits dans packs/local/ (non commités).`);
+  // Their VRM avatars: published next to the page as packs/<id>/<file>.vrm.json. Fetched
+  // beside the saved page (Artifact read, same paths), they are unwrapped into the packs.
+  const beside = join(dirname(file), "packs");
+  let avatars = 0;
+  if (existsSync(beside))
+    for (const f of filesUnder(beside).filter((f) => f.endsWith(".vrm.json"))) {
+      const to = join(PACKS, relative(beside, f).replace(/\.json$/, ""));
+      mkdirSync(dirname(to), { recursive: true });
+      writeFileSync(to, Buffer.from((JSON.parse(readFileSync(f, "utf8")) as { glb: string }).glb, "base64"));
+      avatars++;
+    }
+  const missing = [...packs].filter(([p, d]) => p.endsWith("character.json") && (d as { look?: { model?: string; file?: string } }).look?.model === "vrm")
+    .map(([p, d]) => `${dirname(p)}/${(d as { look: { file: string } }).look.file}`)
+    .filter((p) => !existsSync(join(PACKS, p)));
+  if (avatars) console.log(`${avatars} avatars VRM écrits dans packs/local/.`);
+  if (missing.length) console.warn(`Avatars VRM à récupérer de la page publiée (fichiers packs/<id>/<fichier>.vrm.json, à poser à côté de la page) : ${missing.join(", ")}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -230,6 +246,14 @@ async function buildCommand(allowDirty: boolean): Promise<void> {
     if (f.endsWith(".glb")) writeFileSync(to, JSON.stringify({ glb: readFileSync(f).toString("base64") }));
     else cpSync(f, to);
   }
+  // The packs' VRM avatars, wrapped in JSON too: packs/<id>/<file>.vrm.json (see vrm.ts).
+  for (const id of packs)
+    for (const f of readdirSync(join(PACKS, id)).filter((f) => f.endsWith(".vrm"))) {
+      const to = join(OUT, "packs", id, `${f}.json`);
+      mkdirSync(dirname(to), { recursive: true });
+      writeFileSync(to, JSON.stringify({ glb: readFileSync(join(PACKS, id, f)).toString("base64") }));
+      if (statSync(to).size > 15.5 * 1024 * 1024) throw new Error(`${id}/${f} : trop lourd pour la page publiée (16 Mo par fichier une fois emballé)`);
+    }
   const files = filesUnder(OUT).map((f) => relative(OUT, f)).filter((f) => f !== "index.html").sort();
   writeFileSync(join(OUT, "files.json"), JSON.stringify(files, null, 2) + "\n");
   const kb = (f: string) => (statSync(join(OUT, f)).size / 1024).toFixed(0);

@@ -273,16 +273,16 @@ export function canDraw(lib: ModelLibrary, look: Look): boolean {
  * bones bear the same humanoid names. A file that fails to load is reported and skipped:
  * that fighter is then drawn with the default model.
  */
-export async function loadVrmModels(lib: ModelLibrary, looks: Look[], onProgress?: (done: number, total: number) => void): Promise<void> {
-  const files = [...new Set(looks.filter((l) => l.model === "vrm" && l.file && !lib.anime.has(templateKey(l))).map((l) => l.file!))];
+export async function loadVrmModels(lib: ModelLibrary, packs: { dir: string; look: Look }[], onProgress?: (done: number, total: number) => void): Promise<void> {
+  // Each file once (two packs naming the same file share it).
+  const todo = new Map<string, string>();
+  for (const { dir, look } of packs) if (look.model === "vrm" && look.file && !lib.anime.has(templateKey(look)) && !todo.has(look.file)) todo.set(look.file, dir);
   const swordsman = lib.anime.get("swordsman")!;
   const names = Object.fromEntries(SWORDSMAN_BONES.map(([n]) => [n, n]));
   let done = 0;
-  for (const file of files) {
-    const url = vrmUrl(file);
+  for (const [file, dir] of todo) {
     try {
-      if (!url) throw new Error("fichier absent du pack");
-      const { rig, height } = await loadVrm(url);
+      const { rig, height } = await loadVrm(vrmUrl(dir, file));
       const retarget = new Retargeter({ source: swordsman.rig, target: rig, map: names });
       lib.anime.set(`vrm:${file}`, {
         rig,
@@ -292,7 +292,7 @@ export async function loadVrmModels(lib: ModelLibrary, looks: Look[], onProgress
     } catch (e) {
       console.warn(`Modèle VRM « ${file} » non chargé :`, e);
     }
-    onProgress?.(++done, files.length);
+    onProgress?.(++done, todo.size);
   }
 }
 
