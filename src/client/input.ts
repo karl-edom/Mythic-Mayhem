@@ -9,7 +9,7 @@ export const KEY_HELP: [string, string][] = [
   ["Espace", "sauter : garde l'élan (maintenu : saut complet ; tapé : petit saut ; en l'air : double saut)"],
   ["J", "attaque légère : avance ; enchaîne jusqu'à 3 coups si le précédent a touché ; en l'air : coup aérien, visé vers l'adversaire"],
   ["Espace + J / L + J (en l'air)", "coup aérien vers le haut / vers le bas (plus lent : plaque au sol)"],
-  ["K (maintenir)", "attaque lourde, chargeable"],
+  ["K (maintenir)", "coup fort, chargeable ; + L : balayage bas des deux côtés ; + Espace (ou adversaire au-dessus) : vers le haut ; en l'air : coup aérien fort"],
   ["L (maintenir)", "bouclier ; relâché juste avant l'impact : parade"],
   ["Maj", "esquive ; sous les coups : dégagement (50 d'énergie)"],
   ["U / I / O", "spéciales 1 / 2 / 3"],
@@ -23,7 +23,7 @@ export const PAD_HELP: [string, string][] = [
   ["Stick gauche", "se déplacer (plus ou moins vite selon l'inclinaison)"],
   ["A", "attaque légère (combo si ça touche) ; en l'air : coup aérien, visé vers l'adversaire"],
   ["Y + A / RB + A (en l'air)", "coup aérien vers le haut / vers le bas (plus lent : plaque au sol)"],
-  ["X (maintenir)", "attaque lourde, chargeable"],
+  ["X (maintenir), ou stick donné d'un coup sec + A", "coup fort, chargeable ; + RB : balayage bas ; + Y (ou adversaire au-dessus) : vers le haut ; en l'air : coup aérien fort"],
   ["B", "spéciale 1 ; B + stick incliné : spéciale 2"],
   ["LT", "spéciale 3"],
   ["Y", "sauter (maintenu : saut complet ; tapé : petit saut) ; en l'air : double saut"],
@@ -131,6 +131,20 @@ export function readPad(buttons: readonly boolean[], axes: readonly number[], st
   return { held, stick: { x, y } };
 }
 
+/**
+ * A « flick » of the stick (Smash's smash input): from near the centre to near the
+ * edge within FLICK_MS. `samples`: the stick's tilt (0..1) at past times (ms), oldest
+ * first, the last one being now.
+ */
+export const FLICK_MS = 70;
+export function isFlick(samples: readonly { t: number; m: number }[]): boolean {
+  const now = samples.at(-1);
+  if (!now || now.m < 0.8) return false;
+  return samples.some((s) => s !== now && now.t - s.t <= FLICK_MS && s.m < 0.3);
+}
+/** How long after a flick the attack button still makes it a strong attack. */
+const FLICK_WINDOW_MS = 120;
+
 interface PadState {
   held: Set<Button>;
   pressed: Set<Button>;
@@ -144,12 +158,16 @@ interface PadState {
   /** Direction pushed last frame (stick or d-pad), and when it repeats next, for menus. */
   nav: string;
   navRepeat: number;
+  /** Recent stick tilts, for flicks; when the last flick's window closes; a flicked attack still held. */
+  tilts: { t: number; m: number }[];
+  flickUntil: number;
+  smashHeld: boolean;
 }
 
 export class Input {
   private keysHeld = new Set<string>();
   private keysPressed = new Set<string>();
-  private pads: PadState[] = [0, 1, 2, 3].map(() => ({ held: new Set(), pressed: new Set(), stick: { x: 0, y: 0 }, connected: false, device: -1, id: "", standard: true, nav: "", navRepeat: 0 }));
+  private pads: PadState[] = [0, 1, 2, 3].map(() => ({ held: new Set(), pressed: new Set(), stick: { x: 0, y: 0 }, connected: false, device: -1, id: "", standard: true, nav: "", navRepeat: 0, tilts: [], flickUntil: 0, smashHeld: false }));
   /** Keyboard presses for the menus (arrows, Enter, Backspace, X, T), consumed by menuPresses. */
   private keyMenu: MenuButton[] = [];
   /** Why gamepads cannot be read here, if they cannot (for the diagnosis). */
@@ -223,6 +241,10 @@ export class Input {
       for (const k of r.held) if (!s.held.has(k)) s.pressed.add(k);
       s.held = r.held;
       s.stick = r.stick;
+      const t = performance.now();
+      s.tilts.push({ t, m: Math.min(1, Math.hypot(r.stick.x, r.stick.y)) });
+      while (s.tilts.length && t - s.tilts[0]!.t > FLICK_MS * 2) s.tilts.shift();
+      if (isFlick(s.tilts)) s.flickUntil = t + FLICK_WINDOW_MS;
       // Menu navigation: stick or d-pad, one step per push, repeating while held.
       const d = readDpad(pad.buttons.map((b) => b.pressed), pad.axes, s.standard);
       const ax = pad.axes[0] ?? 0;
@@ -321,16 +343,26 @@ export class Input {
       if (take("s0")) special = l > TILT ? 1 : 0;
       else if (take("s2")) special = 2;
     } else special = take("s0") ? 0 : take("s1") ? 1 : take("s2") ? 2 : undefined;
+    // A flick and the attack button together: the strong attack (Smash's smash), which
+    // charges while the button stays down. On the keyboard the heavy key plays this part.
+    let light = take("light");
+    if (pad) {
+      if (light && performance.now() <= pad.flickUntil) {
+        pad.smashHeld = true;
+        light = false;
+      }
+      if (!held("light")) pad.smashHeld = false;
+    }
     return {
       unit,
       move,
       jump: take("jump"),
       jumpHeld: held("jump"),
       grab: take("grab"),
-      light: take("light"),
+      light,
       dodge: take("dodge"),
       special,
-      heavy: held("heavy"),
+      heavy: held("heavy") || !!pad?.smashHeld,
       guard: held("guard"),
       charge: held("charge"),
     };

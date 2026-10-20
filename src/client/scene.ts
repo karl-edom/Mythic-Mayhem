@@ -11,7 +11,7 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { distToProp, segmentInterval, surfaceAt } from "../brawl/arena.ts";
 import type { Character } from "../brawl/character.ts";
 import type { Strike } from "../brawl/kit.ts";
-import { FIGHTER_HEIGHT, aerialCenter, aerialStrike, bodyCenter, lockTarget, type BrawlWorld, type Fighter } from "../brawl/world.ts";
+import { FIGHTER_HEIGHT, aerialCenter, aerialStrike, bodyCenter, lockTarget, strongAerialStrike, sweepCenters, type BrawlWorld, type Fighter } from "../brawl/world.ts";
 import { Animator } from "./animator.ts";
 import { applyWear, damageStage, propColor, wearLean } from "./damage.ts";
 import { buildEnvironment } from "./environment.ts";
@@ -587,8 +587,11 @@ export class ArenaView {
     v.animator?.update(w, f, dt, frozen || lagged, drawnAt);
     // Directional aerials: the body leans back to strike upward, dives forward to strike
     // down (round its middle, not its feet).
-    const aerial = f.action?.kind === "aerial" && f.action.aim !== "side" ? f.action : null;
-    const leanTo = aerial ? (aerial.aim === "up" ? -0.5 : 0.75) * Math.min(1, aerial.t / 0.08) : 0;
+    // (Strong attacks on the ground too: back for the one upward, a crouch for the sweep.)
+    const fa = f.action;
+    const aimed = (fa?.kind === "aerial" || (fa?.kind === "heavy" && !fa.charging)) && fa.aim !== "side" ? fa : null;
+    const ground = aimed?.kind === "heavy";
+    const leanTo = aimed ? (aimed.aim === "up" ? -0.5 : ground ? 0.35 : 0.75) * Math.min(1, aimed.t / 0.08) : 0;
     v.root.rotation.order = "YXZ";
     v.root.rotation.x += (leanTo - v.root.rotation.x) * (dt > 0 ? 1 - Math.exp(-dt * 25) : 1);
     if (Math.abs(v.root.rotation.x) > 1e-3) {
@@ -690,7 +693,7 @@ export class ArenaView {
       key = `l${a.index}:${w.tick - Math.round(a.t * w.config.tickRate)}`;
       tilt = SLASH_TILT[a.index % SLASH_TILT.length]!;
     } else if (a?.kind === "aerial") {
-      strike = aerialStrike(w.config, f.kit.light.hits[0]!, a.aim);
+      strike = a.strong ? strongAerialStrike(w.config, f.kit.heavy, f.kit.light.hits[0]!, a.aim) : aerialStrike(w.config, f.kit.light.hits[0]!, a.aim);
       at = a.t;
       key = `a${w.tick - Math.round(a.t * w.config.tickRate)}`;
       // Upward or downward: the arc stands up, over the head or under the feet.
@@ -715,7 +718,10 @@ export class ArenaView {
       v.trail.update(base, tip, swinging && f.alive, dt, heavyish ? 0xffa53d : ch.colors.secondary);
     } else if (strike && at >= strike.startup && v.slashKey !== key) {
       v.slashKey = key;
-      const aimed = a?.kind === "aerial" && a.aim !== "side" ? aerialCenter(f, strike, a.aim) : null;
+      const aimed =
+        (a?.kind === "aerial" || a?.kind === "heavy") && a.aim !== "side"
+          ? a.kind === "heavy" && a.aim === "down" ? sweepCenters(f, strike)[0]! : aerialCenter(f, strike, a.aim)
+          : null;
       const origin = aimed ? new THREE.Vector3(aimed.x, aimed.y, aimed.z) : this.center(f).add(new THREE.Vector3(f.facing.x, 0, f.facing.z).multiplyScalar(0.2));
       const color = a?.kind === "heavy" ? 0xffa53d : ch.colors.secondary;
       this.vfx.slash(origin, Math.atan2(f.facing.x, f.facing.z), tilt, strike.reach + strike.size * (a?.kind === "heavy" ? 1.3 : 1), color);

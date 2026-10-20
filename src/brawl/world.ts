@@ -92,6 +92,16 @@ export interface BrawlConfig {
   aerialSpikeSpeed: number;
   aerialAimHeight: number;
   aerialAimReach: number;
+  /**
+   * Strong attacks by direction (decision 0028), from the heavy attack's numbers. On the
+   * ground: up (jump pressed with it, or a target above) hits over the head and lifts
+   * (`smashUpLift`); down (guard held) sweeps both sides at the feet. In the air (heavy
+   * pressed, or the stick flicked): a strong aerial, × `strongAerialDamage` of the heavy
+   * hit, its startup × `strongAerialStartup`, aimed like the light aerial.
+   */
+  smashUpLift: number;
+  strongAerialDamage: number;
+  strongAerialStartup: number;
   /** Knockback grows as health drops: × (1 + bonus × share of health lost). */
   knockbackLowHpBonus: number;
   dodgeDistance: number;
@@ -211,6 +221,9 @@ export const BRAWL_CONFIG: BrawlConfig = {
   aerialSpikeSpeed: 14,
   aerialAimHeight: 0.9,
   aerialAimReach: 2.8,
+  smashUpLift: 11,
+  strongAerialDamage: 0.8,
+  strongAerialStartup: 0.6,
   knockbackLowHpBonus: 0.6,
   dodgeDistance: 3.5,
   dodgeDuration: 0.3,
@@ -265,9 +278,9 @@ export const STEP_UP = 0.45;
 
 export type Action =
   | { kind: "light"; index: number; t: number; hit: boolean }
-  | { kind: "aerial"; t: number; hit: boolean; aim: AerialAim }
+  | { kind: "aerial"; t: number; hit: boolean; aim: AerialAim; strong?: boolean }
   | { kind: "landing"; until: number }
-  | { kind: "heavy"; charge: number; charging: boolean; t: number; hit: boolean }
+  | { kind: "heavy"; charge: number; charging: boolean; t: number; hit: boolean; aim: AerialAim }
   | { kind: "special"; slot: number; t: number; fired: boolean; countered?: boolean }
   | { kind: "rush"; slot: number; remaining: number }
   /** In the air on a leap special, from `from` to `to` over `time` seconds. */
@@ -768,6 +781,30 @@ export function aerialCenter(f: Fighter, s: Strike, aim: AerialAim): V3 {
   return { x: f.pos.x + f.facing.x * ahead, y, z: f.pos.z + f.facing.z * ahead };
 }
 
+/** A low sweep: both sides of the fighter, at shin height. */
+export function sweepCenters(f: Fighter, s: Strike): V3[] {
+  const r = s.reach * 0.8;
+  return [1, -1].map((k) => ({ x: f.pos.x + f.facing.x * r * k, y: f.pos.y + 0.35, z: f.pos.z + f.facing.z * r * k }));
+}
+
+/**
+ * The direction of a strong attack on the ground: guard held = a low sweep, jump pressed
+ * with it = up; neither, up if the target is above and close (an anti-air), else ahead.
+ */
+export function heavyAim(w: BrawlWorld, f: Fighter, cmd: Command | undefined): AerialAim {
+  if (cmd?.guard) return "down";
+  if (cmd?.jump) return "up";
+  const t = lockTarget(w, f);
+  if (t && hdist(f.pos, t.pos) <= w.config.aerialAimReach && t.pos.y - f.pos.y > w.config.aerialAimHeight) return "up";
+  return "side";
+}
+
+/** A strong aerial: the heavy attack's reach and power, quicker and a little weaker; slower again downward. */
+export function strongAerialStrike(c: BrawlConfig, h: Strike, light: Strike, aim: AerialAim): Strike {
+  const s = { ...h, startup: Math.max(light.startup + 0.04, h.startup * c.strongAerialStartup), damage: h.damage * c.strongAerialDamage };
+  return aerialStrike(c, s, aim);
+}
+
 /**
  * The direction of an aerial: jump held = up, guard held = down; neither, the target's
  * height decides (well above or below and close: up or down, else ahead).
@@ -863,8 +900,8 @@ function applyHit(w: BrawlWorld, src: Fighter, target: Fighter, hit: HitSpec, fr
   if (knockdown && target.alive) target.vel.y = Math.max(target.vel.y, 4);
   // Directional aerials: up sends the target up, down slams it to the floor (it falls,
   // bounces, and stays down a moment however light the blow).
-  const spike = hit.aim === "down";
-  if (hit.aim === "up" && target.alive) target.vel.y = Math.max(target.vel.y, c.aerialUpLift / Math.sqrt(target.kit.stats.weight));
+  const spike = hit.aim === "down" && hit.by === "aerial";
+  if (hit.aim === "up" && target.alive) target.vel.y = Math.max(target.vel.y, (hit.by === "heavy" ? c.smashUpLift : c.aerialUpLift) / Math.sqrt(target.kit.stats.weight));
   if (spike && target.alive) {
     target.vel.y = Math.min(target.vel.y, -c.aerialSpikeSpeed);
     target.vel.x *= 0.3;
@@ -878,7 +915,7 @@ function applyHit(w: BrawlWorld, src: Fighter, target: Fighter, hit: HitSpec, fr
       : { kind: "hitstun", until: t + hl + stun };
   w.events.push({
     t, type: "hit", source: src.id, target: target.id, amount: hit.damage, by: hit.by, knockdown: knockdown || spike,
-    ...(hit.slot !== undefined ? { slot: hit.slot } : {}), ...(hit.aim && hit.aim !== "side" ? { aim: hit.aim } : {}),
+    ...(hit.slot !== undefined ? { slot: hit.slot } : {}), ...(hit.aim === "up" || spike ? { aim: hit.aim } : {}),
   });
   return true;
 }
@@ -944,7 +981,9 @@ function end(w: BrawlWorld, winner: number | null): void {
 
 /** Strikes the first time the hitbox touches each enemy (one hit per strike). Props are hit on the first live tick. */
 function resolveStrike(w: BrawlWorld, f: Fighter, s: Strike, by: HitKind, dmg: number, guardBreak: boolean, firstTick: boolean, aim?: AerialAim): boolean {
-  const c = aim ? aerialCenter(f, s, aim) : strikeCenter(f, s);
+  // A low sweep strikes both sides at the feet; the others, one point.
+  const centers = aim === "down" && by === "heavy" ? sweepCenters(f, s) : [aim ? aerialCenter(f, s, aim) : strikeCenter(f, s)];
+  const c = centers[0]!;
   let hitAny = false;
   if (firstTick)
     for (const p of w.arena.props)
@@ -953,7 +992,7 @@ function resolveStrike(w: BrawlWorld, f: Fighter, s: Strike, by: HitKind, dmg: n
         hitAny = true;
       }
   for (const o of w.fighters) {
-    if (o.team === f.team || !o.alive || !sphereTouches(c, s.size, o)) continue;
+    if (o.team === f.team || !o.alive || !centers.some((p) => sphereTouches(p, s.size, o))) continue;
     hitAny = applyHit(w, f, o, { damage: dmg, hitstun: s.hitstun, knockback: s.knockback, guardBreak, by, ...(aim ? { aim } : {}) }, f.pos, true) || hitAny;
   }
   return hitAny;
@@ -1070,6 +1109,12 @@ function startAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, heavyP
   }
   // In the air: the light button gives one aerial strike, the jump button a second jump.
   if (!grounded(f)) {
+    if (heavyPressed && f.kit.light.hits.length > 0) {
+      faceTarget(w, f);
+      f.action = { kind: "aerial", t: 0, hit: false, aim: aerialAim(w, f, cmd), strong: true };
+      f.bufferedLightUntil = -Infinity;
+      return;
+    }
     if (lightWanted && f.kit.light.hits.length > 0) {
       faceTarget(w, f);
       f.action = { kind: "aerial", t: 0, hit: false, aim: aerialAim(w, f, cmd) };
@@ -1093,7 +1138,7 @@ function startAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, heavyP
   }
   if (heavyPressed) {
     faceTarget(w, f);
-    f.action = { kind: "heavy", charge: 0, charging: true, t: 0, hit: false };
+    f.action = { kind: "heavy", charge: 0, charging: true, t: 0, hit: false, aim: heavyAim(w, f, cmd) };
     return;
   }
   if (lightWanted && f.kit.light.hits.length > 0) {
@@ -1203,7 +1248,7 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
     }
     case "aerial": {
       // One strike with the first light hit's numbers (slower and harder downward); the fall goes on meanwhile.
-      const s = aerialStrike(c, f.kit.light.hits[0]!, a.aim);
+      const s = a.strong ? strongAerialStrike(c, f.kit.heavy, f.kit.light.hits[0]!, a.aim) : aerialStrike(c, f.kit.light.hits[0]!, a.aim);
       a.t += dt;
       airSteer(w, f, cmd);
       if (!a.hit && a.t >= s.startup && a.t < s.startup + s.active)
@@ -1228,7 +1273,7 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
       lunge(w, f, h, a.t, c.heavyLunge);
       if (!a.hit && a.t >= h.startup && a.t < h.startup + h.active) {
         const dmg = h.damage * (1 + (h.chargeBonus - 1) * (h.maxCharge > 0 ? a.charge / h.maxCharge : 0));
-        a.hit = resolveStrike(w, f, h, "heavy", dmg, true, a.t - dt < h.startup);
+        a.hit = resolveStrike(w, f, h, "heavy", dmg, true, a.t - dt < h.startup, a.aim === "side" ? undefined : a.aim);
       }
       if (a.t >= strikeLength(h)) f.action = null;
       return;

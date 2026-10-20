@@ -3,7 +3,7 @@
 // simulation's hitbox goes live: what you see is what hits.
 
 import * as THREE from "three";
-import { aerialStrike, dodgeLength, type BrawlWorld, type Fighter } from "../brawl/world.ts";
+import { aerialStrike, dodgeLength, strongAerialStrike, type BrawlWorld, type Fighter } from "../brawl/world.ts";
 import type { WeaponStyle } from "./models.ts";
 
 /** Running cadence ceiling, steps per second (a sprinter makes 4 to 5, a jog 3). */
@@ -139,7 +139,7 @@ export class Animator {
         return this.strike(this.own(`@light${a.index}`, list[a.index % list.length]!), `light${a.index}:${w.tick - Math.round(a.t * c.tickRate)}`, s.startup, s.startup + s.active + s.recovery);
       }
       case "aerial": {
-        const s = aerialStrike(c, f.kit.light.hits[0]!, a.aim);
+        const s = a.strong ? strongAerialStrike(c, f.kit.heavy, f.kit.light.hits[0]!, a.aim) : aerialStrike(c, f.kit.light.hits[0]!, a.aim);
         return this.strike(this.own("@aerial", AERIAL[this.style]), `aerial:${w.tick - Math.round(a.t * c.tickRate)}`, s.startup, s.startup + s.active + s.recovery);
       }
       case "jumpsquat":
