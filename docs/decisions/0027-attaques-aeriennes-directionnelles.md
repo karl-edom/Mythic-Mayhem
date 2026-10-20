@@ -49,4 +49,15 @@ Un bouton maintenu l'emporte toujours sur la visée automatique. Les bots profit
 
 - **Garder le saut enfoncé pendant toute la montée transforme l'attaque en coup vers le haut.** Pour frapper devant, il faut relâcher le saut avant d'attaquer. C'est le prix d'une commande sans joystick ; à revoir en jouant.
 - L'animation de chaque coup reste celle du coup aérien actuel. C'est le corps entier qui bascule (en arrière ou en avant), sans gestes propres au haut ou au bas.
-- L'équilibrage n'a pas été relancé sur les 16 packs. Le météore peut favoriser les personnages rapides en l'air : à surveiller lors de la prochaine série de matchs de référence.
+- Les gestes du haut et du bas ne sont pas propres à chaque personnage : c'est la même animation, inclinée.
+
+## Équilibrage
+
+La gauntlet de référence (40 adversaires, 2 duels chacun, terrain ouvert et arènes) a été relancée sur les 16 packs locaux, avant et après le changement.
+
+| | Packs dans la bande 40-60 % | Hors bande |
+| --- | --- | --- |
+| Avant (coup aérien devant seulement) | 11 sur 16 | Saitō 61 %, Sasuke 61 %, Tediz 68 %, Vegeta 62 % (et Goku 51 %) |
+| Après (haut, bas, visée automatique) | 15 sur 16 | Son Goku 62 % |
+
+Les attaques dirigées **resserrent** donc l'équilibre. Son Goku a ensuite été réglé avec l'outil habituel (`node tools/brawl.ts --tune --only goku`) : dégâts × 0,81, ce qui le ramène à 48 % de victoires et 95,7 points de budget. Ce réglage ne vit que dans son pack local ; il a été publié dans l'artefact.
