@@ -11,7 +11,7 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { distToProp, segmentInterval, surfaceAt } from "../brawl/arena.ts";
 import type { Character } from "../brawl/character.ts";
 import type { Strike } from "../brawl/kit.ts";
-import { FIGHTER_HEIGHT, bodyCenter, lockTarget, type BrawlWorld, type Fighter } from "../brawl/world.ts";
+import { FIGHTER_HEIGHT, aerialCenter, aerialStrike, bodyCenter, lockTarget, type BrawlWorld, type Fighter } from "../brawl/world.ts";
 import { Animator } from "./animator.ts";
 import { applyWear, damageStage, propColor, wearLean } from "./damage.ts";
 import { buildEnvironment } from "./environment.ts";
@@ -403,6 +403,8 @@ export class ArenaView {
             if (n > 0) this.vfx.slashes(this.center(w.fighters[e.target]!), n, this.characters[e.source]!.colors.primary);
           }
           if (e.knockdown) this.vfx.groundWave(new THREE.Vector3(w.fighters[e.target]!.pos.x, w.fighters[e.target]!.floor, w.fighters[e.target]!.pos.z), 0xffffff, 3);
+          // Directional aerials: streaks show where the blow sends (up, or slammed down).
+          if (e.aim) this.vfx.speedLines(this.center(w.fighters[e.target]!), new THREE.Vector3(0, e.aim === "up" ? 1 : -1, 0), this.characters[e.source]!.colors.secondary);
           break;
         }
         case "block":
@@ -583,6 +585,16 @@ export class ArenaView {
     // Hitlag freezes the pose of both bodies at the moment of contact.
     const lagged = f.hitlagUntil > w.time;
     v.animator?.update(w, f, dt, frozen || lagged, drawnAt);
+    // Directional aerials: the body leans back to strike upward, dives forward to strike
+    // down (round its middle, not its feet).
+    const aerial = f.action?.kind === "aerial" && f.action.aim !== "side" ? f.action : null;
+    const leanTo = aerial ? (aerial.aim === "up" ? -0.5 : 0.75) * Math.min(1, aerial.t / 0.08) : 0;
+    v.root.rotation.order = "YXZ";
+    v.root.rotation.x += (leanTo - v.root.rotation.x) * (dt > 0 ? 1 - Math.exp(-dt * 25) : 1);
+    if (Math.abs(v.root.rotation.x) > 1e-3) {
+      const mid = new THREE.Vector3(0, FIGHTER_HEIGHT / 2, 0);
+      v.root.position.sub(mid.clone().applyEuler(v.root.rotation).sub(mid));
+    }
     // A hitlag shudder: the struck body trembles in place.
     if (lagged && f.action && (f.action.kind === "hitstun" || f.action.kind === "knockdown"))
       v.root.position.x += Math.sin(performance.now() * 0.25) * 0.05;
@@ -598,10 +610,14 @@ export class ArenaView {
     let windup: string | null = null;
     if (act?.kind === "heavy" && !act.charging) windup = `h${act.charge}`;
     else if (act?.kind === "special") windup = `s${act.slot}:${w.tick - Math.round(act.t * w.config.tickRate)}`;
+    // The meteor is slow on purpose: its glint, under the feet, is the cue to get away.
+    else if (act?.kind === "aerial" && act.aim === "down") windup = `d${w.tick - Math.round(act.t * w.config.tickRate)}`;
     if (windup && windup !== v.windupKey) {
       v.windupKey = windup;
       const color = act?.kind === "heavy" ? 0xffb347 : this.characters[f.id]!.colors.secondary;
-      const at = this.center(f).add(new THREE.Vector3(f.facing.x, 0.25, f.facing.z).multiplyScalar(0.6));
+      const at = act?.kind === "aerial"
+        ? new THREE.Vector3(f.pos.x, f.pos.y - 0.1, f.pos.z)
+        : this.center(f).add(new THREE.Vector3(f.facing.x, 0.25, f.facing.z).multiplyScalar(0.6));
       this.vfx.glint(at, color, act?.kind === "heavy" ? 1.6 : 1.3);
     } else if (!windup) v.windupKey = "";
 
@@ -673,10 +689,11 @@ export class ArenaView {
       key = `l${a.index}:${w.tick - Math.round(a.t * w.config.tickRate)}`;
       tilt = SLASH_TILT[a.index % SLASH_TILT.length]!;
     } else if (a?.kind === "aerial") {
-      strike = f.kit.light.hits[0];
+      strike = aerialStrike(w.config, f.kit.light.hits[0]!, a.aim);
       at = a.t;
       key = `a${w.tick - Math.round(a.t * w.config.tickRate)}`;
-      tilt = -0.9;
+      // Upward or downward: the arc stands up, over the head or under the feet.
+      tilt = a.aim === "side" ? -0.9 : 1.35;
     } else if (a?.kind === "heavy") {
       strike = f.kit.heavy;
       at = a.charging ? 0 : a.t;
@@ -697,7 +714,8 @@ export class ArenaView {
       v.trail.update(base, tip, swinging && f.alive, dt, heavyish ? 0xffa53d : ch.colors.secondary);
     } else if (strike && at >= strike.startup && v.slashKey !== key) {
       v.slashKey = key;
-      const origin = this.center(f).add(new THREE.Vector3(f.facing.x, 0, f.facing.z).multiplyScalar(0.2));
+      const aimed = a?.kind === "aerial" && a.aim !== "side" ? aerialCenter(f, strike, a.aim) : null;
+      const origin = aimed ? new THREE.Vector3(aimed.x, aimed.y, aimed.z) : this.center(f).add(new THREE.Vector3(f.facing.x, 0, f.facing.z).multiplyScalar(0.2));
       const color = a?.kind === "heavy" ? 0xffa53d : ch.colors.secondary;
       this.vfx.slash(origin, Math.atan2(f.facing.x, f.facing.z), tilt, strike.reach + strike.size * (a?.kind === "heavy" ? 1.3 : 1), color);
     }

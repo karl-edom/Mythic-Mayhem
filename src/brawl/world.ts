@@ -77,6 +77,20 @@ export interface BrawlConfig {
   blockHitlagFactor: number;
   /** Seconds stuck when landing during an aerial attack. */
   landingLag: number;
+  /**
+   * Directional aerials (decision 0027). Up: the strike sits over the head and lifts
+   * (upward speed `aerialUpLift`). Down (the « meteor »): under the feet, slower to come
+   * out and to recover (+ startup / + recovery seconds), × damage, and it slams down
+   * (`aerialSpikeSpeed`) and knocks down. Auto-aim: with no direction held, up or down
+   * when the target is more than `aerialAimHeight` above or below, within `aerialAimReach`.
+   */
+  aerialUpLift: number;
+  aerialDownStartup: number;
+  aerialDownRecovery: number;
+  aerialDownDamage: number;
+  aerialSpikeSpeed: number;
+  aerialAimHeight: number;
+  aerialAimReach: number;
   /** Knockback grows as health drops: × (1 + bonus × share of health lost). */
   knockbackLowHpBonus: number;
   dodgeDistance: number;
@@ -189,6 +203,13 @@ export const BRAWL_CONFIG: BrawlConfig = {
   hitlagMax: 12 / 60,
   blockHitlagFactor: 0.6,
   landingLag: 0.1,
+  aerialUpLift: 9,
+  aerialDownStartup: 0.08,
+  aerialDownRecovery: 0.14,
+  aerialDownDamage: 1.25,
+  aerialSpikeSpeed: 14,
+  aerialAimHeight: 0.9,
+  aerialAimReach: 2.8,
   knockbackLowHpBonus: 0.6,
   dodgeDistance: 3.5,
   dodgeDuration: 0.3,
@@ -243,7 +264,7 @@ export const STEP_UP = 0.45;
 
 export type Action =
   | { kind: "light"; index: number; t: number; hit: boolean }
-  | { kind: "aerial"; t: number; hit: boolean }
+  | { kind: "aerial"; t: number; hit: boolean; aim: AerialAim }
   | { kind: "landing"; until: number }
   | { kind: "heavy"; charge: number; charging: boolean; t: number; hit: boolean }
   | { kind: "special"; slot: number; t: number; fired: boolean; countered?: boolean }
@@ -359,10 +380,13 @@ export interface Zone {
   leap?: boolean;
 }
 
+/** Where an aerial strike goes: ahead, over the head, under the feet. */
+export type AerialAim = "side" | "up" | "down";
+
 export type HitKind = "light" | "aerial" | "heavy" | "special" | "throw" | "slam";
 
 export type BrawlEvent =
-  | { t: number; type: "hit"; source: number; target: number; amount: number; by: HitKind; knockdown: boolean; slot?: number }
+  | { t: number; type: "hit"; source: number; target: number; amount: number; by: HitKind; knockdown: boolean; slot?: number; aim?: AerialAim }
   | { t: number; type: "block"; source: number; target: number; amount: number; by: HitKind }
   | { t: number; type: "guardBreak"; source: number; target: number; amount: number; by: HitKind }
   | { t: number; type: "special"; unit: number; slot: number }
@@ -735,6 +759,33 @@ export function strikeCenter(f: Fighter, s: Strike): V3 {
   return { x: f.pos.x + f.facing.x * s.reach, y: f.pos.y + FIGHTER_HEIGHT / 2, z: f.pos.z + f.facing.z * s.reach };
 }
 
+/** Centre of an aerial strike: ahead (as on the ground), over the head, or under the feet. */
+export function aerialCenter(f: Fighter, s: Strike, aim: AerialAim): V3 {
+  if (aim === "side") return strikeCenter(f, s);
+  const ahead = s.reach * 0.3;
+  const y = aim === "up" ? f.pos.y + FIGHTER_HEIGHT + s.size * 0.5 : f.pos.y - s.size * 0.4;
+  return { x: f.pos.x + f.facing.x * ahead, y, z: f.pos.z + f.facing.z * ahead };
+}
+
+/**
+ * The direction of an aerial: jump held = up, guard held = down; neither, the target's
+ * height decides (well above or below and close: up or down, else ahead).
+ */
+export function aerialAim(w: BrawlWorld, f: Fighter, cmd: Command | undefined): AerialAim {
+  if (cmd?.guard) return "down";
+  if (cmd?.jumpHeld) return "up";
+  const t = lockTarget(w, f);
+  if (!t || hdist(f.pos, t.pos) > w.config.aerialAimReach) return "side";
+  const dy = t.pos.y - f.pos.y;
+  return dy > w.config.aerialAimHeight ? "up" : dy < -w.config.aerialAimHeight ? "down" : "side";
+}
+
+/** The numbers of an aerial strike: the first light hit's, slower and harder downward. */
+export function aerialStrike(c: BrawlConfig, s: Strike, aim: AerialAim): Strike {
+  if (aim !== "down") return s;
+  return { ...s, startup: s.startup + c.aerialDownStartup, recovery: s.recovery + c.aerialDownRecovery, damage: s.damage * c.aerialDownDamage };
+}
+
 export interface HitSpec {
   damage: number;
   hitstun: number;
@@ -743,6 +794,8 @@ export interface HitSpec {
   by: HitKind;
   /** The special it comes from (its slot in the kit). */
   slot?: number;
+  /** Aerial direction: up lifts the target, down slams it to the ground. */
+  aim?: AerialAim;
 }
 
 /** Resolves one hit. Returns false if it whiffed on an invulnerable target. */
@@ -807,13 +860,25 @@ function applyHit(w: BrawlWorld, src: Fighter, target: Fighter, hit: HitSpec, fr
   target.vel.x = dir.x * speed;
   target.vel.z = dir.z * speed;
   if (knockdown && target.alive) target.vel.y = Math.max(target.vel.y, 4);
+  // Directional aerials: up sends the target up, down slams it to the floor (it falls,
+  // bounces, and stays down a moment however light the blow).
+  const spike = hit.aim === "down";
+  if (hit.aim === "up" && target.alive) target.vel.y = Math.max(target.vel.y, c.aerialUpLift / Math.sqrt(target.kit.stats.weight));
+  if (spike && target.alive) {
+    target.vel.y = Math.min(target.vel.y, -c.aerialSpikeSpeed);
+    target.vel.x *= 0.3;
+    target.vel.z *= 0.3;
+  }
   const hl = freeze(1);
   target.diPending = true;
   if (target.alive)
-    target.action = knockdown
+    target.action = knockdown || spike
       ? { kind: "knockdown", until: t + hl + stun + c.knockdownTime }
       : { kind: "hitstun", until: t + hl + stun };
-  w.events.push({ t, type: "hit", source: src.id, target: target.id, amount: hit.damage, by: hit.by, knockdown, ...(hit.slot !== undefined ? { slot: hit.slot } : {}) });
+  w.events.push({
+    t, type: "hit", source: src.id, target: target.id, amount: hit.damage, by: hit.by, knockdown: knockdown || spike,
+    ...(hit.slot !== undefined ? { slot: hit.slot } : {}), ...(hit.aim && hit.aim !== "side" ? { aim: hit.aim } : {}),
+  });
   return true;
 }
 
@@ -877,8 +942,8 @@ function end(w: BrawlWorld, winner: number | null): void {
 }
 
 /** Strikes the first time the hitbox touches each enemy (one hit per strike). Props are hit on the first live tick. */
-function resolveStrike(w: BrawlWorld, f: Fighter, s: Strike, by: HitKind, dmg: number, guardBreak: boolean, firstTick: boolean): boolean {
-  const c = strikeCenter(f, s);
+function resolveStrike(w: BrawlWorld, f: Fighter, s: Strike, by: HitKind, dmg: number, guardBreak: boolean, firstTick: boolean, aim?: AerialAim): boolean {
+  const c = aim ? aerialCenter(f, s, aim) : strikeCenter(f, s);
   let hitAny = false;
   if (firstTick)
     for (const p of w.arena.props)
@@ -888,7 +953,7 @@ function resolveStrike(w: BrawlWorld, f: Fighter, s: Strike, by: HitKind, dmg: n
       }
   for (const o of w.fighters) {
     if (o.team === f.team || !o.alive || !sphereTouches(c, s.size, o)) continue;
-    hitAny = applyHit(w, f, o, { damage: dmg, hitstun: s.hitstun, knockback: s.knockback, guardBreak, by }, f.pos, true) || hitAny;
+    hitAny = applyHit(w, f, o, { damage: dmg, hitstun: s.hitstun, knockback: s.knockback, guardBreak, by, ...(aim ? { aim } : {}) }, f.pos, true) || hitAny;
   }
   return hitAny;
 }
@@ -1006,7 +1071,7 @@ function startAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, heavyP
   if (!grounded(f)) {
     if (lightWanted && f.kit.light.hits.length > 0) {
       faceTarget(w, f);
-      f.action = { kind: "aerial", t: 0, hit: false };
+      f.action = { kind: "aerial", t: 0, hit: false, aim: aerialAim(w, f, cmd) };
       f.bufferedLightUntil = -Infinity;
       return;
     }
@@ -1136,12 +1201,12 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
       return;
     }
     case "aerial": {
-      // One strike with the first light hit's numbers; the fall goes on meanwhile.
-      const s = f.kit.light.hits[0]!;
+      // One strike with the first light hit's numbers (slower and harder downward); the fall goes on meanwhile.
+      const s = aerialStrike(c, f.kit.light.hits[0]!, a.aim);
       a.t += dt;
       airSteer(w, f, cmd);
       if (!a.hit && a.t >= s.startup && a.t < s.startup + s.active)
-        a.hit = resolveStrike(w, f, s, "aerial", s.damage, false, a.t - dt < s.startup);
+        a.hit = resolveStrike(w, f, s, "aerial", s.damage, false, a.t - dt < s.startup, a.aim);
       if (a.t >= strikeLength(s)) f.action = null;
       return;
     }

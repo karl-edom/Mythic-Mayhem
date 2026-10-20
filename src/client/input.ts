@@ -7,7 +7,8 @@ import type { Command } from "../brawl/world.ts";
 export const KEY_HELP: [string, string][] = [
   ["Z Q S D / flèches", "se déplacer"],
   ["Espace", "sauter : garde l'élan (maintenu : saut complet ; tapé : petit saut ; en l'air : double saut)"],
-  ["J", "attaque légère : avance ; enchaîne jusqu'à 3 coups si le précédent a touché ; en l'air : coup aérien"],
+  ["J", "attaque légère : avance ; enchaîne jusqu'à 3 coups si le précédent a touché ; en l'air : coup aérien, visé vers l'adversaire"],
+  ["Espace + J / L + J (en l'air)", "coup aérien vers le haut / vers le bas (plus lent : plaque au sol)"],
   ["K (maintenir)", "attaque lourde, chargeable"],
   ["L (maintenir)", "bouclier ; relâché juste avant l'impact : parade"],
   ["Maj", "esquive ; sous les coups : dégagement (50 d'énergie)"],
@@ -20,7 +21,8 @@ export const KEY_HELP: [string, string][] = [
 /** Gamepad layout, Smash-like (Xbox names; PlayStation: A = ✕, B = ○, X = □, Y = △). */
 export const PAD_HELP: [string, string][] = [
   ["Stick gauche", "se déplacer (plus ou moins vite selon l'inclinaison)"],
-  ["A", "attaque légère (combo si ça touche) ; en l'air : coup aérien"],
+  ["A", "attaque légère (combo si ça touche) ; en l'air : coup aérien, visé vers l'adversaire"],
+  ["Y + A / RB + A (en l'air)", "coup aérien vers le haut / vers le bas (plus lent : plaque au sol)"],
   ["X (maintenir)", "attaque lourde, chargeable"],
   ["B", "spéciale 1 ; B + stick incliné : spéciale 2"],
   ["LT", "spéciale 3"],
