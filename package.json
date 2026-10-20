@@ -34,6 +34,7 @@
     "vite": "8.3.1"
   },
   "dependencies": {
+    "@pixiv/three-vrm": "3.5.5",
     "three": "0.186.1"
   }
 }

@@ -8,7 +8,7 @@ import { buildArena, type ArenaDef } from "../brawl/arena.ts";
 import { BRAWL_CONFIG, createBrawl, createMatch, step, type BrawlConfig, type BrawlWorld } from "../brawl/world.ts";
 import { Hud } from "./hud.ts";
 import { Input, padIndex, type Controller, type MenuButton } from "./input.ts";
-import { loadModels, type ModelLibrary } from "./models.ts";
+import { loadModels, loadVrmModels, type ModelLibrary } from "./models.ts";
 import { loadPhotoTextures } from "./villageTex.ts";
 import { PortraitStudio, type PortraitCut } from "./portraits.ts";
 import { loadArenaDefs, loadRoster, propCatalog, type RosterEntry } from "./roster.ts";
@@ -801,6 +801,15 @@ async function boot(): Promise<void> {
   }
   await photos;
   if (library) {
+    // The packs' VRM avatars (a few MB each), before portraits and showcase use them.
+    const looks = playable.flatMap((r) => (r.character.look ? [r.character.look] : []));
+    if (looks.some((l) => l.model === "vrm")) {
+      label.textContent = "Chargement des avatars…";
+      fill.style.width = "0%";
+      await loadVrmModels(library, looks, (done, total) => {
+        fill.style.width = `${(100 * done) / total}%`;
+      });
+    }
     studio = new PortraitStudio(library);
     if (import.meta.env.DEV) (window as unknown as { __studio: PortraitStudio }).__studio = studio;
     // Busts for the roster first, then the full figures, rendered in the background.

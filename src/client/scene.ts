@@ -623,7 +623,8 @@ export class ArenaView {
 
     const a = f.action;
     const flashing = v.flashUntil > t;
-    for (const m of v.materials) m.emissive.setHex(flashing ? 0xffffff : 0x000000);
+    // (Unlit and toon materials of VRM avatars may have no emissive colour: no flash on those parts.)
+    for (const m of v.materials) m.emissive?.setHex(flashing ? 0xffffff : 0x000000);
 
     const invulnerable = f.alive && (f.invulnerableUntil > t || (a?.kind === "dodge" && a.t < w.config.dodgeInvulnerable));
     // (The breaker is invulnerable too, but its shockwave already shows it: no blinking.)

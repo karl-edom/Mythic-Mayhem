@@ -12,7 +12,8 @@ import { turtlePoses } from "./poses.ts";
 import { fistPoses } from "./fistPoses.ts";
 import { fistSignatures, signaturePoses } from "./signaturePoses.ts";
 import { staffPoses, swordsmanPoses } from "./swordPoses.ts";
-import { SWORDSMAN_HEIGHT, animateSwordsman, buildSwordsmanRig, paintSwordsman } from "./swordsman.ts";
+import { SWORDSMAN_BONES, SWORDSMAN_HEIGHT, animateSwordsman, buildSwordsmanRig, paintSwordsman } from "./swordsman.ts";
+import { loadVrm, vrmUrl } from "./vrm.ts";
 import "./humanParts.ts";
 import "./creatureParts.ts";
 import { TURTLE_BONES, TURTLE_HEIGHT, animateTurtle, buildTurtleRig, paintTurtle } from "./turtle.ts";
@@ -43,7 +44,8 @@ interface AnimeTemplate {
 export const proceduralEnv: { map: THREE.Texture | null } = { map: null };
 
 export interface ModelLibrary {
-  anime: Map<ModelId, AnimeTemplate>;
+  /** By model id, and "vrm:<file>" for the avatar files of the packs (see vrm.ts). */
+  anime: Map<string, AnimeTemplate>;
   /** KayKit clips, as authored. */
   clips: Map<string, THREE.AnimationClip>;
   /** The KayKit skeleton the clips were authored on (source of retargeting). */
@@ -107,7 +109,7 @@ export async function loadModels(base: string, onProgress?: (done: number, total
   // The shared clips and the skeleton they were authored on.
   const shared = await fetchModel(loader, new URL(`kaykit/animations.${EXT}`, base).href);
   onProgress?.(1, 1);
-  const anime = new Map<ModelId, AnimeTemplate>();
+  const anime = new Map<string, AnimeTemplate>();
   const turtle = buildTurtleRig();
   const hipsRest = turtle.getObjectByName("hips")!.position.clone();
   anime.set("turtle", {
@@ -256,8 +258,47 @@ export interface ModelInstance {
   trail: { base: THREE.Object3D; tip: THREE.Object3D } | null;
 }
 
+/** The template a look is drawn with. */
+const templateKey = (look: Look): string => (look.model === "vrm" ? `vrm:${look.file}` : look.model);
+
+/** Whether the library can draw a look now (a VRM avatar must be loaded first, see loadVrmModels). */
+export function canDraw(lib: ModelLibrary, look: Look): boolean {
+  return lib.anime.has(templateKey(look));
+}
+
+/**
+ * Loads the VRM avatars of these looks (once each). Every clip of the game reaches them
+ * by retargeting: the shared clips (KayKit) as for any anime rig, and the hand-keyed
+ * stances and signature moves of each fighting style from the rig built in code, whose
+ * bones bear the same humanoid names. A file that fails to load is reported and skipped:
+ * that fighter is then drawn with the default model.
+ */
+export async function loadVrmModels(lib: ModelLibrary, looks: Look[], onProgress?: (done: number, total: number) => void): Promise<void> {
+  const files = [...new Set(looks.filter((l) => l.model === "vrm" && l.file && !lib.anime.has(templateKey(l))).map((l) => l.file!))];
+  const swordsman = lib.anime.get("swordsman")!;
+  const names = Object.fromEntries(SWORDSMAN_BONES.map(([n]) => [n, n]));
+  let done = 0;
+  for (const file of files) {
+    const url = vrmUrl(file);
+    try {
+      if (!url) throw new Error("fichier absent du pack");
+      const { rig, height } = await loadVrm(url);
+      const retarget = new Retargeter({ source: swordsman.rig, target: rig, map: names });
+      lib.anime.set(`vrm:${file}`, {
+        rig,
+        height,
+        poses: (style) => new Map([...swordsman.poses!(style)].map(([name, clip]) => [name, retarget.retarget(clip, 30)] as const)),
+      });
+    } catch (e) {
+      console.warn(`Modèle VRM « ${file} » non chargé :`, e);
+    }
+    onProgress?.(++done, files.length);
+  }
+}
+
 export function instantiate(lib: ModelLibrary, look: Look): ModelInstance {
-  return instantiateAnime(lib, look);
+  // An avatar that could not be loaded: drawn with the default model of its kind.
+  return instantiateAnime(lib, canDraw(lib, look) ? look : { ...look, model: "swordsman", file: undefined });
 }
 
 /** World rotation of a weapon held in each hand in the T-pose, as on the KayKit rig. */
@@ -289,7 +330,7 @@ export function attachWeapon(rig: THREE.Object3D, name: string): THREE.Group | n
 }
 
 function instantiateAnime(lib: ModelLibrary, look: Look): ModelInstance {
-  const t = lib.anime.get(look.model)!;
+  const t = lib.anime.get(templateKey(look))!;
   const rig = SkeletonUtils.clone(t.rig) as THREE.Group;
   const materials: (THREE.MeshToonMaterial | THREE.MeshStandardMaterial)[] = [];
   rig.traverse((o) => {

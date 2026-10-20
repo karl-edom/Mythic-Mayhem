@@ -93,3 +93,10 @@ test("un kit sans faiblesse est refusé, même dans le budget", () => {
   k.abilities[1] = { id: "elan", cooldown: 6, delivery: { type: "dash", distance: 5, speed: 16 }, effects: [{ type: "damage", amount: 120 }] };
   assert.ok(errorsOf(k).some((e) => e.includes("point(s) faible(s)")));
 });
+
+test("un look VRM nomme un fichier .vrm du pack, sans chemin", async () => {
+  const { parseCharacter } = await import("../src/brawl/character.ts");
+  const look = (file: unknown) => parseCharacter({ name: "X", look: { model: "vrm", file, show: [] } }, "x").look;
+  assert.deepEqual(look("naruto.vrm")?.file, "naruto.vrm");
+  for (const bad of ["../naruto.vrm", "a/b.vrm", "naruto.glb", "", 42, undefined]) assert.equal(look(bad), undefined, String(bad));
+});

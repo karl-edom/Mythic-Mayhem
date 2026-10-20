@@ -7,11 +7,19 @@
  * (KayKit chibis and VRoid avatars) were retired with the first fighters (decision 0024).
  */
 export const PROCEDURAL_MODELS = ["turtle", "swordsman"] as const;
-export type ModelId = (typeof PROCEDURAL_MODELS)[number];
-const ALL_MODELS: readonly string[] = PROCEDURAL_MODELS;
+/**
+ * "vrm": an avatar file (VRoid and the like, VRM 0.x or 1.0) shipped in the pack itself
+ * (`look.file`), animated through its humanoid bones like the models built in code.
+ */
+export type ModelId = (typeof PROCEDURAL_MODELS)[number] | "vrm";
+const ALL_MODELS: readonly string[] = [...PROCEDURAL_MODELS, "vrm"];
+/** A VRM file name in the pack folder: letters, digits, dash, underscore, dot. */
+export const VRM_FILE = /^[A-Za-z0-9_.-]{1,60}\.vrm$/;
 
 export interface Look {
   model: ModelId;
+  /** model "vrm": the avatar file, next to character.json. */
+  file?: string;
   /** Accessories to show (weapons, shields, hats…), by mesh name; all others are hidden. */
   show: string[];
   /** Colour multiplied over the model's texture ("#ffffff" = unchanged). */
@@ -127,6 +135,10 @@ function parseLook(v: unknown): Look | undefined {
   const show = Array.isArray(o.show) ? o.show.filter((s): s is string => typeof s === "string" && /^[A-Za-z0-9_]{1,40}$/.test(s)).slice(0, 20) : [];
   const tint = typeof o.tint === "string" && COLOR.test(o.tint) ? o.tint : "#ffffff";
   const look: Look = { model: o.model as ModelId, show, tint };
+  if (look.model === "vrm") {
+    if (typeof o.file !== "string" || !VRM_FILE.test(o.file)) return undefined;
+    look.file = o.file;
+  }
   for (const k of ["hair", "outfit", "accent", "trim", "skin", "eyes"] as const) if (typeof o[k] === "string" && COLOR.test(o[k] as string)) look[k] = o[k] as string;
   if (typeof o.emblem === "string") {
     const t = [...o.emblem.trim()].filter((ch) => /\p{L}|\p{N}/u.test(ch)).slice(0, 8).join("");
