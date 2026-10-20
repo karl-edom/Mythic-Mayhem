@@ -22,6 +22,8 @@ export interface Look {
   file?: string;
   /** A glow of this colour always round the body (Super Sonic's golden aura). */
   aura?: string;
+  /** The main weapon's blade smoulders all the time and blazes at every blow (Shishio's Mugenjin). */
+  burning?: boolean;
   /** Accessories to show (weapons, shields, hats…), by mesh name; all others are hidden. */
   show: string[];
   /** Colour multiplied over the model's texture ("#ffffff" = unchanged). */
@@ -139,6 +141,7 @@ function parseLook(v: unknown): Look | undefined {
   const tint = typeof o.tint === "string" && COLOR.test(o.tint) ? o.tint : "#ffffff";
   const look: Look = { model: o.model as ModelId, show, tint };
   if (typeof o.aura === "string" && COLOR.test(o.aura)) look.aura = o.aura;
+  if (o.burning === true) look.burning = true;
   if (look.model === "vrm") {
     if (typeof o.file !== "string" || !VRM_FILE.test(o.file)) return undefined;
     look.file = o.file;

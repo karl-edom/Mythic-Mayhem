@@ -21,7 +21,7 @@ import { WeaponTrail } from "./trail.ts";
 import { buildPizza } from "./pizza.ts";
 import { Vfx } from "./vfx.ts";
 import { PostFX } from "./postfx.ts";
-import { chargeAura, handLook, projectileLook, zoneFlames, type HandLook, type ProjectileLook } from "./moveFx.ts";
+import { bladeFire, chargeAura, emberAura, handLook, projectileLook, zoneFlames, type HandLook, type ProjectileLook } from "./moveFx.ts";
 
 interface FighterView {
   root: THREE.Group;
@@ -55,6 +55,8 @@ interface FighterView {
   moveFx: { slot: number; hand: HandLook | null; weapon: THREE.Group | null; bare: boolean }[];
   /** The weapons held the rest of the time (hidden while a special's own weapon is out). */
   mainWeapons: THREE.Object3D[];
+  /** look.burning: the main blade's fire (smouldering, blazing at each blow) and the embers round the body. */
+  burning: { blade: ReturnType<typeof bladeFire> | null; embers: ReturnType<typeof emberAura> } | null;
 }
 
 /** Small coloured label (« J1 », « CPU3 ») drawn on a canvas, for the tag over a fighter's head. */
@@ -366,6 +368,21 @@ export class ArenaView {
       });
     }
 
+    // A blade that burns all the time (Shishio's Mugenjin), and embers rising round him.
+    let burning: FighterView["burning"] = null;
+    if (model && ch.look?.burning) {
+      const main = mainWeapons.find((w) => !String(w.userData.weapon).endsWith("_Offhand"));
+      const tip = main?.getObjectByName("trailTip");
+      let blade: ReturnType<typeof bladeFire> | null = null;
+      if (main && tip) {
+        blade = bladeFire(tip.position.y);
+        main.add(blade.obj);
+      }
+      const embers = emberAura();
+      root.add(embers.obj);
+      burning = { blade, embers };
+    }
+
     let trail: WeaponTrail | null = null;
     if (model?.trail) {
       trail = new WeaponTrail();
@@ -375,7 +392,7 @@ export class ArenaView {
     this.scene.add(root);
     return {
       root, model, animator, materials, shadow, ring, tag, guard, aura, stars, chargeOrb, energy, lowHp, trail,
-      flashUntil: 0, slashKey: "", wasAirborne: false, windupKey: "", frame: 0, moveFx, mainWeapons,
+      flashUntil: 0, slashKey: "", wasAirborne: false, windupKey: "", frame: 0, moveFx, mainWeapons, burning,
     };
   }
 
@@ -697,7 +714,17 @@ export class ArenaView {
       if (fx.hand) {
         fx.hand.obj.visible = on;
         if (on) fx.hand.update(t);
+        else fx.hand.idle?.(t);
       }
+    }
+    if (v.burning) {
+      // Smoulders at rest, blazes through every blow; a fire special brings its own flames.
+      const fireSpecial = v.moveFx.some((fx) => fx.slot === slot && fx.hand);
+      const striking = a?.kind === "light" || a?.kind === "aerial" || a?.kind === "heavy" || slot >= 0;
+      const level = !f.alive ? 0 : fireSpecial ? 0 : striking ? 1 : 0.3;
+      v.burning.blade?.update(t, level);
+      v.burning.embers.obj.visible = f.alive;
+      v.burning.embers.update(t, striking ? 1 : 0);
     }
     for (const m of v.mainWeapons) if (!String(m.userData.weapon).endsWith("_Offhand")) m.visible = !swapped;
 

@@ -39,6 +39,36 @@ export function flameTexture(): THREE.CanvasTexture {
 
 const additive = (map: THREE.Texture, color: THREE.ColorRepresentation, opacity = 1) =>
   noOutline(new THREE.SpriteMaterial({ map, color, transparent: true, opacity, blending: THREE.AdditiveBlending, depthWrite: false }));
+/** Painted over the scene (not added to it): saturated fire that holds against a pale wall. */
+const painted = (map: THREE.Texture, color: THREE.ColorRepresentation, opacity = 1) =>
+  noOutline(new THREE.SpriteMaterial({ map, color, transparent: true, opacity, depthWrite: false }));
+
+let puffTex: THREE.CanvasTexture | null = null;
+/** A ragged puff (of flame or smoke), white, lumpy at the edge: tinted per sprite. */
+export function puffTexture(): THREE.CanvasTexture {
+  if (puffTex) return puffTex;
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d")!;
+  let seed = 11;
+  const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 14; i++) {
+    const a = r() * Math.PI * 2;
+    const d = r() * 14;
+    const x = 32 + Math.cos(a) * d;
+    const y = 32 + Math.sin(a) * d;
+    const rad = 10 + r() * 12;
+    const grad = g.createRadialGradient(x, y, 0, x, y, rad);
+    grad.addColorStop(0, "rgba(255,255,255,0.5)");
+    grad.addColorStop(0.6, "rgba(255,255,255,0.25)");
+    grad.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 64, 64);
+  }
+  puffTex = new THREE.CanvasTexture(c);
+  puffTex.colorSpace = THREE.SRGBColorSpace;
+  return puffTex;
+}
 
 /** A flickering bunch of flames (sprites), `size` metres high, round its origin. */
 export function flames(count: number, size: number, spread: number): THREE.Group {
@@ -68,16 +98,52 @@ export function flames(count: number, size: number, spread: number): THREE.Group
  */
 class Motes {
   readonly group = new THREE.Group();
-  private list: { s: THREE.Sprite; v: THREE.Vector3; age: number; life: number; size: number; grow: number; gravity: number; alpha: number }[] = [];
+  private list: {
+    s: THREE.Sprite;
+    v: THREE.Vector3;
+    age: number;
+    life: number;
+    size: number;
+    grow: number;
+    gravity: number;
+    alpha: number;
+    from?: THREE.Color;
+    to?: THREE.Color;
+    spin: number;
+  }[] = [];
   private map: THREE.Texture;
-  constructor(map: THREE.Texture = glow) {
+  private add: boolean;
+  /** `painted`: drawn over the scene instead of added to its light (flames, smoke). */
+  constructor(map: THREE.Texture = glow, painted = false) {
     this.map = map;
+    this.add = !painted;
   }
-  emit(at: THREE.Vector3, v: THREE.Vector3, color: THREE.ColorRepresentation, size: number, life: number, opts: { grow?: number; gravity?: number; alpha?: number } = {}): void {
-    const s = new THREE.Sprite(additive(this.map, color, opts.alpha ?? 1));
+  /** `to`: the colour it turns to by the end of its life (fire goes yellow, orange, red). */
+  emit(
+    at: THREE.Vector3,
+    v: THREE.Vector3,
+    color: THREE.ColorRepresentation,
+    size: number,
+    life: number,
+    opts: { grow?: number; gravity?: number; alpha?: number; to?: THREE.ColorRepresentation } = {},
+  ): void {
+    const s = new THREE.Sprite((this.add ? additive : painted)(this.map, color, opts.alpha ?? 1));
     s.position.copy(at);
+    s.material.rotation = Math.random() * Math.PI * 2;
     this.group.add(s);
-    this.list.push({ s, v, age: 0, life, size, grow: opts.grow ?? 0, gravity: opts.gravity ?? 0, alpha: opts.alpha ?? 1 });
+    const to = opts.to === undefined ? undefined : new THREE.Color(opts.to);
+    this.list.push({
+      s,
+      v,
+      age: 0,
+      life,
+      size,
+      grow: opts.grow ?? 0,
+      gravity: opts.gravity ?? 0,
+      alpha: opts.alpha ?? 1,
+      ...(to ? { from: new THREE.Color(color), to } : {}),
+      spin: (Math.random() - 0.5) * 4,
+    });
   }
   update(dt: number): void {
     this.list = this.list.filter((m) => {
@@ -91,7 +157,11 @@ class Motes {
       m.v.y -= m.gravity * dt;
       m.s.position.addScaledVector(m.v, dt);
       m.s.scale.setScalar(m.size * (1 + m.grow * k) * (1 - k * 0.5));
-      m.s.material.opacity = m.alpha * (1 - k);
+      m.s.material.opacity = m.alpha * (1 - k) * (m.to ? Math.min(1, k * 8) : 1);
+      if (m.to) {
+        m.s.material.color.lerpColors(m.from!, m.to, k);
+        m.s.material.rotation += m.spin * dt;
+      }
       return true;
     });
   }
@@ -277,31 +347,55 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
       };
     }
     case "fire": {
-      const f = flames(7, size * 2, size * 0.7);
-      const halo = new THREE.Sprite(additive(glow, 0xff6a1a, 0.35));
-      halo.scale.setScalar(size * 3);
-      const heart = new THREE.Sprite(additive(glow, 0xfff0c0, 0.9));
-      heart.scale.setScalar(size * 1.1);
-      group.add(halo, f, heart);
-      // Embers shed behind it, falling and dying out.
+      // A ball of rolling flame: churning orange puffs painted over the scene (they hold
+      // against a pale wall where added light washes out to white), a hot yellow heart, a
+      // tail of flame that reddens and smoke that darkens behind it, embers falling.
+      const halo = new THREE.Sprite(additive(glow, 0xff5a10, 0.4));
+      halo.scale.setScalar(size * 3.4);
+      const body = Array.from({ length: 6 }, (_, i) => {
+        const p = new THREE.Sprite(painted(puffTexture(), i % 2 ? 0xff6a12 : 0xe8400c, 0.9));
+        group.add(p);
+        return { p, off: anyDir().multiplyScalar(size * 0.25), spin: (i % 2 ? 1 : -1) * (3 + i), phase: i };
+      });
+      const lick = flames(6, size * 1.8, size * 0.6);
+      const heart = new THREE.Sprite(additive(glow, 0xffd27a, 0.9));
+      heart.scale.setScalar(size * 1.3);
+      group.add(halo, lick, heart);
+      const tail = new Motes(puffTexture(), true);
+      const glowTail = new Motes(puffTexture());
+      const smoke = new Motes(puffTexture(), true);
       const embers = new Motes();
-      scene.add(embers.group);
-      extra.push(embers.group);
+      for (const m of [smoke, tail, glowTail, embers]) {
+        scene.add(m.group);
+        extra.push(m.group);
+      }
       let prev = -1;
+      let owed = 0;
       return {
         group,
         update(t, pos, dir) {
           const dt = prev < 0 ? 0 : Math.min(0.05, Math.max(0, t - prev));
           prev = t;
-          (f.userData.flicker as (t: number) => void)(t);
-          for (let i = 0; i < 2; i++) {
-            const v = anyDir().multiplyScalar(1.5).addScaledVector(dir, -1.5);
-            embers.emit(pos.clone().addScaledVector(anyDir(), size * 0.5), v, Math.random() < 0.5 ? 0xffb347 : 0xff5a1a, size * 0.35, 0.4 + Math.random() * 0.3, { gravity: 3 });
+          for (const b of body) {
+            b.p.position.copy(b.off).multiplyScalar(1 + 0.3 * Math.sin(t * 13 + b.phase));
+            b.p.material.rotation = t * b.spin;
+            b.p.scale.setScalar(size * (1.7 + 0.25 * Math.sin(t * 17 + b.phase)));
           }
-          embers.update(dt);
+          (lick.userData.flicker as (t: number) => void)(t);
+          heart.scale.setScalar(size * (1.2 + 0.15 * Math.sin(t * 31)));
+          owed += dt * 150;
+          for (; owed >= 1; owed--) {
+            const at = pos.clone().addScaledVector(anyDir(), size * 0.45);
+            const v = anyDir().multiplyScalar(0.8).addScaledVector(dir, -1.2).add(new THREE.Vector3(0, 0.8, 0));
+            tail.emit(at, v, 0xff8a20, size * 1.4, 0.3 + Math.random() * 0.15, { grow: 0.4, alpha: 0.85, to: 0x8a1408 });
+            if (Math.random() < 0.5) glowTail.emit(at, v.clone(), 0xffc060, size * 0.9, 0.22, { alpha: 0.6, to: 0xff4010 });
+            if (Math.random() < 0.3) smoke.emit(at.clone().addScaledVector(dir, -size * 0.6), new THREE.Vector3(0, 1.1, 0).addScaledVector(anyDir(), 0.4), 0x3a302a, size * 1.1, 0.75, { grow: 1.8, alpha: 0.35, to: 0x6a625c });
+            if (Math.random() < 0.15) embers.emit(at, anyDir().multiplyScalar(1.8).addScaledVector(dir, -1.5), Math.random() < 0.5 ? 0xffd27a : 0xff5a1a, size * 0.18, 0.5 + Math.random() * 0.3, { gravity: 3 });
+          }
+          for (const m of [tail, glowTail, smoke, embers]) m.update(dt);
         },
         dispose: () => {
-          embers.dispose();
+          for (const m of [tail, glowTail, smoke, embers]) m.dispose();
           done();
         },
       };
@@ -426,6 +520,8 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
 export interface HandLook {
   obj: THREE.Object3D;
   update(t: number): void;
+  /** Called instead of `update` while the look is off: what it left in the air dies out. */
+  idle?(t: number): void;
 }
 
 /** Builds a hand effect. `blade`: the weapon's length along +Y (flames on it), or 0. */
@@ -550,24 +646,84 @@ export function handLook(look: NonNullable<MoveStyle["hand"]>, color: string, bl
       };
     }
     case "fire": {
-      // Along the blade if there is one, else round the fist.
-      const f = flames(blade > 0 ? 9 : 5, blade > 0 ? 0.32 : 0.3, 0.05);
-      if (blade > 0)
-        f.children.forEach((s, i) => {
-          (s.userData.base as THREE.Vector3).set(0, 0.1 + (i / (f.children.length - 1)) * (blade - 0.1), 0);
-        });
-      const halo = new THREE.Sprite(additive(glow, 0xff6a1a, 0.5));
-      halo.scale.setScalar(0.5);
-      halo.position.y = blade / 2;
-      obj.add(f, halo);
-      return {
-        obj,
-        update(t) {
-          (f.userData.flicker as (t: number) => void)(t);
-        },
-      };
+      const fire = bladeFire(blade);
+      obj.add(fire.obj);
+      return { obj, update: (t) => fire.update(t, 1), idle: (t) => fire.update(t, 0) };
     }
   }
+}
+
+/**
+ * Fire along a blade (`blade`: its length along +Y, in its own units) or, without one,
+ * round a fist. `level` 0..1: 0 out (what is still in the air dies out), a low level
+ * smoulders, 1 blazes. Flames and a glow on the blade itself; licks of flame and embers
+ * shed into the world, so a swing leaves a burning wake.
+ */
+export function bladeFire(blade: number): { obj: THREE.Group; update(t: number, level: number): void } {
+  const obj = new THREE.Group();
+  const len = blade > 0 ? blade : 0;
+  const n = blade > 0 ? 10 : 6;
+  // The painted body of the flames (saturated orange), then the added light of their core.
+  const under = Array.from({ length: n }, (_, i) => {
+    const p = new THREE.Sprite(painted(puffTexture(), i % 2 ? 0xff6a12 : 0xe0400c, 0));
+    obj.add(p);
+    return { p, y: blade > 0 ? 0.12 + (i / (n - 1)) * (len - 0.12) : 0, off: anyDir().multiplyScalar(0.04), phase: i * 1.7 };
+  });
+  const f = flames(n, blade > 0 ? 0.42 : 0.36, 0.06);
+  if (blade > 0)
+    f.children.forEach((s, i) => {
+      (s.userData.base as THREE.Vector3).set(0, 0.1 + (i / (n - 1)) * (len - 0.1), 0);
+    });
+  const halo = new THREE.Sprite(additive(glow, 0xff6a1a, 0.5));
+  halo.position.y = len / 2;
+  obj.add(f, halo);
+  const licks = new Motes(puffTexture(), true);
+  const embers = new Motes();
+  let scene: THREE.Object3D | null = null;
+  let prev = -1;
+  let owed = 0;
+  const at = new THREE.Vector3();
+  return {
+    obj,
+    update(t, level) {
+      const dt = prev < 0 ? 0 : Math.min(0.05, Math.max(0, t - prev));
+      prev = t;
+      const on = level > 0;
+      f.visible = halo.visible = on;
+      for (const u of under) u.p.visible = on;
+      if (on) {
+        (f.userData.flicker as (t: number) => void)(t);
+        f.scale.setScalar(0.5 + 0.5 * level);
+        for (const s of f.children as THREE.Sprite[]) s.material.opacity *= 0.4 + 0.6 * level;
+        for (const u of under) {
+          const k = 0.5 + 0.5 * Math.sin(t * 15 + u.phase);
+          u.p.position.set(u.off.x, u.y + 0.06 * k, u.off.z);
+          u.p.scale.setScalar((blade > 0 ? 0.26 : 0.3) * (0.5 + 0.5 * level) * (0.85 + 0.3 * k));
+          u.p.material.rotation = t * 3 + u.phase;
+          u.p.material.opacity = 0.75 * (0.35 + 0.65 * level);
+        }
+        halo.scale.set(blade > 0 ? 0.5 : 0.5, blade > 0 ? len + 0.3 : 0.5, 1).multiplyScalar(0.5 + 0.5 * level);
+        halo.material.opacity = 0.2 + 0.35 * level;
+      }
+      // What it sheds lives in the world (the scene), so it trails behind a swing.
+      if (!scene) obj.traverseAncestors((a) => {
+        if ((a as THREE.Scene).isScene) scene = a;
+      });
+      if (scene && !licks.group.parent) scene.add(licks.group, embers.group);
+      if (scene && on && obj.visible) {
+        obj.updateWorldMatrix(true, false);
+        owed += dt * 70 * level;
+        for (; owed >= 1; owed--) {
+          at.set(0, blade > 0 ? 0.1 + Math.random() * (len - 0.1) : 0, 0);
+          obj.localToWorld(at);
+          licks.emit(at.clone(), new THREE.Vector3(0, 1.2, 0).addScaledVector(anyDir(), 0.4), 0xff9a30, 0.3, 0.3 + Math.random() * 0.15, { grow: 0.6, alpha: 0.7, to: 0x7a1206 });
+          if (Math.random() < 0.25) embers.emit(at.clone(), new THREE.Vector3(0, 1.5, 0).addScaledVector(anyDir(), 1), Math.random() < 0.5 ? 0xffd27a : 0xff6a1a, 0.04, 0.6 + Math.random() * 0.4);
+        }
+      }
+      licks.update(dt);
+      embers.update(dt);
+    },
+  };
 }
 
 /** Flames licking up inside a circle, until it strikes. */
@@ -649,6 +805,41 @@ export function chargeAura(color: string): { obj: THREE.Group; update(t: number)
         pb.m.position.set(Math.cos(pb.a) * pb.r, 0.05 + p * 1.1 + 0.03 * Math.sin(t * 9 + pb.a), Math.sin(pb.a) * pb.r);
         pb.m.rotation.set(t * pb.spin, t * pb.spin * 0.7, 0);
         pb.m.scale.setScalar(p < 0.85 ? 1 : (1 - p) / 0.15);
+      }
+    },
+  };
+}
+
+/**
+ * Round a fighter whose blade burns (look.burning): embers rising off the body and a
+ * low orange glow at the feet, brighter while it strikes (`level` 0..1). Driven by the
+ * clock alone, in fighter space.
+ */
+export function emberAura(): { obj: THREE.Group; update(t: number, level: number): void } {
+  const obj = new THREE.Group();
+  const seed = (i: number, k: number) => ((Math.sin(i * 12.9898 + k * 78.233) * 43758.5453) % 1 + 1) % 1;
+  const heat = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2),
+    noOutline(new THREE.MeshBasicMaterial({ map: glow, color: 0xff5a14, transparent: true, opacity: 0.4, blending: THREE.AdditiveBlending, depthWrite: false })),
+  );
+  heat.position.y = 0.03;
+  obj.add(heat);
+  const embers = Array.from({ length: 14 }, (_, i) => {
+    const s = new THREE.Sprite(additive(glow, i % 3 ? 0xff7a1a : 0xffd27a, 0));
+    obj.add(s);
+    return { s, a: seed(i, 1) * Math.PI * 2, r: 0.3 + seed(i, 2) * 0.35, phase: seed(i, 3), speed: 0.35 + seed(i, 4) * 0.3, sway: seed(i, 5) * 6 };
+  });
+  return {
+    obj,
+    update(t, level) {
+      heat.scale.setScalar(1.5 + 0.3 * level + 0.1 * Math.sin(t * 9));
+      (heat.material as THREE.MeshBasicMaterial).opacity = 0.25 + 0.35 * level;
+      for (const e of embers) {
+        const p = (t * e.speed * (1 + level) + e.phase) % 1;
+        const a = e.a + 0.4 * Math.sin(t * 2 + e.sway);
+        e.s.position.set(Math.cos(a) * e.r, 0.1 + p * 2.2, Math.sin(a) * e.r);
+        e.s.scale.setScalar(0.035 + 0.02 * level);
+        e.s.material.opacity = Math.sin(Math.PI * p) * (0.6 + 0.4 * level);
       }
     },
   };
