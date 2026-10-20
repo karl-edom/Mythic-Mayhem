@@ -505,17 +505,6 @@ export class ArenaView {
           this.freezeUntil = now + 90;
           break;
         }
-        case "special": {
-          // The technique's name, written beside the fighter (on the camera's right).
-          const f = w.fighters[e.unit]!;
-          const id = f.kit.specials[e.slot]?.id;
-          const text = id ? this.characters[e.unit]!.moves[id]?.callout : undefined;
-          if (text) {
-            const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0).setY(0).normalize();
-            this.vfx.callout(this.center(f).addScaledVector(right, 1.3).add(new THREE.Vector3(0, 1.1, 0)), text, this.characters[e.unit]!.colors.primary);
-          }
-          break;
-        }
         case "counter": {
           // Counter: a flash where the defender reappears, behind the attacker.
           const d = w.fighters[e.unit]!;

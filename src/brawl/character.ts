@@ -59,7 +59,7 @@ export interface Character {
 }
 
 export interface MoveStyle {
-  /** Short text written on screen when the special starts (e.g. its name in kanji), ≤ 8 characters. */
+  /** The technique's name (e.g. in kanji), ≤ 8 characters. No longer shown on screen (2026-10-20): kept so packs stay valid. */
   callout?: string;
   /** Number of blade slashes drawn across the target when the special hits (0–12). */
   slashes?: number;

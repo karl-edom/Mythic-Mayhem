@@ -40,7 +40,7 @@ Le Dragon à neuf têtes réutilise la ruée existante, en brise-garde, avec un 
 
 `character.json` peut décrire ses spéciales dans `moves`, une entrée par identifiant de spéciale. C'est de l'affichage seul, nettoyé à la lecture :
 
-- `callout` : le texte écrit au lancement, 8 lettres au plus. Il s'écrit de haut en bas, en caractères pleins cernés de blanc, sur un coup de pinceau de la couleur du personnage. Il s'imprime, tient un instant, puis s'efface.
+- `callout` : **n'est plus affiché depuis le 2026-10-20** (choix du porteur de projet : « on arrête avec les noms jap qui s'affichent quand on attaque »). Le champ reste accepté pour que les packs restent valides, mais il est ignoré. Avant : le texte écrit au lancement, 8 lettres au plus. Il s'écrit de haut en bas, en caractères pleins cernés de blanc, sur un coup de pinceau de la couleur du personnage. Il s'imprime, tient un instant, puis s'efface.
 - `slashes` : le nombre d'entailles tracées sur la cible quand la spéciale touche (de 0 à 12). Le Dragon à neuf têtes en trace neuf, l'une après l'autre en un éclair.
 
 ## Animation

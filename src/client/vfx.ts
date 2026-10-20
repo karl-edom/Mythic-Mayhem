@@ -440,56 +440,6 @@ export class Vfx {
   }
 
   /**
-   * The name of a technique, written top to bottom in bold brush-like strokes beside the
-   * fighter: it stamps in (scale down, fade in), holds, and fades. Drawn over the scene.
-   */
-  callout(pos: THREE.Vector3, text: string, color: THREE.ColorRepresentation): void {
-    const chars = [...text];
-    const cell = 112;
-    const c = document.createElement("canvas");
-    c.width = 160;
-    c.height = cell * chars.length + 48;
-    const g = c.getContext("2d")!;
-    // A brush stroke of the fighter's colour behind the characters.
-    g.fillStyle = `#${new THREE.Color(color).getHexString()}`;
-    g.globalAlpha = 0.85;
-    g.beginPath();
-    g.moveTo(52, 10);
-    g.quadraticCurveTo(120, 0, 112, c.height * 0.5);
-    g.quadraticCurveTo(104, c.height - 6, 58, c.height - 14);
-    g.quadraticCurveTo(36, c.height * 0.5, 52, 10);
-    g.fill();
-    g.globalAlpha = 1;
-    g.font = `900 ${cell * 0.86}px "Yu Mincho", "Hiragino Mincho ProN", "Noto Serif JP", "Noto Serif CJK JP", "MS Mincho", serif`;
-    g.textAlign = "center";
-    g.textBaseline = "middle";
-    g.lineJoin = "round";
-    chars.forEach((ch, i) => {
-      const y = 24 + cell * (i + 0.5);
-      g.lineWidth = 14;
-      g.strokeStyle = "#ffffff";
-      g.strokeText(ch, 80, y);
-      g.fillStyle = "#111111";
-      g.fillText(ch, 80, y);
-    });
-    const map = new THREE.CanvasTexture(c);
-    map.colorSpace = THREE.SRGBColorSpace;
-    const m = noOutline(new THREE.SpriteMaterial({ map, transparent: true, depthTest: false, depthWrite: false }));
-    const sprite = new THREE.Sprite(m);
-    sprite.renderOrder = 10;
-    sprite.position.copy(pos);
-    const h = 0.6 * chars.length + 0.3;
-    const w = (h * c.width) / c.height;
-    this.add(sprite, 1.4, (k) => {
-      const stamp = Math.min(1, k / 0.08);
-      const s = 1 + 0.35 * (1 - stamp) * (1 - stamp);
-      sprite.scale.set(w * s, h * s, 1);
-      m.opacity = stamp * (k > 0.75 ? (1 - k) / 0.25 : 1);
-      if (k >= 1) map.dispose();
-    });
-  }
-
-  /**
    * Blade cuts across a target, one after the other within a blink: thin bright streaks
    * at many angles (nine for the nine-headed dragon), each with a white core.
    */
