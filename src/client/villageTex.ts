@@ -1,18 +1,64 @@
-// Textures of the Japanese village, painted in code: plaster, dark board cladding,
-// timber, roof tiles (kawara), stone paving and ashlar, tatami, planks, cloth. Each
-// one tiles seamlessly and, where relief matters (tiles, stones, planks), comes with
-// a normal map computed from a painted height field. Scale: `metres` of the world
-// per texture repeat, for materials whose UVs are in metres (see village3d.ts).
+// Textures of the Japanese village: plaster, dark board cladding, timber, roof tiles
+// (kawara), stone paving and ashlar, tatami, planks, earth and gravel. Photo-scanned
+// maps (CC0, public/assets/textures, see public/assets/CREDITS.md) once loaded; else
+// painted in code: each painted one tiles seamlessly and, where relief matters
+// (tiles, stones, planks), comes with a normal map computed from a painted height
+// field. Scale: `metres` of the world per texture repeat, for materials whose UVs are
+// in metres (see village3d.ts).
 
 import * as THREE from "three";
 
 export interface Surface {
-  map: THREE.CanvasTexture;
-  normal?: THREE.CanvasTexture;
-  rough?: THREE.CanvasTexture;
+  map: THREE.Texture;
+  normal?: THREE.Texture;
+  /** Roughness, mean ROUGH_MEAN: the material's roughness is divided by it. */
+  rough?: THREE.Texture;
   /** World metres covered by one repeat of the texture. */
   metres: number;
 }
+
+/** Mean of the photo roughness maps (scaled to it when converted). */
+export const ROUGH_MEAN = 200 / 255;
+
+/**
+ * The photo-scanned surfaces (Poly Haven, CC0) and the world metres one image covers.
+ * Their diffuse maps were scaled to the mean colour of the painted surface they
+ * replace, so the tints of each element stay as they were. Two stay painted, as they
+ * read better: the roof tiles (kawara; no photo shows rows of round Japanese tiles)
+ * and the tatami (the photo loses the dark cloth borders).
+ */
+const PHOTOS: Record<string, number> = { plaster: 2, boards: 1.6, timber: 1, paving: 2, ashlar: 1.9, planks: 1.9, dirt: 2, gravel: 1.9 };
+const photos = new Map<string, Surface>();
+
+/**
+ * Loads the photo surfaces from `base` (…/assets/textures/). A surface whose images
+ * do not load stays painted; this never throws.
+ */
+export async function loadPhotoTextures(base: string): Promise<void> {
+  const loader = new THREE.TextureLoader();
+  const load = async (url: string, color: boolean) => {
+    const t = await loader.loadAsync(new URL(url, base).href);
+    t.colorSpace = color ? THREE.SRGBColorSpace : THREE.NoColorSpace;
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.anisotropy = 8;
+    t.generateMipmaps = true;
+    t.minFilter = THREE.LinearMipmapLinearFilter;
+    return t;
+  };
+  await Promise.all(
+    Object.entries(PHOTOS).map(async ([name, metres]) => {
+      try {
+        const [map, normal, rough] = await Promise.all([load(`${name}/diffuse.webp`, true), load(`${name}/normal.webp`, false), load(`${name}/rough.webp`, false)]);
+        photos.set(name, { map, normal, rough, metres });
+      } catch (e) {
+        console.warn(`Texture photo « ${name} » indisponible, version peinte :`, e);
+      }
+    }),
+  );
+}
+
+/** A photo surface, if it loaded (floor layers: paving, dirt, gravel). */
+export const photo = (name: string): Surface | undefined => photos.get(name);
 
 function seeded(seed: number): () => number {
   let s = seed >>> 0;
@@ -104,11 +150,14 @@ function paint(size: number, fn: (x: number, y: number) => [number, number, numb
 }
 
 const cache = new Map<string, Surface>();
-const once = (key: string, make: () => Surface): Surface => {
+/** The painted surface, painted once. */
+const painted = (key: string, make: () => Surface): Surface => {
   let s = cache.get(key);
   if (!s) cache.set(key, (s = make()));
   return s;
 };
+/** The photo surface if it loaded, else the painted one. */
+const once = (key: string, make: () => Surface): Surface => photos.get(key) ?? painted(key, make);
 
 const clamp = (v: number) => Math.max(0, Math.min(255, v));
 const mixc = (a: number[], b: number[], t: number) => a.map((v, i) => v + (b[i]! - v) * t);
@@ -193,57 +242,59 @@ export const kawara = () =>
   });
 
 /** Stone paving (ishidatami): irregular slabs in loose courses, mortar and moss in the joints. */
-export const paving = () =>
-  once("paving", () => {
-    const N = 512;
-    const r = seeded(12);
-    const [c, g] = canvas(N);
-    const [hc, hg] = canvas(N);
-    g.fillStyle = "#6f6a58";
-    g.fillRect(0, 0, N, N);
-    hg.fillStyle = "#000";
-    hg.fillRect(0, 0, N, N);
-    const rows = 6;
-    for (let j = 0; j < rows; j++) {
-      const y0 = (j / rows) * N;
-      const hh = N / rows;
-      let x = r() * 40;
-      while (x < N + 40) {
-        const w = 50 + r() * 70;
-        const tone = 150 + r() * 45;
-        for (const dx of [0, -N, N]) {
-          const sx = x + dx + 3;
-          const sy = y0 + 3 + (r() - 0.5) * 2;
-          g.fillStyle = `rgb(${tone + 8},${tone + 4},${tone - 8})`;
-          g.beginPath();
-          g.roundRect(sx, sy, w - 6, hh - 6, 7);
-          g.fill();
-          hg.fillStyle = "#fff";
-          hg.beginPath();
-          hg.roundRect(sx, sy, w - 6, hh - 6, 9);
-          hg.fill();
-        }
-        x += w;
+export const paving = () => once("paving", paintPaving);
+/** The painted paving (the stream's ripples and the painted floor use it). */
+export const paintedPaving = () => painted("paving", paintPaving);
+function paintPaving(): Surface {
+  const N = 512;
+  const r = seeded(12);
+  const [c, g] = canvas(N);
+  const [hc, hg] = canvas(N);
+  g.fillStyle = "#6f6a58";
+  g.fillRect(0, 0, N, N);
+  hg.fillStyle = "#000";
+  hg.fillRect(0, 0, N, N);
+  const rows = 6;
+  for (let j = 0; j < rows; j++) {
+    const y0 = (j / rows) * N;
+    const hh = N / rows;
+    let x = r() * 40;
+    while (x < N + 40) {
+      const w = 50 + r() * 70;
+      const tone = 150 + r() * 45;
+      for (const dx of [0, -N, N]) {
+        const sx = x + dx + 3;
+        const sy = y0 + 3 + (r() - 0.5) * 2;
+        g.fillStyle = `rgb(${tone + 8},${tone + 4},${tone - 8})`;
+        g.beginPath();
+        g.roundRect(sx, sy, w - 6, hh - 6, 7);
+        g.fill();
+        hg.fillStyle = "#fff";
+        hg.beginPath();
+        hg.roundRect(sx, sy, w - 6, hh - 6, 9);
+        hg.fill();
       }
+      x += w;
     }
-    // Speckle and stains.
-    const n = fbm(5, N, 8, 4);
-    const img = g.getImageData(0, 0, N, N);
-    const himg = hg.getImageData(0, 0, N, N);
-    const height = new Float32Array(N * N);
-    for (let i = 0; i < N * N; i++) {
-      const x = i % N;
-      const y = Math.floor(i / N);
-      const v = 0.86 + n(x, y) * 0.28 + (r() - 0.5) * 0.08;
-      img.data[i * 4] = clamp(img.data[i * 4]! * v);
-      img.data[i * 4 + 1] = clamp(img.data[i * 4 + 1]! * v);
-      img.data[i * 4 + 2] = clamp(img.data[i * 4 + 2]! * v);
-      height[i] = (himg.data[i * 4]! / 255) * 0.8 + n(x, y) * 0.2;
-    }
-    g.putImageData(img, 0, 0);
-    void hc;
-    return { map: tex(c, true), normal: normalFrom(height, N, N, 4), metres: 2.2 };
-  });
+  }
+  // Speckle and stains.
+  const n = fbm(5, N, 8, 4);
+  const img = g.getImageData(0, 0, N, N);
+  const himg = hg.getImageData(0, 0, N, N);
+  const height = new Float32Array(N * N);
+  for (let i = 0; i < N * N; i++) {
+    const x = i % N;
+    const y = Math.floor(i / N);
+    const v = 0.86 + n(x, y) * 0.28 + (r() - 0.5) * 0.08;
+    img.data[i * 4] = clamp(img.data[i * 4]! * v);
+    img.data[i * 4 + 1] = clamp(img.data[i * 4 + 1]! * v);
+    img.data[i * 4 + 2] = clamp(img.data[i * 4 + 2]! * v);
+    height[i] = (himg.data[i * 4]! / 255) * 0.8 + n(x, y) * 0.2;
+  }
+  g.putImageData(img, 0, 0);
+  void hc;
+  return { map: tex(c, true), normal: normalFrom(height, N, N, 4), metres: 2.2 };
+}
 
 /** Ashlar (terrace walls, lantern stone): granite blocks in courses, chiselled faces. */
 export const ashlar = () =>
@@ -326,11 +377,23 @@ export interface FloorPaint {
 }
 
 /**
- * One big texture for the whole floor (about 3 cm a pixel): earth, then paving,
- * grass, gravel, moss and the stream bed, with soft edges; and its normal map.
+ * The painted floor and where the photo surfaces go on it (see villageFloor): `mask`
+ * holds the share of paving (red), gravel (green) and earth (blue) at each pixel; the
+ * rest (grass, moss, the stream bed) stays painted.
  */
-const floors = new Map<string, { map: THREE.CanvasTexture; normal: THREE.CanvasTexture }>();
-export function floorTexture(width: number, depth: number, paints: FloorPaint[]): { map: THREE.CanvasTexture; normal: THREE.CanvasTexture } {
+export interface FloorTextures {
+  map: THREE.CanvasTexture;
+  normal: THREE.CanvasTexture;
+  mask: THREE.CanvasTexture;
+}
+
+/**
+ * One big texture for the whole floor (about 3 cm a pixel): earth, then paving,
+ * grass, gravel, moss and the stream bed, with soft edges; its normal map; and the
+ * mask of the photo surfaces.
+ */
+const floors = new Map<string, FloorTextures>();
+export function floorTexture(width: number, depth: number, paints: FloorPaint[]): FloorTextures {
   // Painting takes a moment: the same plan is painted once (menu backdrop, then the match).
   const key = JSON.stringify([width, depth, paints]);
   const hit = floors.get(key);
@@ -340,11 +403,13 @@ export function floorTexture(width: number, depth: number, paints: FloorPaint[])
   return made;
 }
 
-function paintFloor(width: number, depth: number, paints: FloorPaint[]): { map: THREE.CanvasTexture; normal: THREE.CanvasTexture } {
+function paintFloor(width: number, depth: number, paints: FloorPaint[]): FloorTextures {
   const ppm = 32; // pixels per metre
   const W = Math.round(width * ppm);
   const H = Math.round(depth * ppm);
   const [c, g] = canvas(W, H);
+  const [mc, mg] = canvas(W, H);
+  const mask = mg.createImageData(W, H);
   const height = new Float32Array(W * H);
   const n = fbm(41, 512, 6, 5);
   const fine = fbm(42, 512, 48, 2);
@@ -362,13 +427,15 @@ function paintFloor(width: number, depth: number, paints: FloorPaint[]): { map: 
     moss: [96, 128, 70],
     water: [52, 78, 74],
   };
-  const pav = paving();
+  const pav = paintedPaving();
   const pavImg = pav.map.image as HTMLCanvasElement;
   const pavData = pavImg.getContext("2d")!.getImageData(0, 0, pavImg.width, pavImg.height).data;
   for (let y = 0; y < H; y++)
     for (let x = 0; x < W; x++) {
       let col = colours.dirt.slice();
       let h = 0.3 + n(x % 512, y % 512) * 0.2;
+      // Shares of the photo surfaces: each layer covers what is under it by t.
+      let [wp, wg, wd] = [0, 0, 1];
       for (const l of layers) {
         if (l.kind === "dirt") continue;
         const edge = Math.min(x - l.x0, l.x1 - x, y - l.z0, l.z1 - y);
@@ -403,6 +470,7 @@ function paintFloor(width: number, depth: number, paints: FloorPaint[]): { map: 
         }
         col = mixc(col, lc, t);
         h = h + (lh - h) * t;
+        [wp, wg, wd] = [wp * (1 - t) + (l.kind === "paving" ? t : 0), wg * (1 - t) + (l.kind === "gravel" ? t : 0), wd * (1 - t)];
       }
       // Ground grime and a little light/dark variation everywhere.
       const v = 0.9 + n(x % 512, y % 512) * 0.18;
@@ -412,11 +480,18 @@ function paintFloor(width: number, depth: number, paints: FloorPaint[]): { map: 
       img.data[k + 2] = clamp(col[2]! * v);
       img.data[k + 3] = 255;
       height[y * W + x] = h;
+      mask.data[k] = wp * 255;
+      mask.data[k + 1] = wg * 255;
+      mask.data[k + 2] = wd * 255;
+      mask.data[k + 3] = 255;
     }
   g.putImageData(img, 0, 0);
+  mg.putImageData(mask, 0, 0);
   const map = tex(c, true);
   map.wrapS = map.wrapT = THREE.ClampToEdgeWrapping;
   const normal = normalFrom(height, W, H, 2.5);
   normal.wrapS = normal.wrapT = THREE.ClampToEdgeWrapping;
-  return { map, normal };
+  const weights = tex(mc, false);
+  weights.wrapS = weights.wrapT = THREE.ClampToEdgeWrapping;
+  return { map, normal, mask: weights };
 }

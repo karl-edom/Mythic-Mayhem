@@ -1,6 +1,6 @@
 // The Japanese village, drawn: every solid piece of the arena (walls, floors, roofs,
 // stairs, posts, lanterns…) keeps exactly the volume the simulation uses, dressed with
-// the painted surfaces of villageTex.ts (UVs in metres, so a wall of any size shows
+// the surfaces of villageTex.ts (UVs in metres, so a wall of any size shows
 // boards of the right width); and the drawn-only decor (eaves, lattices, curtains,
 // lanterns, signs, blossom, water, petals). Nothing here touches the simulation.
 
@@ -8,7 +8,7 @@ import * as THREE from "three";
 import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { DecorPlacement, Prop } from "../brawl/arena.ts";
 import { noOutline } from "./toon.ts";
-import { ashlar, boards, cloth, floorTexture, kawara, paving, planks, plaster, tatami, timber, type FloorPaint, type Surface } from "./villageTex.ts";
+import { ROUGH_MEAN, ashlar, boards, cloth, floorTexture, kawara, paintedPaving, paving, photo, planks, plaster, tatami, timber, type FloorPaint, type Surface } from "./villageTex.ts";
 
 /** Looks drawn here (others go to props3d.ts). */
 export const VILLAGE_LOOKS = new Set([
@@ -56,11 +56,16 @@ function worldUV(geo: THREE.BufferGeometry, metres: number, offset = new THREE.V
   return g;
 }
 
-/** A material of one surface, own copy (props fade and darken one at a time). */
+/**
+ * A material of one surface, own copy (props fade and darken one at a time). The
+ * colour multiplies the texture; with a roughness map, `roughness` stays the mean.
+ */
 function surf(s: Surface, color: THREE.ColorRepresentation, opts: Partial<THREE.MeshStandardMaterialParameters> = {}): THREE.MeshStandardMaterial {
+  const roughness = opts.roughness ?? 0.85;
   return noOutline(
     new THREE.MeshStandardMaterial({
-      color, map: s.map, normalMap: s.normal ?? null, normalScale: new THREE.Vector2(1, 1), roughness: 0.85, metalness: 0, ...opts,
+      color, map: s.map, normalMap: s.normal ?? null, normalScale: new THREE.Vector2(1, 1), metalness: 0, ...opts,
+      roughnessMap: s.rough ?? null, roughness: s.rough ? roughness / ROUGH_MEAN : roughness,
     }),
   );
 }
@@ -757,7 +762,7 @@ export function buildDecor(d: DecorPlacement, i: number, ctx: DecorContext): THR
         const dd = d.d ?? 3;
         const geo = new THREE.PlaneGeometry(w, dd, 1, 1);
         geo.rotateX(-Math.PI / 2);
-        const normal = paving().normal!.clone();
+        const normal = paintedPaving().normal!.clone();
         normal.needsUpdate = true;
         normal.wrapS = normal.wrapT = THREE.RepeatWrapping;
         normal.repeat.set(w / 2, dd / 2);
@@ -832,16 +837,71 @@ export function buildDecor(d: DecorPlacement, i: number, ctx: DecorContext): THR
   return g;
 }
 
-/** The village floor, painted from the arena's `paint-*` decor. */
+/**
+ * The village floor, painted from the arena's `paint-*` decor. Where the photo
+ * surfaces loaded, paving, gravel and earth are theirs, tiled in metres and blended
+ * by the floor's mask (grass, moss and the stream bed stay painted).
+ */
 export function villageFloor(width: number, depth: number, decor: DecorPlacement[]): THREE.Mesh {
   const paints: FloorPaint[] = decor
     .filter((d) => d.look.startsWith("paint-"))
     .map((d) => ({ kind: d.look.slice(6) as FloorPaint["kind"], x: d.x, z: d.z, w: d.w ?? 4, d: d.d ?? 4 }));
-  const { map, normal } = floorTexture(width, depth, paints);
+  const { map, normal, mask } = floorTexture(width, depth, paints);
   const geo = new THREE.PlaneGeometry(width, depth);
   geo.rotateX(-Math.PI / 2);
-  const m = new THREE.Mesh(geo, noOutline(new THREE.MeshStandardMaterial({ map, normalMap: normal, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.92 })));
+  const mat = noOutline(new THREE.MeshStandardMaterial({ map, normalMap: normal, normalScale: new THREE.Vector2(0.8, 0.8), roughness: 0.92 }));
+  splatFloor(mat, mask, width, depth);
+  const m = new THREE.Mesh(geo, mat);
   m.receiveShadow = true;
   m.position.y = 0.01;
   return m;
+}
+
+/** Blends the photo paving, gravel and earth into the painted floor (see villageFloor). */
+function splatFloor(mat: THREE.MeshStandardMaterial, mask: THREE.Texture, width: number, depth: number): void {
+  const layers = ["paving", "gravel", "dirt"].map(photo);
+  if (!layers.some(Boolean)) return;
+  // A missing layer keeps its share painted (its samplers then read the painted floor).
+  const on = new THREE.Vector3(...layers.map((l) => (l ? 1 : 0)));
+  const metres = new THREE.Vector3(...layers.map((l) => l?.metres ?? 1));
+  const uniforms = {
+    floorMask: { value: mask },
+    floorSize: { value: new THREE.Vector2(width, depth) },
+    floorOn: { value: on },
+    floorMetres: { value: metres },
+    ...Object.fromEntries(layers.flatMap((l, i) => [[`floorC${i}`, { value: l?.map ?? mat.map }], [`floorN${i}`, { value: l?.normal ?? mat.normalMap }]])),
+  };
+  mat.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.fragmentShader = shader.fragmentShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+uniform sampler2D floorMask, floorC0, floorC1, floorC2, floorN0, floorN1, floorN2;
+uniform vec2 floorSize;
+uniform vec3 floorOn, floorMetres;`,
+      )
+      .replace(
+        "#include <map_fragment>",
+        `#include <map_fragment>
+vec3 floorW = texture2D( floorMask, vMapUv ).rgb * floorOn;
+float floorPhoto = floorW.r + floorW.g + floorW.b;
+vec2 floorM = vMapUv * floorSize;
+diffuseColor.rgb = diffuseColor.rgb * ( 1.0 - floorPhoto )
+  + texture2D( floorC0, floorM / floorMetres.x ).rgb * floorW.r
+  + texture2D( floorC1, floorM / floorMetres.y ).rgb * floorW.g
+  + texture2D( floorC2, floorM / floorMetres.z ).rgb * floorW.b;`,
+      )
+      .replace(
+        "#include <normal_fragment_maps>",
+        THREE.ShaderChunk.normal_fragment_maps.replace(
+          "vec3 mapN = texture2D( normalMap, vNormalMapUv ).xyz * 2.0 - 1.0;",
+          `vec3 mapN = ( texture2D( normalMap, vNormalMapUv ).xyz * ( 1.0 - floorPhoto )
+      + texture2D( floorN0, floorM / floorMetres.x ).xyz * floorW.r
+      + texture2D( floorN1, floorM / floorMetres.y ).xyz * floorW.g
+      + texture2D( floorN2, floorM / floorMetres.z ).xyz * floorW.b ) * 2.0 - 1.0;`,
+        ),
+      );
+  };
+  mat.customProgramCacheKey = () => "village-floor-splat";
 }

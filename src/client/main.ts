@@ -9,6 +9,7 @@ import { BRAWL_CONFIG, createBrawl, createMatch, step, type BrawlConfig, type Br
 import { Hud } from "./hud.ts";
 import { Input, padIndex, type Controller, type MenuButton } from "./input.ts";
 import { loadModels, type ModelLibrary } from "./models.ts";
+import { loadPhotoTextures } from "./villageTex.ts";
 import { PortraitStudio, type PortraitCut } from "./portraits.ts";
 import { loadArenaDefs, loadRoster, propCatalog, type RosterEntry } from "./roster.ts";
 import { ArenaView, createRenderer } from "./scene.ts";
@@ -786,6 +787,8 @@ async function boot(): Promise<void> {
   const bar = h("div", "loading-bar", loading);
   const fill = h("div", "loading-fill", bar);
   const label = h("div", "loading-label", loading, "Chargement des combattants…");
+  // The village's photo textures, alongside (painted ones stand in for any that fail).
+  const photos = loadPhotoTextures(new URL("assets/textures/", document.baseURI).href);
   try {
     library = await loadModels(new URL("models/", document.baseURI).href, (done, total) => {
       fill.style.width = `${(100 * done) / total}%`;
@@ -796,6 +799,7 @@ async function boot(): Promise<void> {
     console.error(e);
     await new Promise((r) => setTimeout(r, 4000));
   }
+  await photos;
   if (library) {
     studio = new PortraitStudio(library);
     if (import.meta.env.DEV) (window as unknown as { __studio: PortraitStudio }).__studio = studio;
