@@ -5,7 +5,6 @@
 // were retired with the first fighters (decision 0024).
 
 import * as THREE from "three";
-import { EXRLoader } from "three/examples/jsm/loaders/EXRLoader.js";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import * as SkeletonUtils from "three/examples/jsm/utils/SkeletonUtils.js";
 import type { Look, ModelId } from "../brawl/character.ts";
@@ -42,34 +41,6 @@ interface AnimeTemplate {
 
 /** Reflections for procedural models (lacquer, steel, shell): set by the view once it has a renderer. */
 export const proceduralEnv: { map: THREE.Texture | null } = { map: null };
-
-/**
- * An outdoor sky photographed in the round (HDRI, Poly Haven "park", CC0, 512 px; see
- * public/assets/CREDITS.md): the light everything is lit and reflected with, once
- * turned into an environment map by the view. Null if it could not be loaded (the
- * view then falls back to a studio made in code).
- */
-export const skyLight: { hdr: THREE.DataTexture | null } = { hdr: null };
-
-async function loadSkyLight(base: string): Promise<void> {
-  try {
-    const url = new URL(`../assets/hdri/park.${EXT === "glb" ? "exr" : "json"}`, base).href;
-    const res = await fetch(url);
-    if (!res.ok) throw new Error(`${url} : HTTP ${res.status}`);
-    // Hosts that only serve common types get it wrapped in JSON, as the models.
-    const buffer = EXT === "glb" ? await res.arrayBuffer() : Uint8Array.from(atob(((await res.json()) as { data: string }).data), (c) => c.charCodeAt(0)).buffer;
-    const tex = new EXRLoader().parse(buffer) as unknown as { width: number; height: number; data: Uint16Array | Float32Array; type: THREE.TextureDataType };
-    const t = new THREE.DataTexture(tex.data, tex.width, tex.height, THREE.RGBAFormat, tex.type);
-    t.mapping = THREE.EquirectangularReflectionMapping;
-    t.colorSpace = THREE.LinearSRGBColorSpace;
-    t.flipY = true;
-    t.minFilter = t.magFilter = THREE.LinearFilter;
-    t.needsUpdate = true;
-    skyLight.hdr = t;
-  } catch (e) {
-    console.warn("Ciel HDRI indisponible, studio de repli :", e);
-  }
-}
 
 export interface ModelLibrary {
   anime: Map<ModelId, AnimeTemplate>;
@@ -134,7 +105,7 @@ async function fetchModel(loader: GLTFLoader, url: string): Promise<Gltf> {
 export async function loadModels(base: string, onProgress?: (done: number, total: number) => void): Promise<ModelLibrary> {
   const loader = new GLTFLoader();
   // The shared clips and the skeleton they were authored on.
-  const [shared] = await Promise.all([fetchModel(loader, new URL(`kaykit/animations.${EXT}`, base).href), loadSkyLight(base)]);
+  const shared = await fetchModel(loader, new URL(`kaykit/animations.${EXT}`, base).href);
   onProgress?.(1, 1);
   const anime = new Map<ModelId, AnimeTemplate>();
   const turtle = buildTurtleRig();
