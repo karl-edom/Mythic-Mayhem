@@ -4,6 +4,7 @@
 - Documentation et échanges en français. Code et identifiants en anglais.
 - Avancer par étapes courtes et testables. Après chaque étape, résumer les fichiers modifiés, les tests exécutés, les limites et la prochaine décision attendue.
 - Ne jamais commiter d'assets ou de personnages sous licence. Les packs « fan » restent dans `packs/local/` (ignoré par git).
+- Les ressources **CC0** (domaine public : textures, ciels HDRI, modèles, par exemple Poly Haven, ambientCG, Kenney, Quaternius) sont autorisées dans le dépôt (décision du 2026-10-20). Pour chacune, noter sa source, sa licence et son poids dans `public/assets/CREDITS.md`.
 - Les packs de personnages sont des données validées contre le budget de puissance. Ils n'exécutent jamais de code.
 - Toute nouvelle capacité précise son contre-jeu et son indicateur visuel.
 - Tout changement du contrat de combat commun est documenté et testé.
