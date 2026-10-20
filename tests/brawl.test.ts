@@ -123,50 +123,110 @@ test("une spéciale coûte de l'énergie et ne part pas sans assez d'énergie", 
   assert.ok(w.fighters[0]!.energy < 50);
 });
 
-test("une zone ne frappe qu'à la fin de son télégraphe", () => {
-  const area: Special = {
-    id: "zone", energyCost: 20, startup: 0.1, recovery: 0.2, delivery: { type: "area", castRange: 10, radius: 1.5, delay: 0.6 },
-    damage: 100, hitstun: 0.4, knockback: 4, guardBreak: false,
+test("explosion : frappe tout autour à la sortie de la spéciale, pas plus loin que son rayon", () => {
+  const burst: Special = {
+    id: "explosion", energyCost: 20, startup: 0.15, recovery: 0.4, delivery: { type: "burst", radius: 2 },
+    damage: 100, hitstun: 0.4, knockback: 8, guardBreak: false,
   };
-  const w = duel(fighter([area]), fighter(), 6);
+  const w = duel(fighter([burst]), fighter(), 2.2);
   step(w, [{ unit: 0, special: 0 }]);
-  run(w, 0.6);
-  assert.equal(w.fighters[1]!.hp, 1000);
-  assert.equal(w.zones.length, 1);
-  run(w, 0.2);
+  run(w, 0.1);
+  assert.equal(w.fighters[1]!.hp, 1000, "pas avant la fin du démarrage");
+  run(w, 0.08);
   assert.equal(w.fighters[1]!.hp, 900);
+  assert.ok(w.events.some((e) => e.type === "blast"), "l'explosion est annoncée (effet visuel)");
+  // Out of reach: 2 m + body radius.
+  const far = duel(fighter([burst]), fighter(), 3);
+  step(far, [{ unit: 0, special: 0 }]);
+  run(far, 0.3);
+  assert.equal(far.fighters[1]!.hp, 1000);
 });
 
-test("saut plongeant : cercle d'atterrissage visible dès l'envol, frappe à l'arrivée ; coupé en l'air, il disparaît", () => {
-  const leap: Special = {
-    id: "saut", energyCost: 20, startup: 0.1, recovery: 0.3, delivery: { type: "leap", range: 8, height: 4, radius: 1.2 },
-    damage: 120, hitstun: 0.4, knockback: 6, guardBreak: false,
+test("piège : posé sur la cible, il s'arme, part quand un ennemi y est ; sauter par-dessus l'évite", () => {
+  const trap: Special = {
+    id: "mine", energyCost: 20, startup: 0.1, recovery: 0.35, delivery: { type: "trap", castRange: 8, radius: 1.2, arm: 0.5, lifetime: 4 },
+    damage: 100, hitstun: 0.4, knockback: 6, guardBreak: false,
   };
-  const flight = 2 * Math.sqrt((2 * 4) / BRAWL_CONFIG.gravity);
-  const w = duel(fighter([leap]), fighter(), 6);
+  const w = duel(fighter([trap]), fighter(), 6);
   step(w, [{ unit: 0, special: 0 }]);
   run(w, 0.15);
-  const a = w.fighters[0]!;
-  assert.equal(a.action?.kind, "leap");
   assert.equal(w.zones.length, 1);
-  assert.ok(Math.abs(w.zones[0]!.center.x - 6) < 0.05, "le cercle est sur la cible");
-  run(w, flight / 2);
-  assert.ok(a.pos.y > 3, `au sommet : ${a.pos.y}`);
-  assert.equal(w.fighters[1]!.hp, 1000);
-  run(w, flight / 2 + 0.05);
-  assert.equal(w.fighters[1]!.hp, 880);
-  assert.ok(Math.abs(a.pos.y) < 1e-6 && Math.abs(a.pos.x - 6) < 1.2, `posé près de la cible : ${a.pos.x}`);
+  assert.ok(Math.abs(w.zones[0]!.center.x - 6) < 0.05, "posé sur la cible");
+  // Above it (a jump): it does not go off.
+  const b = w.fighters[1]!;
+  run(w, 0.5, () => {
+    b.pos.y = 2;
+    b.vel.y = 0;
+    return [];
+  });
+  assert.equal(b.hp, 1000, "en l'air au-dessus : rien");
+  // Standing in it once armed: it goes off at once.
+  b.pos.y = 0;
+  b.floor = 0;
+  run(w, 0.05);
+  assert.equal(b.hp, 900);
+  assert.equal(w.zones.length, 0);
 
-  // Struck out of the air (by a projectile): no landing strike.
-  const w2 = duel(fighter([leap]), fighter(), 6);
+  // Nobody steps in: it goes off by itself at the end of its time.
+  const w2 = duel(fighter([trap]), fighter(), 6);
   step(w2, [{ unit: 0, special: 0 }]);
-  run(w2, 0.3);
-  w2.projectiles.push({ owner: 1, team: 1, slot: 0, pos: { ...w2.fighters[0]!.pos, y: w2.fighters[0]!.pos.y + 0.9 }, dir: { x: -1, y: 0, z: 0 }, speed: 1, remaining: 0.5, size: 0.6, hit: { damage: 10, hitstun: 0.3, knockback: 2, guardBreak: false, by: "special" } });
-  run(w2, 0.05);
-  assert.equal(w2.fighters[0]!.action?.kind, "hitstun");
+  run(w2, 0.15);
+  w2.fighters[1]!.pos.x = 12;
+  run(w2, 3.5);
+  assert.equal(w2.zones.length, 1);
+  run(w2, 0.6);
   assert.equal(w2.zones.length, 0);
-  run(w2, flight);
+  assert.ok(w2.events.some((e) => e.type === "blast"));
   assert.equal(w2.fighters[1]!.hp, 1000);
+
+  // Set again: the new one replaces the old.
+  const w3 = duel(fighter([trap]), fighter(), 6);
+  w3.fighters[0]!.energy = 100;
+  step(w3, [{ unit: 0, special: 0 }]);
+  run(w3, 0.5);
+  w3.fighters[1]!.pos.x = 4;
+  step(w3, [{ unit: 0, special: 0 }]);
+  run(w3, 0.2);
+  assert.equal(w3.zones.length, 1);
+  assert.ok(Math.abs(w3.zones[0]!.center.x - 4) < 0.05);
+});
+
+test("plongée : droit sur le corps de la cible, depuis les airs aussi ; le sol l'arrête", () => {
+  const dive: Special = {
+    id: "plongee", energyCost: 20, startup: 0.1, recovery: 0.35, delivery: { type: "dive", distance: 10, speed: 30, size: 0.7 },
+    damage: 120, hitstun: 0.4, knockback: 8, guardBreak: false,
+  };
+  // From high in the air, onto a target on the ground 6 m away.
+  const w = duel(fighter([dive]), fighter(), 6);
+  const a = w.fighters[0]!;
+  a.pos.y = 4;
+  step(w, [{ unit: 0, special: 0 }]);
+  run(w, 0.12);
+  assert.equal(a.action?.kind, "dive");
+  const d = a.action?.kind === "dive" ? a.action.dir : { x: 0, y: 0, z: 0 };
+  assert.ok(d.y < -0.3 && d.x > 0.7, `vers le bas et l'avant : ${JSON.stringify(d)}`);
+  run(w, 0.3);
+  assert.equal(w.fighters[1]!.hp, 880, "touché");
+  assert.equal(a.action?.kind, "special", "la plongée s'arrête sur le coup");
+
+  // Aimed at a spot the target has left: the dive ends on the ground, without falling through.
+  const w2 = duel(fighter([dive]), fighter(), 3);
+  const a2 = w2.fighters[0]!;
+  a2.pos.y = 5;
+  step(w2, [{ unit: 0, special: 0 }]);
+  run(w2, 0.11);
+  w2.fighters[1]!.pos = { x: 0, y: 0, z: 12 };
+  run(w2, 0.4);
+  assert.notEqual(a2.action?.kind, "dive");
+  assert.ok(a2.pos.y >= 0 && a2.pos.y < 0.05, `au sol : ${a2.pos.y}`);
+  assert.equal(w2.fighters[1]!.hp, 1000);
+});
+
+test("bond et zone d'avant la décision 0029 : refusés avec la marche à suivre", () => {
+  const kit = fighter([{ id: "x", energyCost: 20, startup: 0.2, recovery: 0.4, delivery: { type: "leap", range: 8, height: 4, radius: 1.2 } as never, damage: 80, hitstun: 0.4, knockback: 6, guardBreak: false }]);
+  const r = validateFighter(kit, loadBrawlCosts());
+  assert.equal(r.ok, false);
+  assert.ok(!r.ok && r.errors.some((e) => e.includes("dive")), !r.ok ? r.errors.join("\n") : "");
 });
 
 test("contre : un coup au corps à corps est esquivé et puni dans le dos ; dans le vide, toute la récupération", () => {

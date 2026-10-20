@@ -202,7 +202,7 @@ test("d'en haut, on voit par-dessus un muret qui cache au sol", () => {
   assert.equal(canSee(w, a!, b!), true, "le perché au-dessus du muret est visible");
 });
 
-test("un projectile vise un adversaire perché ; une zone au sol ne l'atteint pas", () => {
+test("un projectile vise un adversaire perché ; un piège au sol ne l'atteint pas", () => {
   const w = world(tower, -8, 10);
   const b = w.fighters[1]!;
   b.pos = { x: 0, y: 3, z: 0 };
@@ -211,12 +211,12 @@ test("un projectile vise un adversaire perché ; une zone au sol ne l'atteint pa
   step(w, [{ unit: 0, special: 0 }]);
   run(w, 1.5);
   assert.equal(b.hp, 900, "le tir atteint le haut de la plateforme");
-  // Une zone posée au sol, au pied de la plateforme, ne touche pas celui qui est perché.
+  // Un piège posé au sol, au pied de la plateforme, ne touche pas celui qui est perché.
   const z = world(tower, -8, 10);
   const perched = z.fighters[1]!;
   perched.pos = { x: -2.6, y: 3, z: 0 };
   perched.floor = 3;
-  z.zones.push({ owner: 0, team: 0, slot: 0, center: { x: -3.5, y: 0, z: 0 }, radius: 2, createdAt: 0, triggerAt: z.time + 0.05 });
+  z.zones.push({ owner: 0, team: 0, slot: 0, center: { x: -3.5, y: 0, z: 0 }, radius: 2, createdAt: 0, armedAt: 0, triggerAt: z.time + 0.05 });
   run(z, 0.2);
   assert.equal(perched.hp, 1000);
 });

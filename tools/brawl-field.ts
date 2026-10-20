@@ -46,7 +46,7 @@ const ROUNDS = Number(values.rounds);
 const DAMPING = 0.5;
 const MIN_SUPPORT = 15;
 
-export const FIELD_FEATURES = ["survie", "mobilite", "combo", "lourde", "projectile", "rush", "area", "leap", "counter"] as const;
+export const FIELD_FEATURES = ["survie", "mobilite", "combo", "lourde", "projectile", "rush", "dive", "burst", "trap", "counter"] as const;
 type Feature = (typeof FIELD_FEATURES)[number];
 
 function features(kit: FighterKit, costs: BrawlCostTable): Record<Feature, number> {
@@ -140,7 +140,7 @@ function recalibrate(costs: BrawlCostTable, value: Partial<Record<Feature, numbe
   c.light.pointsPerDps *= k("combo");
   c.light.pointsPerSecondOfFastStartup *= k("combo");
   c.heavy.pointsPerDps *= k("lourde");
-  for (const d of ["projectile", "rush", "area", "leap", "counter"] as const) c.special.deliveryFactor[d] *= k(d);
+  for (const d of ["projectile", "rush", "dive", "burst", "trap", "counter"] as const) c.special.deliveryFactor[d] *= k(d);
   // Round for a readable file.
   const r4 = (x: number) => Number(x.toPrecision(4));
   c.survival.pointsAtBaseHp = r4(c.survival.pointsAtBaseHp);
@@ -150,7 +150,7 @@ function recalibrate(costs: BrawlCostTable, value: Partial<Record<Feature, numbe
   c.light.pointsPerDps = r4(c.light.pointsPerDps);
   c.light.pointsPerSecondOfFastStartup = r4(c.light.pointsPerSecondOfFastStartup);
   c.heavy.pointsPerDps = r4(c.heavy.pointsPerDps);
-  for (const d of ["projectile", "rush", "area", "leap", "counter"] as const) c.special.deliveryFactor[d] = r4(c.special.deliveryFactor[d]);
+  for (const d of ["projectile", "rush", "dive", "burst", "trap", "counter"] as const) c.special.deliveryFactor[d] = r4(c.special.deliveryFactor[d]);
   return c;
 }
 

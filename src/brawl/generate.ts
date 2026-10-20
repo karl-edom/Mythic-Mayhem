@@ -2,7 +2,7 @@
 // budget by scaling their damage only (timings, reach and specials stay as drawn).
 
 import { fighterBudget, type BrawlCostTable } from "./budget.ts";
-import { ARCHETYPES, type FighterKit, type Special, type Strike } from "./kit.ts";
+import { ARCHETYPES, type FighterKit, type Special, type SpecialDelivery, type Strike } from "./kit.ts";
 import { validateFighter } from "./validate.ts";
 
 const pick = <T>(r: () => number, xs: readonly T[]): T => xs[Math.floor(r() * xs.length)]!;
@@ -22,15 +22,19 @@ function strike(r: () => number, last: boolean): Strike {
 }
 
 function special(r: () => number, i: number): Special {
-  const type = pick(r, ["projectile", "rush", "area"] as const);
-  const delivery =
+  const type = pick(r, ["projectile", "rush", "dive", "burst", "trap"] as const);
+  const delivery: SpecialDelivery =
     type === "projectile"
       ? { type, speed: range(r, 12, 28), range: range(r, 8, 20), size: range(r, 0.4, 0.8) }
       : type === "rush"
         ? { type, distance: range(r, 4, 10), speed: range(r, 15, 30), size: range(r, 0.6, 1) }
-        : { type, castRange: range(r, 0, 14), radius: range(r, 1.5, 3.5), delay: range(r, 0.3, 1.2) };
+        : type === "dive"
+          ? { type, distance: range(r, 5, 11), speed: range(r, 20, 35), size: range(r, 0.6, 1) }
+          : type === "burst"
+            ? { type, radius: range(r, 1.5, 3) }
+            : { type, castRange: range(r, 2, 10), radius: range(r, 1.2, 2.5), arm: range(r, 0.4, 1), lifetime: range(r, 2, 6) };
   const startup = range(r, 0.1, 0.35);
-  const telegraph = startup + (delivery.type === "area" ? delivery.delay : 0);
+  const telegraph = startup + (delivery.type === "trap" ? delivery.arm : 0);
   return {
     id: `s${i}`,
     energyCost: range(r, 15, 60, 0),

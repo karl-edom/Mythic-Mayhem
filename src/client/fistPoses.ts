@@ -120,14 +120,14 @@ export function fistPoses(hipsRest: THREE.Vector3, bones: BoneTable = SWORDSMAN_
 
   // ---- Hammer from the sky (leap): a crouch, both fists raised high, down onto the ground.
   const crouch = fists(over(low, { spine: [0.5, 0, 0], head: [-0.35, 0, 0], leftUpperLeg: [-1.2, -0.1, 0.45], leftLowerLeg: [1.8, 0, 0], rightUpperLeg: [-0.7, 0.1, -0.45], rightLowerLeg: [1.6, 0, 0] }, [0, -0.36, 0]), { r: [-0.22, 0.15, -0.12], l: [0.22, 0.15, -0.12], rPole: [-0.3, 0, -1], lPole: [0.3, 0, -1] });
-  const takeoff = keyClip("@special:leap", [[0, stance], [0.42, crouch], [1, crouch]], 0.5, hipsRest, { impact: 0.42 });
+  const takeoff = keyClip("@special:dive", [[0, stance], [0.42, crouch], [1, crouch]], 0.5, hipsRest, { impact: 0.42 });
   const rising = fists({ hips: [0, 0, 0], bones: { spine: [-0.1, 0, 0], leftUpperLeg: [-0.2, 0, 0.1], leftLowerLeg: [0.3, 0, 0], leftFoot: [0.6, 0, 0], rightUpperLeg: [0.1, 0, -0.1], rightLowerLeg: [0.4, 0, 0], rightFoot: [0.6, 0, 0] } }, { r: [-0.05, 0.95, 0.1], l: [0.05, 0.95, 0.1] });
   const peak = fists(over(tucked, { spine: [-0.15, 0, 0], head: [0.05, 0, 0] }), { r: [-0.04, 0.9, -0.05], l: [0.04, 0.9, -0.05], rPole: [-0.6, 0, 1], lPole: [0.6, 0, 1] });
   const dive = fists(over(tucked, { spine: [0.5, 0, 0], head: [-0.4, 0, 0] }), { r: [-0.04, 0.85, 0.2], l: [0.04, 0.85, 0.2], rPole: [-0.6, 0, 1], lPole: [0.6, 0, 1] });
-  const leapClip = keyClip("@leap", [[0, crouch], [0.25, rising, "out"], [0.55, peak], [0.85, dive], [1, dive]], 1.0, hipsRest);
+  const leapClip = keyClip("@dive", [[0, crouch], [0.25, rising, "out"], [0.55, peak], [0.85, dive], [1, dive]], 1.0, hipsRest);
   const kneel: Pose = over(deep, { rightUpperLeg: [0.2, 0.1, -0.25], rightLowerLeg: [1.7, 0, 0], rightFoot: [0.5, 0, 0], spine: [0.75, 0, 0] }, [0, -0.45, 0.12]);
   const pound = fists(kneel, { r: [-0.02, -0.25, 0.48], l: [0.25, 0.2, 0.15], rPole: [-0.8, 0.2, -0.3] });
-  const land = keyClip("@leap:land", [[0, dive], [0.15, pound, "in"], [0.5, pound], [1, stance]], 0.8, hipsRest, { impact: 0.15 });
+  const land = keyClip("@dive:land", [[0, dive], [0.15, pound, "in"], [0.5, pound], [1, stance]], 0.8, hipsRest, { impact: 0.15 });
 
   // ---- Power burst (area): fists clenched low and wide, chest out, a shout to the sky.
   const brace = fists(over(low, { spine: [0.35, 0, 0], head: [-0.25, 0, 0] }, [0, -0.25, 0]), { r: [-0.08, 0.32, 0.18], l: [0.08, 0.32, 0.18], rPole: [-1, 0, 0], lPole: [1, 0, 0] });
@@ -166,9 +166,9 @@ export function fistPoses(hipsRest: THREE.Vector3, bones: BoneTable = SWORDSMAN_
     ["@special:projectile", beam],
     ["@special:rush", enterRush],
     ["@rush", rush],
-    ["@special:leap", takeoff],
-    ["@leap", leapClip],
-    ["@leap:land", land],
+    ["@special:dive", takeoff],
+    ["@dive", leapClip],
+    ["@dive:land", land],
     ["@special:area", burst],
     ["@special:counter", enterWatch],
     ["@counter", poseClip("@counter", watch, watchB, 1.2, hipsRest)],

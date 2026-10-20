@@ -55,6 +55,8 @@ Tests (`tests/retarget.test.ts`) : rotation transmise exacte quel que soit le re
 
 Sans `look`, le client choisit un avatar anime d'après l'archétype.
 
+**Ajout du 2026-10-20** : `look.height` (mètres, de 0,8 à 2,4 ; 1,8 par défaut) fixe la taille du personnage à l'écran, par exemple un petit Sonic (1,25) à côté d'un grand Eggman (2,0). Le changement est **purement visuel** : le corps que la simulation frappe reste le même pour tous, et l'équilibrage n'en dépend pas. La foulée des animations suit la taille, pour que les pieds ne glissent pas.
+
 ## Licences et coûts
 
 - **Avatars** : VRoid Studio, préréglages de la version bêta, par pixiv Inc., **CC0 1.0**. L'outil de construction vérifie la mention `CC0` dans les métadonnées VRM de chaque fichier avant d'écrire quoi que ce soit. Source : copie GitHub `madjin/vrm-samples`. Crédits dans `public/models/anime/CREDITS.txt`. Ce ne sont pas des personnages sous licence : ils sont commitables.

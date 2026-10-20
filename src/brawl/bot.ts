@@ -382,17 +382,19 @@ export function botCommand(w: BrawlWorld, me: Fighter, bot: BrawlBot): Command {
   const usable = me.kit.specials
     .map((sp, slot) => ({ sp, slot }))
     .filter(({ sp }) => sp.energyCost <= me.energy)
-    .filter(({ sp }) => {
+    .filter(({ sp, slot }) => {
       const del = sp.delivery;
       if (del.type === "projectile") return d <= del.range;
       if (del.type === "rush") return d <= del.distance + reach;
-      if (del.type === "leap") return d <= del.range + del.radius;
+      if (del.type === "dive") return d <= del.distance + reach;
+      if (del.type === "burst") return d <= del.radius + foe.kit.stats.radius;
       // The counter is a read: only against a blow already coming.
       if (del.type === "counter") {
         const k = foe.action?.kind;
         return (k === "rush" && d <= 8) || ((k === "light" || k === "heavy" || k === "aerial") && d <= reach + 1.5);
       }
-      return d <= del.castRange + del.radius;
+      // A trap: at the opponent's feet, or on the way it comes.
+      return d <= del.castRange + del.radius && !w.zones.some((z) => z.owner === me.id && z.slot === slot);
     });
 
   if (d <= reach) {

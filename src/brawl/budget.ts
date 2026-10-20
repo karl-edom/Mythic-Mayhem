@@ -2,7 +2,7 @@
 // data/balance/brawl-costs.json and are PROVISIONAL: they will be calibrated
 // by bot-vs-bot simulation, never by tuning one fighter at a time.
 
-import { leapFlightTime, type FighterKit, type Special, type Strike } from "./kit.ts";
+import { type FighterKit, type Special, type Strike } from "./kit.ts";
 
 export interface BrawlCostTable {
   version: number;
@@ -19,10 +19,14 @@ export interface BrawlCostTable {
     projectileSpeedFactor: number;
     projectileSpeedBase: number;
     rushDistanceFactor: number;
+    /** Dive: per metre of reach, as a rush. */
+    diveDistanceFactor: number;
     areaCastRangeFactor: number;
     areaRadiusFactor: number;
     areaDelayDiscountPerSecond: number;
     areaMaxDelayDiscount: number;
+    /** Trap: per second it lies in wait. */
+    trapLifetimeFactor: number;
     /** Counter: price per second of the stance's window. */
     counterWindowFactor: number;
     /**
@@ -63,18 +67,17 @@ export function specialMultiplier(sp: Special, c: BrawlCostTable): number {
       return 1 + d.range * k.projectileRangeFactor + (d.speed - k.projectileSpeedBase) * k.projectileSpeedFactor;
     case "rush":
       return 1 + d.distance * k.rushDistanceFactor;
-    case "area":
+    case "dive":
+      return 1 + d.distance * k.diveDistanceFactor;
+    case "burst":
+      return 1 + d.radius * k.areaRadiusFactor;
+    case "trap":
+      // Priced as a circle cast as far, discounted for the time it takes to arm.
       return (
         (1 + d.castRange * k.areaCastRangeFactor) *
         (1 + d.radius * k.areaRadiusFactor) *
-        (1 - Math.min(d.delay * k.areaDelayDiscountPerSecond, k.areaMaxDelayDiscount))
-      );
-    case "leap":
-      // Priced as a circle cast as far, telegraphed for the whole flight.
-      return (
-        (1 + d.range * k.areaCastRangeFactor) *
-        (1 + d.radius * k.areaRadiusFactor) *
-        (1 - Math.min(leapFlightTime(d.height) * k.areaDelayDiscountPerSecond, k.areaMaxDelayDiscount))
+        (1 + d.lifetime * k.trapLifetimeFactor) *
+        (1 - Math.min(d.arm * k.areaDelayDiscountPerSecond, k.areaMaxDelayDiscount))
       );
     case "counter":
       return 1 + d.window * k.counterWindowFactor;

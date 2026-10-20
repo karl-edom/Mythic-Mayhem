@@ -256,6 +256,8 @@ export interface ModelInstance {
   materials: (THREE.MeshToonMaterial | THREE.MeshStandardMaterial)[];
   /** Two points along the main weapon (or the forearm) that a swing trail follows; null: none. */
   trail: { base: THREE.Object3D; tip: THREE.Object3D } | null;
+  /** Height on screen over the usual one (look.height): strides shrink or grow with it. */
+  scale: number;
 }
 
 /** The template a look is drawn with. */
@@ -352,11 +354,12 @@ function instantiateAnime(lib: ModelLibrary, look: Look): ModelInstance {
   for (const w of look.show) attachWeapon(rig, w);
   const root = new THREE.Group();
   root.add(rig);
-  rig.scale.setScalar(ANIME_HEIGHT / t.height);
+  const scale = (look.height ?? ANIME_HEIGHT) / ANIME_HEIGHT;
+  rig.scale.setScalar((ANIME_HEIGHT * scale) / t.height);
   // Swing trail along the main-hand weapon; bare hands: along the forearm.
   const main = rig.getObjectByName("rightHand");
   const base = main?.getObjectByName("trailBase") ?? rig.getObjectByName("trailBase") ?? rig.getObjectByName("rightLowerArm");
   const tip = main?.getObjectByName("trailTip") ?? rig.getObjectByName("trailTip") ?? main;
   const trail = base && tip ? { base, tip } : null;
-  return { root, mixer: new THREE.AnimationMixer(rig), clips: animeClips(lib, t, poseStyle(look.show)), materials, trail };
+  return { root, mixer: new THREE.AnimationMixer(rig), clips: animeClips(lib, t, poseStyle(look.show)), materials, trail, scale };
 }

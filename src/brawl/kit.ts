@@ -44,21 +44,25 @@ export type SpecialDelivery =
   | { type: "projectile"; speed: number; range: number; size: number }
   /** The fighter rushes forward; the first enemy touched is hit and the rush stops. */
   | { type: "rush"; distance: number; speed: number; size: number }
-  /** Telegraphed circle placed towards the target, resolves after `delay`. */
-  | { type: "area"; castRange: number; radius: number; delay: number }
   /**
-   * Leaps `height` metres up and comes down on the target's spot (up to `range` away):
-   * the landing circle (`radius`) shows from take-off and strikes on touchdown.
+   * Dives at the target's body in a straight line, in 3D (from the air as well), aimed
+   * when it comes out: `distance` metres at most, at `speed`. The first enemy touched is
+   * hit and the dive stops; so does a wall or the ground (decision 0029).
    */
-  | { type: "leap"; range: number; height: number; radius: number }
+  | { type: "dive"; distance: number; speed: number; size: number }
+  /** A blast all around the fighter (`radius`), the instant the special comes out. */
+  | { type: "burst"; radius: number }
+  /**
+   * A trap set on the ground up to `castRange` towards the target. Armed after `arm`
+   * seconds, it goes off when an enemy steps into its `radius`, or by itself once
+   * `lifetime` is over. One per special: setting it again replaces the last one.
+   */
+  | { type: "trap"; castRange: number; radius: number; arm: number; lifetime: number }
   /**
    * Counter stance for `window` seconds: a blow struck in person (melee or rush) is
    * slipped with a spin, and the special strikes the attacker in the back.
    */
   | { type: "counter"; window: number };
-
-/** Air time of a leap special, seconds (a symmetric arc `height` metres high). */
-export const leapFlightTime = (height: number, gravity = 18) => 2 * Math.sqrt((2 * height) / gravity);
 
 export interface Special {
   id: string;

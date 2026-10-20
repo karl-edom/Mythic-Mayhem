@@ -6,7 +6,7 @@
 import {
   EYE_HEIGHT, OPEN_ARENA, buildArena, distToProp, groundHeight, pushOut, sightBlocked, spansHeight, surfaceAt, type Arena, type Prop,
 } from "./arena.ts";
-import { leapFlightTime, type FighterKit, type Special, type Strike } from "./kit.ts";
+import { type FighterKit, type Special, type Strike } from "./kit.ts";
 import { cosSin, hyp, powi } from "../sim/math.ts";
 
 export interface V3 {
@@ -283,8 +283,8 @@ export type Action =
   | { kind: "heavy"; charge: number; charging: boolean; t: number; hit: boolean; aim: AerialAim }
   | { kind: "special"; slot: number; t: number; fired: boolean; countered?: boolean }
   | { kind: "rush"; slot: number; remaining: number }
-  /** In the air on a leap special, from `from` to `to` over `time` seconds. */
-  | { kind: "leap"; slot: number; t: number; time: number; height: number; from: V3; to: V3 }
+  /** Diving along `dir` (a unit 3D vector), `remaining` metres still to go. */
+  | { kind: "dive"; slot: number; dir: V3; remaining: number }
   /** Counter stance, until then. */
   | { kind: "counter"; slot: number; until: number }
   | { kind: "dodge"; dir: V3; t: number; stale: number }
@@ -381,7 +381,7 @@ export interface Projectile {
   hit?: HitSpec;
 }
 
-/** A telegraphed area: visible from creation, resolves at triggerAt. */
+/** A trap special on the ground: visible from creation, armed at armedAt, goes off at triggerAt at the latest. */
 export interface Zone {
   owner: number;
   team: number;
@@ -389,9 +389,10 @@ export interface Zone {
   center: V3;
   radius: number;
   createdAt: number;
+  /** From then on, an enemy stepping in sets it off. */
+  armedAt: number;
+  /** It goes off by itself then. */
   triggerAt: number;
-  /** The landing circle of a leap: gone if the leap is cut short. */
-  leap?: boolean;
 }
 
 /** Where an aerial strike goes: ahead, over the head, under the feet. */
@@ -418,6 +419,8 @@ export type BrawlEvent =
   | { t: number; type: "lift"; unit: number; prop: number }
   | { t: number; type: "throw"; unit: number; prop: number }
   | { t: number; type: "slam"; target: number; amount: number }
+  /** A burst, or a trap going off: a blast of `radius` around `center`. */
+  | { t: number; type: "blast"; unit: number; slot: number; center: V3; radius: number }
   | { t: number; type: "end"; winner: number | null };
 
 export interface Command {
@@ -843,8 +846,6 @@ function applyHit(w: BrawlWorld, src: Fighter, target: Fighter, hit: HitSpec, fr
     counterStrike(w, target, src, target.action.slot);
     return true;
   }
-  // A leap cut short in the air: its landing circle goes with it.
-  if (target.action?.kind === "leap") w.zones = w.zones.filter((z) => !(z.owner === target.id && z.leap));
   target.drift = { x: 0, y: 0, z: 0 };
   // Hitlag: both bodies freeze an instant on contact (the attacker only if it struck in person).
   const lag = Math.min(w.config.hitlagMax, w.config.hitlagBase + hit.damage * w.config.hitlagPerDamage);
@@ -1030,30 +1031,32 @@ function fireSpecial(w: BrawlWorld, f: Fighter, slot: number, sp: Special): void
     case "rush":
       f.action = { kind: "rush", slot, remaining: d.distance };
       return;
-    case "area": {
+    case "dive": {
+      // Straight at the target's body; from the ground, never down into it.
+      let dir = aimAt(w, f, bodyCenter(f));
+      if (grounded(f) && dir.y < 0) dir = hnorm(dir, f.facing);
+      f.facing = hnorm(dir, f.facing);
+      f.action = { kind: "dive", slot, dir, remaining: d.distance };
+      f.vel = { x: 0, y: 0, z: 0 };
+      f.drift = { x: 0, y: 0, z: 0 };
+      return;
+    }
+    case "burst":
+      blast(w, f, slot, sp, { ...f.pos }, d.radius, true);
+      return;
+    case "trap": {
       const t = lockTarget(w, f);
       const reach = Math.min(t ? hdist(f.pos, t.pos) : d.castRange, d.castRange);
       const x = f.pos.x + f.facing.x * reach;
       const z = f.pos.z + f.facing.z * reach;
       // On the level of whatever stands there: the target's floor, a roof, or the ground.
       const y = t && reach >= hdist(f.pos, t.pos) - 0.5 ? t.floor : groundHeight(w.arena, x, z);
+      // One trap per special: a new one replaces the last.
+      w.zones = w.zones.filter((q) => !(q.owner === f.id && q.slot === slot));
       w.zones.push({
-        owner: f.id, team: f.team, slot, radius: d.radius, createdAt: w.time, triggerAt: w.time + d.delay,
-        center: { x, y, z },
+        owner: f.id, team: f.team, slot, radius: d.radius, center: { x, y, z },
+        createdAt: w.time, armedAt: w.time + d.arm, triggerAt: w.time + d.lifetime,
       });
-      return;
-    }
-    case "leap": {
-      // Straight onto the target's spot (up to range), or ahead.
-      const t = lockTarget(w, f);
-      const reach = Math.min(t ? hdist(f.pos, t.pos) : d.range, d.range);
-      const to = { x: f.pos.x + f.facing.x * reach, y: 0, z: f.pos.z + f.facing.z * reach };
-      to.y = t && reach >= hdist(f.pos, t.pos) - 0.5 ? t.floor : groundHeight(w.arena, to.x, to.z);
-      const time = leapFlightTime(d.height, w.config.gravity);
-      f.action = { kind: "leap", slot, t: 0, time, height: d.height, from: { ...f.pos }, to };
-      f.vel = { x: 0, y: 0, z: 0 };
-      f.drift = { x: 0, y: 0, z: 0 };
-      w.zones.push({ owner: f.id, team: f.team, slot, radius: d.radius, createdAt: w.time, triggerAt: w.time + time, center: to, leap: true });
       return;
     }
     case "counter":
@@ -1065,6 +1068,21 @@ function fireSpecial(w: BrawlWorld, f: Fighter, slot: number, sp: Special): void
 const specialHit = (sp: Special, slot: number): HitSpec => ({
   damage: sp.damage, hitstun: sp.hitstun, knockback: sp.knockback, guardBreak: sp.guardBreak, by: "special", slot,
 });
+
+/** Whether a body stands in a blast on the ground at `c` (same level, not jumping over it). */
+const inBlast = (o: Fighter, c: V3, radius: number) =>
+  hdist(o.pos, c) <= radius + o.kit.stats.radius && o.pos.y > c.y - 0.6 && o.pos.y < c.y + BLAST_HEIGHT;
+
+/** Height above a blast's ground that a jump clears (a trap is jumped over, a burst too). */
+export const BLAST_HEIGHT = 1.2;
+
+/** A burst or a trap going off: every enemy in it is struck, and the props around. */
+function blast(w: BrawlWorld, owner: Fighter, slot: number, sp: Special, center: V3, radius: number, contact: boolean): void {
+  for (const o of w.fighters)
+    if (o.team !== owner.team && o.alive && inBlast(o, center, radius)) applyHit(w, owner, o, specialHit(sp, slot), center, contact);
+  for (const p of w.arena.props) if (p.alive && distToProp(p, center.x, center.z) <= radius) damageProp(w, owner, p, sp.damage);
+  w.events.push({ t: w.time, type: "blast", unit: owner.id, slot, center, radius });
+}
 
 /** A free fighter decides what to start this tick. */
 function startAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, heavyPressed: boolean, lightWanted: boolean): void {
@@ -1284,7 +1302,7 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
       if (!a.fired && a.t >= sp.startup) {
         a.fired = true;
         fireSpecial(w, f, a.slot, sp);
-        if (f.action?.kind === "rush" || f.action?.kind === "leap" || f.action?.kind === "counter") return;
+        if (f.action?.kind === "rush" || f.action?.kind === "dive" || f.action?.kind === "counter") return;
       }
       if (a.t >= sp.startup + sp.recovery) f.action = null;
       return;
@@ -1308,19 +1326,49 @@ function advanceAction(w: BrawlWorld, f: Fighter, cmd: Command | undefined, ligh
       if (a.remaining <= 1e-9) f.action = { kind: "special", slot: a.slot, t: sp.startup, fired: true };
       return;
     }
-    case "leap": {
-      // A fixed arc: the body follows it exactly (no gravity, no drift), and lands on time.
-      a.t += dt;
-      const k = Math.min(1, a.t / a.time);
-      f.pos.x = a.from.x + (a.to.x - a.from.x) * k;
-      f.pos.z = a.from.z + (a.to.z - a.from.z) * k;
-      f.pos.y = a.from.y + (a.to.y - a.from.y) * k + 4 * a.height * k * (1 - k);
-      f.vel = { x: 0, y: 0, z: 0 };
-      if (k >= 1) {
-        f.floor = a.to.y;
-        const sp = f.kit.specials[a.slot]!;
-        f.action = { kind: "special", slot: a.slot, t: sp.startup, fired: true };
+    case "dive": {
+      const sp = f.kit.specials[a.slot]!;
+      const d = sp.delivery;
+      if (d.type !== "dive") return;
+      const stepLen = Math.min(a.remaining, d.speed * dt);
+      a.remaining -= stepLen;
+      // Short steps, each checked against walls, ceilings and the ground (as in physics()).
+      const n = Math.max(1, Math.ceil(stepLen / (f.kit.stats.radius * 0.4)));
+      let stopped = false;
+      for (let i = 0; i < n && !stopped; i++) {
+        const from = { x: f.pos.x, z: f.pos.z };
+        const before = f.pos.y;
+        f.pos.x += (a.dir.x * stepLen) / n;
+        f.pos.z += (a.dir.z * stepLen) / n;
+        f.pos.y += (a.dir.y * stepLen) / n;
+        if (clampToArena(w, f, from)) stopped = true;
+        if (a.dir.y > 0) {
+          const ceiling = ceilingAbove(w, f, before + FIGHTER_HEIGHT);
+          if (f.pos.y + FIGHTER_HEIGHT > ceiling) {
+            f.pos.y = Math.max(before, ceiling - FIGHTER_HEIGHT);
+            stopped = true;
+          }
+        }
+        // Along the ground it follows steps as a walk does; going down, the ground ends it.
+        const support = supportHeight(w, f, Math.max(before, f.pos.y) + (a.dir.y >= 0 ? STEP_UP : 0));
+        if (f.pos.y <= support + 1e-6 || (a.dir.y >= 0 && before <= f.floor + 1e-6 && support >= f.pos.y - STEP_UP)) {
+          f.pos.y = support;
+          if (a.dir.y < 0) stopped = true;
+        }
+        f.floor = support;
       }
+      f.vel = { x: 0, y: 0, z: 0 };
+      const c3 = bodyCenter(f);
+      for (const o of w.fighters) {
+        if (o.team === f.team || !o.alive || !sphereTouches(c3, d.size, o)) continue;
+        if (applyHit(w, f, o, specialHit(sp, a.slot), f.pos, true)) {
+          stopped = true;
+          break;
+        }
+      }
+      // Struck by a counter meanwhile: the action is no longer the dive.
+      if (f.action !== a) return;
+      if (stopped || a.remaining <= 1e-9) f.action = { kind: "special", slot: a.slot, t: sp.startup, fired: true };
       return;
     }
     case "counter":
@@ -1619,18 +1667,14 @@ function stepProjectiles(w: BrawlWorld): void {
   });
 }
 
+/** Traps: armed, one goes off when an enemy steps in, or by itself at the end of its time. */
 function stepZones(w: BrawlWorld): void {
   w.zones = w.zones.filter((z) => {
-    if (w.time < z.triggerAt) return true;
+    if (w.time < z.armedAt) return true;
     const owner = w.fighters[z.owner]!;
-    const sp = owner.kit.specials[z.slot]!;
-    for (const o of w.fighters)
-      if (
-        o.team !== z.team && o.alive && hdist(o.pos, z.center) <= z.radius + o.kit.stats.radius &&
-        Math.abs(o.floor - z.center.y) < 0.6 && o.pos.y < o.floor + 1.5
-      )
-        applyHit(w, owner, o, specialHit(sp, z.slot), z.center);
-    for (const p of w.arena.props) if (p.alive && distToProp(p, z.center.x, z.center.z) <= z.radius) damageProp(w, owner, p, sp.damage);
+    const stepped = w.fighters.some((o) => o.team !== z.team && o.alive && !isInvulnerable(w, o) && inBlast(o, z.center, z.radius));
+    if (!stepped && w.time < z.triggerAt) return true;
+    blast(w, owner, z.slot, owner.kit.specials[z.slot]!, z.center, z.radius, false);
     return false;
   });
 }
@@ -1724,10 +1768,10 @@ export function step(w: BrawlWorld, commands: Command[]): void {
     // A buffered press is spent once it has been acted on.
     const k = f.action?.kind;
     if (k === "dodge") f.bufferedDodgeUntil = -Infinity;
-    if (k === "special" || k === "rush" || k === "leap" || k === "counter") f.bufferedSpecial = null;
+    if (k === "special" || k === "rush" || k === "dive" || k === "counter") f.bufferedSpecial = null;
     if (k === "jumpsquat" || (f.vel.y > 0 && !grounded(f))) f.bufferedJumpUntil = -Infinity;
-    // A leap carries the body along its own arc.
-    if (f.alive && f.action?.kind !== "leap") physics(w, f);
+    // A dive carries the body along its own line.
+    if (f.alive && f.action?.kind !== "dive") physics(w, f);
   }
   separate(w);
   stepProjectiles(w);
