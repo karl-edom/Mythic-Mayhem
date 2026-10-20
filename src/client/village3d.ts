@@ -5,8 +5,9 @@
 // lanterns, signs, blossom, water, petals). Nothing here touches the simulation.
 
 import * as THREE from "three";
-import { mergeGeometries, mergeVertices } from "three/examples/jsm/utils/BufferGeometryUtils.js";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import type { DecorPlacement, Prop } from "../brawl/arena.ts";
+import { bambooClump, barkMaterial, branch, foliageMaterial, pineTree, sakuraCrown, windTime } from "./foliage.ts";
 import { noOutline } from "./toon.ts";
 import { ROUGH_MEAN, ashlar, boards, cloth, floorTexture, kawara, paintedPaving, paving, photo, planks, plaster, tatami, timber, type FloorPaint, type Surface } from "./villageTex.ts";
 
@@ -71,6 +72,16 @@ function surf(s: Surface, color: THREE.ColorRepresentation, opts: Partial<THREE.
 }
 function plain(color: THREE.ColorRepresentation, opts: Partial<THREE.MeshStandardMaterialParameters> = {}): THREE.MeshStandardMaterial {
   return noOutline(new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0, ...opts }));
+}
+
+/**
+ * Foliage: casts shadows but does not receive them (thousands of cards would shade
+ * each other into a dark mass); the clump normals give it its volume.
+ */
+function leafMesh(geo: THREE.BufferGeometry, mat: THREE.Material): THREE.Mesh {
+  const m = mesh(geo, mat);
+  m.receiveShadow = false;
+  return m;
 }
 
 /** The geometry without an index (merging needs them all alike). */
@@ -330,18 +341,11 @@ export function buildVillageProp(p: Prop): THREE.Group {
       break;
     }
     case "sakura": {
-      // A gnarled trunk and a few branches reaching into the canopy (drawn as decor).
-      const bark = plain("#5a3f33", { roughness: 0.95 });
+      // A gnarled trunk with a flared foot; the limbs and the blossom are the canopy (decor).
+      const bark = barkMaterial("bark-sakura", "#5a3f33");
       const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0.15, 1.2, 0.05), new THREE.Vector3(-0.1, 2.3, 0.1), new THREE.Vector3(0.05, h + 0.4, 0)]);
-      g.add(mesh(new THREE.TubeGeometry(curve, 12, p.halfW * 0.8, 9), bark));
-      g.add(mesh(new THREE.CylinderGeometry(p.halfW * 0.85, p.halfW * 1.3, 0.5, 9).translate(0, 0.25, 0), bark));
-      for (let i = 0; i < 5; i++) {
-        const a = (i / 5) * Math.PI * 2 + r();
-        const from = new THREE.Vector3(0, 1.8 + r() * 1.2, 0);
-        const to = from.clone().add(new THREE.Vector3(Math.cos(a) * (1.4 + r()), 0.9 + r() * 0.8, Math.sin(a) * (1.4 + r())));
-        const br = new THREE.TubeGeometry(new THREE.CatmullRomCurve3([from, from.clone().lerp(to, 0.5).add(new THREE.Vector3(0, 0.3, 0)), to]), 6, 0.08, 6);
-        g.add(mesh(br, bark));
-      }
+      g.add(mesh(branch(curve, p.halfW * 0.85, p.halfW * 0.5, 1.2, 12, 10), bark));
+      g.add(mesh(branch(new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0.5, 0)]), p.halfW * 1.35, p.halfW * 0.85, 1.2, 2, 10), bark));
       break;
     }
     case "bamboo-fence": {
@@ -442,42 +446,6 @@ function chochin(scale = 1, color = "#d23a24"): THREE.Group {
   for (const s of [-1, 1]) g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.1 * scale, 0.12 * scale, 0.05 * scale, 12).translate(0, s * 0.27 * scale, 0), plain("#1a1414")));
   g.add(new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.005, 0.18 * scale, 6).translate(0, -0.38 * scale, 0), plain("#e8c040")));
   return g;
-}
-
-/** Blossom: clumps of pink, lighter at the top, a few darker cores. */
-function blossomGeometry(r: () => number, radius: number): THREE.BufferGeometry {
-  const parts: THREE.BufferGeometry[] = [];
-  const n = 40;
-  for (let i = 0; i < n; i++) {
-    const a = r() * Math.PI * 2;
-    const rr = radius * Math.sqrt(r());
-    const y = (r() - 0.35) * radius * 0.7 + (1 - rr / radius) * radius * 0.25;
-    const s = 0.45 + r() * 0.5;
-    const blob = mergeVertices(new THREE.IcosahedronGeometry(s, 2));
-    const p = blob.attributes.position!;
-    const sx = 0.85 + r() * 0.3;
-    const sy = 0.65 + r() * 0.25;
-    const sz = 0.85 + r() * 0.3;
-    for (let k = 0; k < p.count; k++) {
-      // A lumpy surface: clusters of flowers rather than a smooth ball.
-      const bump = 1 + 0.12 * Math.sin(p.getX(k) * 9 + i) * Math.sin(p.getY(k) * 8) * Math.sin(p.getZ(k) * 7);
-      p.setXYZ(k, p.getX(k) * sx * bump, p.getY(k) * sy * bump, p.getZ(k) * sz * bump);
-    }
-    blob.computeVertexNormals();
-    blob.translate(Math.cos(a) * rr, y, Math.sin(a) * rr);
-    const g = flat(blob);
-    const col = new Float32Array(g.attributes.position!.count * 3);
-    const c = new THREE.Color().setHSL(0.94 + r() * 0.03, 0.55 + r() * 0.25, 0.7 + r() * 0.08);
-    for (let k = 0; k < g.attributes.position!.count; k++) {
-      const up = g.attributes.position!.getY(k) - y;
-      const k2 = 0.84 + Math.max(-0.1, up / s) * 0.16;
-      col.set([c.r * k2, c.g * k2, c.b * k2], k * 3);
-    }
-    g.setAttribute("color", new THREE.BufferAttribute(col, 3));
-    g.deleteAttribute("uv");
-    parts.push(g);
-  }
-  return mergeGeometries(parts);
 }
 
 /** Rails of a balcony or a bridge: posts and two rails, `w` long along local x. */
@@ -674,42 +642,27 @@ export function buildDecor(d: DecorPlacement, i: number, ctx: DecorContext): THR
         break;
       }
       case "sakura-canopy": {
-        const geo = blossomGeometry(r, 2.4 * s);
-        g.add(mesh(geo, noOutline(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }))));
+        // Limbs rising out of the trunk (its top is 0.6 m below the canopy's centre),
+        // forking into twigs, each ending in a clump of blossom.
+        const tree = sakuraCrown(r, 2.4 * s, 0.7);
+        g.add(mesh(tree.wood, barkMaterial("bark-sakura", "#5a3f33")));
+        g.add(leafMesh(tree.leaves, foliageMaterial("blossom")));
+        ctx.animate.push((t) => (windTime.value = t));
         break;
       }
       case "pine": {
-        // A Japanese black pine: a leaning trunk, flat cloud-pruned layers.
-        const bark = plain("#4d3a2e", { roughness: 0.95 });
-        const lean = (r() - 0.5) * 0.5;
-        const curve = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0, 0), new THREE.Vector3(lean, 2, 0), new THREE.Vector3(lean * 2.4, 4.4 * s, 0.2)]);
-        g.add(mesh(new THREE.TubeGeometry(curve, 10, 0.22 * s, 8), bark));
-        const needle = plain("#2f5530", { roughness: 0.9 });
-        for (let k = 0; k < 5; k++) {
-          const pad = new THREE.SphereGeometry(1, 12, 8);
-          pad.scale((1.2 + r() * 0.8) * s, 0.42 * s, (1.0 + r() * 0.7) * s);
-          const t = 0.45 + k * 0.13;
-          const p = curve.getPoint(Math.min(1, t));
-          pad.translate(p.x + (r() - 0.5) * 1.6, p.y + 0.2, p.z + (r() - 0.5) * 1.4);
-          g.add(mesh(pad, needle));
-        }
+        // A Japanese black pine: a leaning trunk, flat cloud-pruned pads of needles.
+        const tree = pineTree(r, s);
+        g.add(mesh(tree.wood, barkMaterial("bark-pine", "#4d3a2e")));
+        g.add(leafMesh(tree.leaves, foliageMaterial("needles")));
+        ctx.animate.push((t) => (windTime.value = t));
         break;
       }
       case "bamboo": {
-        const parts: THREE.BufferGeometry[] = [];
-        const n = 6;
-        for (let k = 0; k < n; k++) {
-          const hh = (5 + r() * 3) * s;
-          const c = new THREE.CylinderGeometry(0.05, 0.06, hh, 7);
-          c.translate((r() - 0.5) * 1.2, hh / 2, (r() - 0.5) * 1.2);
-          c.rotateZ((r() - 0.5) * 0.08);
-          parts.push(flat(c));
-        }
-        g.add(mesh(mergeGeometries(parts), plain("#7a9a48", { roughness: 0.55 })));
-        const leaves = new THREE.SphereGeometry(1.1 * s, 10, 8);
-        leaves.scale(1, 1.6, 1);
-        leaves.translate(0, 5.6 * s, 0);
-        g.add(mesh(leaves, plain("#5f8a3c", { roughness: 0.9 })));
+        const tree = bambooClump(r, s);
+        g.add(mesh(tree.wood, plain("#8cae55", { roughness: 0.5 })));
+        g.add(leafMesh(tree.leaves, foliageMaterial("bamboo")));
+        ctx.animate.push((t) => (windTime.value = t));
         break;
       }
       case "nobori": {

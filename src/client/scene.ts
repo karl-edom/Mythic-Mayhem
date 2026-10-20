@@ -804,9 +804,14 @@ export class ArenaView {
           // Faint enough that the player seen through it does not look like a ghost.
           m.opacity = hides ? 0.12 : 1;
           m.depthWrite = !hides;
-          // The ink outline would stay opaque around a see-through prop: hide it too.
+          // The ink outline would stay opaque around a see-through prop: hide it too
+          // (and never turn on one the prop was built without: cut-out foliage would
+          // be inked as whole cards).
           const outline = m.userData.outlineParameters as { visible?: boolean } | undefined;
-          if (outline) outline.visible = !hides;
+          if (outline) {
+            m.userData.outlined ??= outline.visible !== false;
+            outline.visible = !hides && (m.userData.outlined as boolean);
+          }
         }
       });
     });

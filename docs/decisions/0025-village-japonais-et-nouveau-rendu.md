@@ -110,6 +110,42 @@ Ajout du 2026-10-20, après l'autorisation des ressources CC0 dans le dépôt.
 - Le chargement ajoute 6,6 Mo au premier lancement.
 - Tout est vérifié dans un navigateur sans carte graphique (SwiftShader). La cadence reste à mesurer sur une vraie machine : il y a jusqu'à 9 textures de plus sur le sol.
 
+## Arbres du village
+
+Ajout du 2026-10-20 (étape 1 de la piste A : de vrais arbres plutôt que des volumes lisses).
+
+**Ce qui change à l'écran.** Les cerisiers, les pins noirs et les bambous du village ne sont plus des boules et des plateaux lisses.
+
+- **Les cerisiers** : un tronc noueux en écorce photo, 5 à 6 branches maîtresses qui se divisent en rameaux, et environ 2 200 petites grappes de fleurs détourées par arbre. On voit le ciel à travers la couronne.
+- **Les pins noirs taillés** (*kuromatsu*) : un tronc penché et tordu en écorce photo, et des plateaux plats faits de touffes d'aiguilles.
+- **Les bambous** : des cannes cintrées avec leurs nœuds, des rameaux latéraux et des feuilles longues qui pendent.
+- **Le vent** : tout le feuillage ondule. Chaque carte bouge un peu différemment, et davantage aux extrémités.
+
+**Comment c'est fait.**
+
+- **Branches.** Ce sont des tubes qui s'affinent le long de courbes, avec l'écorce posée dans le sens du bois. L'écorce est une photo CC0 (Poly Haven : *Chinese Hackberry Bark* pour les cerisiers, *Pine Bark* pour les pins), avec une couleur unie en repli.
+- **Feuillage.** Ce sont des centaines de petites cartes découpées par test alpha (`foliage.ts`). Les images des cartes (grappes de fleurs à cinq pétales, touffes d'aiguilles, feuilles de bambou) sont **peintes en code**. Les atlas de feuilles CC0 d'ambientCG étaient prévus, mais leur serveur de téléchargement (`acg-download.struffelproductions.com`) est bloqué par le réseau de l'environnement. Ceux de Poly Haven n'offrent ni fleurs de cerisier ni aiguilles de pin utilisables.
+- **Volume.** Les normales des cartes pointent hors de leur grappe : la couronne s'éclaire comme un volume et non comme une pile de cartes plates.
+- **Ombres.** Le feuillage porte des ombres, mais n'en reçoit pas : des milliers de cartes s'assombrissaient les unes les autres jusqu'au noir.
+- **Coût.** Environ 28 000 cartes pour tout le village (56 000 triangles), en 3 matériaux de feuillage qui partagent le même shader.
+
+**Deux défauts corrigés au passage (contrat de rendu commun).**
+
+- **L'occlusion ambiante (GTAO)** dessinait les cartes découpées comme des carrés pleins, et assombrissait donc des carrés entiers. Les matériaux à test alpha sont maintenant exclus de ce passage, comme les objets transparents l'étaient déjà.
+- **Le contour encré** : la mise à jour des éléments du décor (`syncProps`) le rallumait sur tous les props, même ceux construits sans (`noOutline`, c'est-à-dire tout le village). Le feuillage des cerisiers, rattaché à leur tronc, était alors encré carte par carte, d'où une couronne violet sombre. Seuls les props construits avec un contour le retrouvent désormais. Sur les maisons, l'écart est presque invisible.
+
+| Nouveauté | Contre-jeu | Indicateur visuel |
+| --- | --- | --- |
+| Feuillage dense des cerisiers | Purement visuel : la collision reste celle du tronc. La caméra efface l'arbre s'il cache un combattant, comme avant. | Couronne détourée : on voit à travers. |
+
+**Poids : 0,9 Mo** de plus (deux écorces). Le total de `public/assets/textures/` passe à 7,5 Mo.
+
+**Limites.**
+
+- Les fleurs et les aiguilles sont peintes, pas photographiées. De très près, ça se voit.
+- Les arbres de l'arrière-plan (`landscape.ts`) sont encore les anciens volumes lisses : c'est l'étape 2.
+- La cadence reste à mesurer sur une vraie machine : le test alpha de milliers de cartes coûte surtout en remplissage de pixels.
+
 ## Limites connues
 
 - Le rendu est vérifié dans un navigateur sans carte graphique (SwiftShader). Sur une vraie machine, il faut mesurer la cadence ; la qualité adaptative est là pour ça.

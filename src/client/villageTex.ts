@@ -27,7 +27,7 @@ export const ROUGH_MEAN = 200 / 255;
  * read better: the roof tiles (kawara; no photo shows rows of round Japanese tiles)
  * and the tatami (the photo loses the dark cloth borders).
  */
-const PHOTOS: Record<string, number> = { plaster: 2, boards: 1.6, timber: 1, paving: 2, ashlar: 1.9, planks: 1.9, dirt: 2, gravel: 1.9 };
+const PHOTOS: Record<string, number> = { plaster: 2, boards: 1.6, timber: 1, paving: 2, ashlar: 1.9, planks: 1.9, dirt: 2, gravel: 1.9, "bark-sakura": 1.2, "bark-pine": 1 };
 const photos = new Map<string, Surface>();
 
 /**

@@ -4,7 +4,7 @@ Toutes les ressources de ce dossier sont dans le **domaine public (CC0 1.0)**. E
 
 ## Textures photo du village japonais
 
-Source : [Poly Haven](https://polyhaven.com), licence [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) (aucune attribution exigée ; on la donne quand même). Téléchargées le 2026-10-20.
+Source : [Poly Haven](https://polyhaven.com), licence [CC0 1.0](https://creativecommons.org/publicdomain/zero/1.0/) (aucune attribution exigée ; on la donne quand même). Téléchargées le 2026-10-20 (écorces : le même jour, pour les arbres du village).
 
 Chaque dossier contient trois images WebP : `diffuse.webp` (couleur, sRGB), `normal.webp` (relief, convention OpenGL, linéaire) et `rough.webp` (rugosité, linéaire, en niveaux de gris). La normale et la rugosité font 1024 px.
 
@@ -20,5 +20,7 @@ Chaque dossier contient trois images WebP : `diffuse.webp` (couleur, sRGB), `nor
 | `textures/planks/` | Planchers, marches en bois | [Hinoki Planks](https://polyhaven.com/a/hinoki_planks) | Charlotte Baglioni | CC0 1.0 | 1024 px ; diffuse calibrée | 62 Ko | 34 Ko | 4 Ko | 100 Ko |
 | `textures/dirt/` | Terre (sol) | [Dirt Floor](https://polyhaven.com/a/dirt_floor) | eye-candy.xyz | CC0 1.0 | 1024 px ; diffuse calibrée | 269 Ko | 412 Ko | 8 Ko | 689 Ko |
 | `textures/gravel/` | Gravier (sol du sanctuaire) | [Bicolour Gravel](https://polyhaven.com/a/bicolour_gravel) | Dimitrios Savva | CC0 1.0 | 1024 px ; diffuse calibrée | 499 Ko | 541 Ko | 241 Ko | 1282 Ko |
+| `textures/bark-sakura/` | Écorce des cerisiers | [Chinese Hackberry Bark](https://polyhaven.com/a/chinese_hackberry_bark) | Charlotte Baglioni | CC0 1.0 | 1024 px ; diffuse passée en niveaux de gris puis teintée | 96 Ko | 208 Ko | 2 Ko | 306 Ko |
+| `textures/bark-pine/` | Écorce des pins | [Pine Bark](https://polyhaven.com/a/pine_bark) | Dimitrios Savva | CC0 1.0 | 1024 px ; diffuse calibrée | 111 Ko | 397 Ko | 58 Ko | 566 Ko |
 
-**Poids total : 6,6 Mo** (6943140 octets).
+**Poids total : 7,5 Mo** (7835950 octets).

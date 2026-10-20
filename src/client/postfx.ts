@@ -94,14 +94,15 @@ export class PostFX {
     this.ao.blendIntensity = 0.85;
     this.ao.updateGtaoMaterial({ radius: 0.6, distanceExponent: 1.2, thickness: 1, scale: 1, samples: 12, distanceFallOff: 1 });
     // The occlusion pass draws the scene again (depth and normals) with every object
-    // opaque: glows, billboards and faded walls would cast dark shadows. It already
-    // leaves out points and lines; leave out see-through things and sprites too.
+    // opaque: glows, billboards and faded walls would cast dark shadows, and cut-out
+    // foliage cards would darken whole squares. It already leaves out points and lines;
+    // leave out see-through and cut-out things and sprites too.
     const pass = this.ao as unknown as { scene: THREE.Scene; _visibilityCache: THREE.Object3D[]; _overrideVisibility: () => void };
     pass._overrideVisibility = () => {
       pass.scene.traverse((o) => {
         if (!o.visible) return;
         const see = o instanceof THREE.Points || o instanceof THREE.Line || o instanceof THREE.Sprite ||
-          (o instanceof THREE.Mesh && ([o.material].flat() as THREE.Material[]).some((m) => m.transparent || m.blending !== THREE.NormalBlending));
+          (o instanceof THREE.Mesh && ([o.material].flat() as THREE.Material[]).some((m) => m.transparent || m.alphaTest > 0 || m.blending !== THREE.NormalBlending));
         if (see) {
           o.visible = false;
           pass._visibilityCache.push(o);
