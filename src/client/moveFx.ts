@@ -62,6 +62,105 @@ export function flames(count: number, size: number, spread: number): THREE.Group
   return g;
 }
 
+/**
+ * Short-lived glowing motes (embers, sparks, energy), each a sprite in world space,
+ * moved and faded by `update(dt)`.
+ */
+class Motes {
+  readonly group = new THREE.Group();
+  private list: { s: THREE.Sprite; v: THREE.Vector3; age: number; life: number; size: number; grow: number; gravity: number; alpha: number }[] = [];
+  private map: THREE.Texture;
+  constructor(map: THREE.Texture = glow) {
+    this.map = map;
+  }
+  emit(at: THREE.Vector3, v: THREE.Vector3, color: THREE.ColorRepresentation, size: number, life: number, opts: { grow?: number; gravity?: number; alpha?: number } = {}): void {
+    const s = new THREE.Sprite(additive(this.map, color, opts.alpha ?? 1));
+    s.position.copy(at);
+    this.group.add(s);
+    this.list.push({ s, v, age: 0, life, size, grow: opts.grow ?? 0, gravity: opts.gravity ?? 0, alpha: opts.alpha ?? 1 });
+  }
+  update(dt: number): void {
+    this.list = this.list.filter((m) => {
+      m.age += dt;
+      const k = m.age / m.life;
+      if (k >= 1) {
+        this.group.remove(m.s);
+        m.s.material.dispose();
+        return false;
+      }
+      m.v.y -= m.gravity * dt;
+      m.s.position.addScaledVector(m.v, dt);
+      m.s.scale.setScalar(m.size * (1 + m.grow * k) * (1 - k * 0.5));
+      m.s.material.opacity = m.alpha * (1 - k);
+      return true;
+    });
+  }
+  dispose(): void {
+    for (const m of this.list) m.s.material.dispose();
+    this.list = [];
+    this.group.clear();
+  }
+}
+
+/** A random unit vector. */
+const anyDir = () => new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+
+let streamTex: THREE.CanvasTexture | null = null;
+/** Streaks of energy along a beam (scrolled along it): bright, uneven, tileable. */
+function streamTexture(): THREE.CanvasTexture {
+  if (streamTex) return streamTex;
+  const c = document.createElement("canvas");
+  c.width = 64;
+  c.height = 256;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "rgba(255,255,255,0.35)";
+  g.fillRect(0, 0, 64, 256);
+  let seed = 3;
+  const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 40; i++) {
+    const x = r() * 64;
+    const y = r() * 256;
+    const len = 30 + r() * 90;
+    const grad = g.createLinearGradient(0, y, 0, y + len);
+    grad.addColorStop(0, "rgba(255,255,255,0)");
+    grad.addColorStop(0.5, "rgba(255,255,255,1)");
+    grad.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = grad;
+    const w = 2 + r() * 6;
+    for (const dy of [0, -256, 256]) g.fillRect(x - w / 2, y + dy, w, len);
+  }
+  streamTex = new THREE.CanvasTexture(c);
+  streamTex.colorSpace = THREE.SRGBColorSpace;
+  streamTex.wrapS = streamTex.wrapT = THREE.RepeatWrapping;
+  return streamTex;
+}
+
+let swirlTex: THREE.CanvasTexture | null = null;
+/** Diagonal streaks of wind (wrapped on a ball and spun, they swirl). */
+function swirlTexture(): THREE.CanvasTexture {
+  if (swirlTex) return swirlTex;
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 128;
+  const g = c.getContext("2d")!;
+  g.lineCap = "round";
+  for (let i = 0; i < 14; i++) {
+    const y0 = (i / 14) * 128;
+    g.strokeStyle = `rgba(255,255,255,${0.35 + (i % 3) * 0.25})`;
+    g.lineWidth = 2 + (i % 4);
+    for (const dx of [0, -256, 256]) {
+      g.beginPath();
+      g.moveTo(dx, y0);
+      g.bezierCurveTo(dx + 80, y0 + 30, dx + 170, y0 - 20, dx + 256, y0 + 40);
+      g.stroke();
+    }
+  }
+  swirlTex = new THREE.CanvasTexture(c);
+  swirlTex.colorSpace = THREE.SRGBColorSpace;
+  swirlTex.wrapS = swirlTex.wrapT = THREE.RepeatWrapping;
+  return swirlTex;
+}
+
 /** A projectile as drawn in flight; `update` each frame, `remove` when it is gone. */
 export interface ProjectileLook {
   group: THREE.Group;
@@ -87,31 +186,71 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
     case "beam": {
       // A column of light from the hands to the head of the beam: a white core in a
       // coloured sheath, and a big bright ball at the head.
+      // Energy streams along it (a scrolled texture), a soft outer glow, rings racing
+      // forward, sparks thrown off the head, a burning point at the hands.
       const body = new THREE.Group();
       const unit = new THREE.CylinderGeometry(1, 1, 1, 20, 1, true);
       unit.translate(0, 0.5, 0);
-      const sheath = new THREE.Mesh(unit, noOutline(new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })));
+      const stream = streamTexture().clone();
+      stream.needsUpdate = true;
+      const sheath = new THREE.Mesh(unit, noOutline(new THREE.MeshBasicMaterial({ color, map: stream, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })));
+      const outer = new THREE.Mesh(unit, noOutline(new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })));
       const core = new THREE.Mesh(unit, noOutline(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })));
-      body.add(sheath, core);
+      body.add(outer, sheath, core);
+      const rings: THREE.Mesh[] = [];
+      for (let i = 0; i < 3; i++) {
+        const ring = new THREE.Mesh(
+          new THREE.TorusGeometry(1, 0.08, 6, 28).rotateX(Math.PI / 2),
+          noOutline(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false })),
+        );
+        rings.push(ring);
+        body.add(ring);
+      }
       body.position.copy(origin);
       scene.add(body);
       extra.push(body);
+      const muzzle = new THREE.Sprite(additive(glow, color));
+      muzzle.position.copy(origin);
+      scene.add(muzzle);
+      extra.push(muzzle);
+      const motes = new Motes();
+      scene.add(motes.group);
+      extra.push(motes.group);
       const head = new THREE.Sprite(additive(glow, color));
       const headCore = new THREE.Sprite(additive(glow, 0xffffff));
       group.add(head, headCore);
       const last = origin.clone();
+      let prev = -1;
       return {
         group,
         update(t, pos) {
+          const dt = prev < 0 ? 0 : Math.min(0.05, Math.max(0, t - prev));
+          prev = t;
           last.copy(pos);
           const d = pos.clone().sub(origin);
           const len = Math.max(0.01, d.length());
-          body.quaternion.setFromUnitVectors(UP, d.normalize());
+          const dir = d.normalize();
+          body.quaternion.setFromUnitVectors(UP, dir);
           const r = size * (0.55 + 0.06 * Math.sin(t * 40));
           sheath.scale.set(r, len, r);
+          outer.scale.set(r * 1.9, len, r * 1.9);
           core.scale.set(r * 0.3, len, r * 0.3);
+          stream.repeat.set(2, len / 1.6);
+          stream.offset.y = -t * 6;
+          rings.forEach((ring, i) => {
+            const along = ((t * 2.2 + i / rings.length) % 1) * len;
+            ring.position.set(0, along, 0);
+            ring.scale.setScalar(r * (1.25 + 0.35 * Math.sin(t * 20 + i)));
+            (ring.material as THREE.MeshBasicMaterial).opacity = 0.6 * (1 - along / len);
+          });
+          muzzle.scale.setScalar(size * (2.4 + 0.4 * Math.sin(t * 45)));
           head.scale.setScalar(size * (2.1 + 0.25 * Math.sin(t * 33)));
           headCore.scale.setScalar(size * 0.8);
+          for (let i = 0; i < 3; i++) {
+            const v = anyDir().multiplyScalar(3 + Math.random() * 4).addScaledVector(dir, -2);
+            motes.emit(pos, v, i ? color : 0xffffff, size * 0.35, 0.25 + Math.random() * 0.2);
+          }
+          motes.update(dt);
         },
         // The column stays a moment after the impact, thinning out, so the beam reads.
         dispose() {
@@ -121,9 +260,12 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
           const fade = () => {
             const k = (performance.now() - start) / 350;
             if (k >= 1) {
+              motes.dispose();
               done();
               return;
             }
+            motes.update(1 / 60);
+            muzzle.scale.multiplyScalar(0.9);
             sheath.scale.x = sheath.scale.z = r0 * (1 - k);
             core.scale.x = core.scale.z = r0 * 0.45 * (1 - k * k);
             (sheath.material as THREE.MeshBasicMaterial).opacity = 0.8 * (1 - k);
@@ -138,13 +280,30 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
       const f = flames(7, size * 2, size * 0.7);
       const halo = new THREE.Sprite(additive(glow, 0xff6a1a, 0.35));
       halo.scale.setScalar(size * 3);
-      group.add(halo, f);
+      const heart = new THREE.Sprite(additive(glow, 0xfff0c0, 0.9));
+      heart.scale.setScalar(size * 1.1);
+      group.add(halo, f, heart);
+      // Embers shed behind it, falling and dying out.
+      const embers = new Motes();
+      scene.add(embers.group);
+      extra.push(embers.group);
+      let prev = -1;
       return {
         group,
-        update(t) {
+        update(t, pos, dir) {
+          const dt = prev < 0 ? 0 : Math.min(0.05, Math.max(0, t - prev));
+          prev = t;
           (f.userData.flicker as (t: number) => void)(t);
+          for (let i = 0; i < 2; i++) {
+            const v = anyDir().multiplyScalar(1.5).addScaledVector(dir, -1.5);
+            embers.emit(pos.clone().addScaledVector(anyDir(), size * 0.5), v, Math.random() < 0.5 ? 0xffb347 : 0xff5a1a, size * 0.35, 0.4 + Math.random() * 0.3, { gravity: 3 });
+          }
+          embers.update(dt);
         },
-        dispose: done,
+        dispose: () => {
+          embers.dispose();
+          done();
+        },
       };
     }
     case "bullet": {
@@ -191,6 +350,40 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
         dispose: done,
       };
     }
+    case undefined: {
+      // A ball of energy: a white core, its colour round it, a ring spinning on it,
+      // and motes left behind along its path.
+      const halo = new THREE.Sprite(additive(glow, color));
+      halo.scale.setScalar(size * 3.4);
+      const core = new THREE.Sprite(additive(glow, 0xffffff));
+      core.scale.setScalar(size * 0.9);
+      const ring = new THREE.Mesh(
+        new THREE.TorusGeometry(size * 0.9, size * 0.08, 6, 32),
+        noOutline(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false })),
+      );
+      group.add(halo, core, ring);
+      const trail = new Motes();
+      scene.add(trail.group);
+      extra.push(trail.group);
+      let prev = -1;
+      return {
+        group,
+        update(t, pos, dir) {
+          const dt = prev < 0 ? 0 : Math.min(0.05, Math.max(0, t - prev));
+          prev = t;
+          ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir.clone().normalize());
+          ring.rotateZ(t * 10);
+          ring.scale.setScalar(1 + 0.15 * Math.sin(t * 30));
+          halo.scale.setScalar(size * (3.2 + 0.4 * Math.sin(t * 25)));
+          for (let i = 0; i < 2; i++) trail.emit(pos.clone().addScaledVector(anyDir(), size * 0.4), anyDir().multiplyScalar(0.6), i ? color : 0xffffff, size * 1.1, 0.35, { grow: -0.5, alpha: 0.8 });
+          trail.update(dt);
+        },
+        dispose: () => {
+          trail.dispose();
+          done();
+        },
+      };
+    }
     default:
       scene.remove(group);
       return null;
@@ -208,14 +401,27 @@ export function handLook(look: NonNullable<MoveStyle["hand"]>, color: string, bl
   const obj = new THREE.Group();
   switch (look) {
     case "ki": {
+      // Gathering ki: motes drawn in from all round into a bright, throbbing ball.
       const halo = new THREE.Sprite(additive(glow, color, 0.75));
       const core = new THREE.Sprite(additive(glow, 0xffffff));
       obj.add(halo, core);
+      const motes: { s: THREE.Sprite; from: THREE.Vector3; phase: number }[] = [];
+      for (let i = 0; i < 10; i++) {
+        const s = new THREE.Sprite(additive(glow, i % 3 ? color : 0xffffff));
+        motes.push({ s, from: anyDir().multiplyScalar(0.35 + Math.random() * 0.2), phase: Math.random() });
+        obj.add(s);
+      }
       return {
         obj,
         update(t) {
           halo.scale.setScalar(0.38 + 0.06 * Math.sin(t * 25));
-          core.scale.setScalar(0.12);
+          core.scale.setScalar(0.12 + 0.02 * Math.sin(t * 40));
+          for (const m of motes) {
+            const k = (t * 2.5 + m.phase) % 1;
+            m.s.position.copy(m.from).multiplyScalar(1 - k);
+            m.s.scale.setScalar(0.05 + 0.04 * (1 - k));
+            m.s.material.opacity = Math.sin(Math.PI * k);
+          }
         },
       };
     }
@@ -223,12 +429,27 @@ export function handLook(look: NonNullable<MoveStyle["hand"]>, color: string, bl
       // A ball of spinning wind: a bright core, a translucent shell, rings whipping round.
       const shell = new THREE.Mesh(
         new THREE.SphereGeometry(0.13, 20, 14),
-        noOutline(new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false })),
+        noOutline(new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending, depthWrite: false })),
       );
-      const core = new THREE.Sprite(additive(glow, 0xffffff));
-      core.scale.setScalar(0.22);
-      const halo = new THREE.Sprite(additive(glow, color, 0.8));
+      const core = new THREE.Sprite(additive(glow, 0xffffff, 0.8));
+      core.scale.setScalar(0.14);
+      const halo = new THREE.Sprite(additive(glow, color, 0.4));
       obj.add(shell, core, halo);
+      // Two shells of streaking wind, spun on different axes: the ball churns.
+      const swirls = [0.15, 0.17].map((r, i) => {
+        const m = new THREE.Mesh(
+          new THREE.SphereGeometry(r, 24, 16),
+          noOutline(new THREE.MeshBasicMaterial({ map: swirlTexture(), color: i ? color : 0xffffff, transparent: true, opacity: i ? 0.9 : 0.45, blending: THREE.AdditiveBlending, depthWrite: false })),
+        );
+        obj.add(m);
+        return m;
+      });
+      const orbit = Array.from({ length: 8 }, (_, i) => {
+        const s = new THREE.Sprite(additive(glow, i % 2 ? color : 0xffffff));
+        s.scale.setScalar(0.04);
+        obj.add(s);
+        return { s, tilt: anyDir(), phase: Math.random() * 6 };
+      });
       const rings: THREE.Mesh[] = [];
       for (let i = 0; i < 3; i++) {
         const r = new THREE.Mesh(
@@ -246,6 +467,14 @@ export function handLook(look: NonNullable<MoveStyle["hand"]>, color: string, bl
             r.rotation.z = t * (22 + i * 5);
             r.rotation.x += 0.05 * (i + 1);
           });
+          swirls[0]!.rotation.set(t * 9, t * 23, 0);
+          swirls[1]!.rotation.set(-t * 14, 0, t * 19);
+          for (const o of orbit) {
+            const a = t * 18 + o.phase;
+            const side = new THREE.Vector3().crossVectors(o.tilt, UP).normalize();
+            const up2 = new THREE.Vector3().crossVectors(side, o.tilt);
+            o.s.position.copy(side).multiplyScalar(Math.cos(a) * 0.22).addScaledVector(up2, Math.sin(a) * 0.22);
+          }
           halo.scale.setScalar(0.5 + 0.06 * Math.sin(t * 30));
         },
       };
@@ -255,7 +484,7 @@ export function handLook(look: NonNullable<MoveStyle["hand"]>, color: string, bl
       const halo = new THREE.Sprite(additive(glow, color, 0.9));
       const core = new THREE.Sprite(additive(glow, 0xffffff));
       core.scale.setScalar(0.25);
-      const n = 10;
+      const n = 16;
       const pos = new Float32Array(n * 6 * 2 * 3);
       const geo = new THREE.BufferGeometry();
       geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
@@ -273,8 +502,10 @@ export function handLook(look: NonNullable<MoveStyle["hand"]>, color: string, bl
           for (let a = 0; a < n; a++) {
             const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
             let p = new THREE.Vector3();
+            // A few bolts reach far out, the others crackle close round the hand.
+            const step = a % 4 === 0 ? 0.11 : 0.05;
             for (let s = 0; s < 6; s++) {
-              const q = p.clone().addScaledVector(dir, 0.045).add(new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(0.05));
+              const q = p.clone().addScaledVector(dir, step).add(new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(step * 1.1));
               pos.set([p.x, p.y, p.z], k);
               pos.set([q.x, q.y, q.z], k + 3);
               k += 6;

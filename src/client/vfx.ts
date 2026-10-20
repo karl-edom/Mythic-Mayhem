@@ -333,7 +333,7 @@ export class Vfx {
   /** Flames bursting out and rising, then gone (fire, explosions). */
   flames(pos: THREE.Vector3, count: number, size: number): void {
     for (let i = 0; i < count; i++) {
-      const s = this.sprite(flameTexture(), 0xff9a50, 0.8);
+      const s = this.sprite(flameTexture(), 0xff9a50, 0.65);
       const a = Math.random() * Math.PI * 2;
       const v = new THREE.Vector3(Math.cos(a), 0.6 + Math.random(), Math.sin(a)).multiplyScalar(size * (1.5 + Math.random() * 2));
       s.position.copy(pos);
@@ -341,16 +341,25 @@ export class Vfx {
       this.add(s, 0.45 + Math.random() * 0.3, (k, dt) => {
         s.position.addScaledVector(v, dt * (1 - k * 0.6));
         s.scale.set(sz * (0.6 + k * 0.6), sz * (1 + k), 1);
-        s.material.opacity = 0.8 * (1 - k);
+        s.material.opacity = 0.65 * (1 - k);
       });
     }
-    const smoke = new THREE.Sprite(noOutline(new THREE.SpriteMaterial({ map: this.glow, color: 0x3a3330, transparent: true, opacity: 0.5, depthWrite: false })));
-    smoke.position.copy(pos);
-    this.add(smoke, 0.9, (k, dt) => {
-      smoke.position.y += dt * size * 1.5;
-      smoke.scale.setScalar(size * (1.5 + k * 2.5));
-      smoke.material.opacity = 0.5 * (1 - k);
-    });
+    // Dark smoke billowing up after it (drawn over, not added: it gives the fire its contrast).
+    for (let i = 0; i < 6; i++) {
+      const smoke = new THREE.Sprite(noOutline(new THREE.SpriteMaterial({ map: this.glow, color: i % 2 ? 0x3a3330 : 0x4d4540, transparent: true, opacity: 0, depthWrite: false })));
+      const v = new THREE.Vector3((Math.random() - 0.5) * 1.2, 1.2 + Math.random() * 1.2, (Math.random() - 0.5) * 1.2).multiplyScalar(size);
+      const at = pos.clone();
+      const delay = 0.08 + i * 0.03;
+      this.add(smoke, 1.3, (k, dt) => {
+        const age = k * 1.3 - delay;
+        if (age < 0) return;
+        at.addScaledVector(v, dt);
+        v.multiplyScalar(Math.exp(-dt * 1.5));
+        smoke.position.copy(at);
+        smoke.scale.setScalar(size * (1.0 + age * 2.4));
+        smoke.material.opacity = 0.75 * Math.min(1, age * 6) * (1 - k);
+      });
+    }
   }
 
   /** Launch trail: a puff left behind a fighter sent flying, bigger the faster it goes. */
