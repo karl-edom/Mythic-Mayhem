@@ -105,7 +105,9 @@ const SEE_THROUGH = new Set([
 ]);
 
 function rimLight(m: THREE.Material): void {
-  if (m.userData.rim || !("emissive" in m)) return;
+  // VRM toon materials (MToon) have their own rim light: a second one turns deep colours
+  // pink (Sonic's blue went violet).
+  if (m.userData.rim || !("emissive" in m) || (m as { isMToonMaterial?: boolean }).isMToonMaterial) return;
   m.userData.rim = true;
   // On top of any shader change the material already has (hair, for one).
   const prev = m.onBeforeCompile.bind(m);
