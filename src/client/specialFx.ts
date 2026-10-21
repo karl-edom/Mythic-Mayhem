@@ -23,6 +23,9 @@ export interface FxFighter {
   /** The fighter's drawn root (its transform) and model (copied for clones), if any. */
   root: THREE.Object3D;
   model: THREE.Object3D | null;
+  /** The head (eyes) and the right hand, world space: bones of the model, else guessed. */
+  head: THREE.Vector3;
+  hand: THREE.Vector3;
   /** Its second colour (light) and its main colour (strong): techniques are drawn in them. */
   color: THREE.Color;
   accent: THREE.Color;
@@ -37,10 +40,117 @@ const added = (map: THREE.Texture, color: THREE.ColorRepresentation, opacity = 1
 const painted = (map: THREE.Texture, color: THREE.ColorRepresentation, opacity = 1) =>
   new THREE.Sprite(noOutline(new THREE.SpriteMaterial({ map, color, transparent: true, opacity, depthWrite: false })));
 
+let tomoeTex: THREE.CanvasTexture | null = null;
+/** The Sharingan: a red iris ringed in black, the pupil, three commas round it. */
+function tomoeTexture(): THREE.CanvasTexture {
+  if (tomoeTex) return tomoeTex;
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const g = c.getContext("2d")!;
+  const grad = g.createRadialGradient(64, 64, 4, 64, 64, 56);
+  grad.addColorStop(0, "#ff4a3a");
+  grad.addColorStop(0.7, "#d0101a");
+  grad.addColorStop(1, "#7a0008");
+  g.fillStyle = grad;
+  g.beginPath();
+  g.arc(64, 64, 56, 0, Math.PI * 2);
+  g.fill();
+  g.lineWidth = 5;
+  g.strokeStyle = "#140406";
+  g.stroke();
+  // The faint ring the commas sit on.
+  g.lineWidth = 2;
+  g.strokeStyle = "rgba(20,4,6,0.6)";
+  g.beginPath();
+  g.arc(64, 64, 30, 0, Math.PI * 2);
+  g.stroke();
+  g.fillStyle = "#140406";
+  g.beginPath();
+  g.arc(64, 64, 11, 0, Math.PI * 2);
+  g.fill();
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2 - Math.PI / 2;
+    const x = 64 + Math.cos(a) * 30;
+    const y = 64 + Math.sin(a) * 30;
+    g.beginPath();
+    g.arc(x, y, 8, 0, Math.PI * 2);
+    g.fill();
+    // The comma's tail, curling along the ring.
+    g.beginPath();
+    g.moveTo(x + Math.cos(a + Math.PI / 2) * 8, y + Math.sin(a + Math.PI / 2) * 8);
+    g.quadraticCurveTo(x + Math.cos(a + 1.2) * 22, y + Math.sin(a + 1.2) * 22, 64 + Math.cos(a + 0.75) * 31, 64 + Math.sin(a + 0.75) * 31);
+    g.quadraticCurveTo(x + Math.cos(a + 0.6) * 12, y + Math.sin(a + 0.6) * 12, x + Math.cos(a - Math.PI / 2) * 8, y + Math.sin(a - Math.PI / 2) * 8);
+    g.fill();
+  }
+  tomoeTex = new THREE.CanvasTexture(c);
+  tomoeTex.colorSpace = THREE.SRGBColorSpace;
+  return tomoeTex;
+}
+
 export class SpecialFx {
   private vfx: Vfx;
+  /** Effects held on a fighter while its special lasts (glowing eyes), by its root. */
+  private held = new Map<THREE.Object3D, { fx: Fx; obj: THREE.Object3D; update(me: FxFighter, t: number): void }>();
+  private ticks = 0;
   constructor(vfx: Vfx) {
     this.vfx = vfx;
+  }
+
+  /**
+   * Every frame, for each fighter: `fx` is the effect of the special it is in (or none).
+   * Draws what lasts as long as the special does.
+   */
+  frame(fx: Fx | undefined, me: FxFighter, t: number): void {
+    this.ticks++;
+    let h = this.held.get(me.root);
+    if (h && h.fx !== fx) {
+      h.obj.parent?.remove(h.obj);
+      this.held.delete(me.root);
+      h = undefined;
+    }
+    if (fx === "chidori" && this.ticks % 2 === 0) {
+      // The hand drags lightning along the ground as he runs: bolts from the fist to the
+      // floor behind, and a scorch of light where they strike.
+      const side = new THREE.Vector3().crossVectors(me.facing, UP);
+      const ground = me.feet.clone().addScaledVector(me.facing, -rnd(0.2, 1.1)).addScaledVector(side, rnd(-0.35, 0.35));
+      this.bolt(me.hand, ground, me.color, 0.1, 7);
+      const scorch = added(glow, me.color, 0.7);
+      scorch.position.copy(ground).setY(ground.y + 0.05);
+      this.vfx.add(scorch, 0.3, (k) => {
+        scorch.scale.setScalar(0.5 * (1 - k * 0.5));
+        scorch.material.opacity = 0.7 * (1 - k);
+      });
+    }
+    if (fx === "sharingan" && !h && me.model) {
+      // Red eyes lit in the counter stance.
+      const obj = new THREE.Group();
+      // Painted red points (they hold against a pale wall), a red glow over them.
+      const eyes = [-1, 1].map(() => {
+        const e = painted(glow, 0xe00010, 1);
+        e.scale.setScalar(0.1);
+        e.renderOrder = 4;
+        obj.add(e);
+        return e;
+      });
+      const glare = added(glow, 0xff2020, 0.5);
+      glare.scale.setScalar(0.5);
+      obj.add(glare);
+      me.root.parent?.add(obj);
+      h = {
+        fx,
+        obj,
+        update: (m, tt) => {
+          const side = new THREE.Vector3().crossVectors(m.facing, UP);
+          // Eye height of a 1.8 m figure, scaled with the fighter's on-screen size.
+          const front = m.feet.clone().add(new THREE.Vector3(0, 1.6 * m.root.scale.y, 0)).addScaledVector(m.facing, 0.14);
+          eyes.forEach((e, i) => e.position.copy(front).addScaledVector(side, i ? 0.035 : -0.035));
+          glare.position.copy(front);
+          glare.material.opacity = 0.45 + 0.15 * Math.sin(tt * 9);
+        },
+      };
+      this.held.set(me.root, h);
+    }
+    h?.update(me, t);
   }
 
   /** The special starts. */
@@ -55,6 +165,7 @@ export class SpecialFx {
   /** The special lands on `target`. */
   hit(fx: Fx | undefined, me: FxFighter, target: FxFighter): void {
     if (fx === "crescent") this.crescent(target.center, me.facing, me.accent);
+    if (fx === "chidori") this.thunderclap(target.center, me.color);
     if (fx === "spiral") this.spiral(target.center, target.center.clone().sub(me.center).setY(0).normalize(), me.color);
     if (fx === "clones") {
       // Four clones round the target, all at it at once, gone in smoke.
@@ -70,6 +181,8 @@ export class SpecialFx {
   /** The counter triggers: `me` dodged `attacker`'s blow and reappears behind it. */
   counter(fx: Fx | undefined, me: FxFighter, attacker: FxFighter): void {
     if (fx === "whirl") this.whirl(me.center, me.accent);
+    // (From the simulation's position: the drawn model has not caught up with the jump yet.)
+    if (fx === "sharingan") this.tomoe(me.center.clone().add(new THREE.Vector3(0, 0.62, 0)).addScaledVector(me.facing, 0.35), attacker);
     if (fx === "substitution") {
       // Where the blow landed: a puff of smoke, and a log in his place.
       const spot = attacker.feet.clone().addScaledVector(attacker.facing, 1.1);
@@ -77,6 +190,88 @@ export class SpecialFx {
       this.log(spot, attacker.facing);
       this.smoke(me.center, 0.9);
     }
+  }
+
+  /**
+   * A jagged bolt of lightning from `a` to `b` (`kinks` segments, offsets up to 18 % of
+   * its length), redrawn twice during its short life so it flickers.
+   */
+  private bolt(a: THREE.Vector3, b: THREE.Vector3, color: THREE.ColorRepresentation, life: number, kinks: number): void {
+    const n = kinks;
+    const pos = new Float32Array((n + 1) * 3);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+    const len = a.distanceTo(b);
+    const shape = () => {
+      for (let i = 0; i <= n; i++) {
+        const p = a.clone().lerp(b, i / n);
+        if (i > 0 && i < n) p.add(new THREE.Vector3(rnd(-1, 1), rnd(-1, 1), rnd(-1, 1)).multiplyScalar(len * 0.18));
+        pos.set([p.x, p.y, p.z], i * 3);
+      }
+      geo.attributes.position!.needsUpdate = true;
+    };
+    shape();
+    const core = new THREE.Line(geo, noOutline(new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })));
+    const glowLine = new THREE.Line(geo, noOutline(new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.8, blending: THREE.AdditiveBlending, depthWrite: false })));
+    glowLine.scale.setScalar(1.002);
+    const g = new THREE.Group();
+    g.add(glowLine, core);
+    core.frustumCulled = glowLine.frustumCulled = false;
+    let flips = 0;
+    this.vfx.add(g, life, (k) => {
+      if (k > 0.5 && flips === 0) {
+        flips++;
+        shape();
+      }
+      (core.material as THREE.LineBasicMaterial).opacity = 1 - k;
+      (glowLine.material as THREE.LineBasicMaterial).opacity = 0.8 * (1 - k);
+    });
+  }
+
+  /**
+   * The Chidori strikes home: bolts burst out of the target all round, a blue-white
+   * flash, a ring of lightning on the ground.
+   */
+  private thunderclap(at: THREE.Vector3, color: THREE.Color): void {
+    for (let i = 0; i < 12; i++) {
+      const d = new THREE.Vector3(rnd(-1, 1), rnd(-0.5, 1), rnd(-1, 1)).normalize();
+      this.bolt(at, at.clone().addScaledVector(d, rnd(0.9, 2)), color, rnd(0.12, 0.22), 8);
+    }
+    const flash = added(glow, color, 0.9);
+    flash.position.copy(at);
+    this.vfx.add(flash, 0.25, (k) => {
+      flash.scale.setScalar(2.4 * (0.5 + k));
+      flash.material.opacity = 0.9 * (1 - k) * (1 - k);
+    });
+    const ground = at.clone().setY(Math.max(0, at.y - 0.9));
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      this.bolt(ground, ground.clone().add(new THREE.Vector3(Math.cos(a), 0.02, Math.sin(a)).multiplyScalar(rnd(1, 1.8))), color, 0.2, 6);
+    }
+    this.vfx.groundWave(ground, color, 2.6);
+    this.vfx.shake = Math.max(this.vfx.shake, 0.5);
+  }
+
+  /**
+   * The Sharingan sees the blow coming: its pattern (red iris, three black commas)
+   * flares before his face and spins, and the attacker is caught in a red glare.
+   */
+  private tomoe(at: THREE.Vector3, attacker: FxFighter): void {
+    const s = painted(tomoeTexture(), 0xffffff, 1);
+    s.position.copy(at);
+    s.renderOrder = 5;
+    this.vfx.add(s, 0.65, (k) => {
+      const pop = Math.min(1, k / 0.15);
+      s.scale.setScalar(0.2 + 0.6 * pop * (1 - 0.15 * k));
+      s.material.rotation = -k * 7;
+      s.material.opacity = k < 0.6 ? 1 : (1 - k) / 0.4;
+    });
+    const glare = added(glow, 0xff1a1a, 0.6);
+    glare.position.copy(attacker.center);
+    this.vfx.add(glare, 0.4, (k) => {
+      glare.scale.setScalar(2.2);
+      glare.material.opacity = 0.6 * (1 - k);
+    });
   }
 
   /**

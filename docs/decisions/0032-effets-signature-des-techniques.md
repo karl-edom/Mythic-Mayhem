@@ -16,6 +16,8 @@ Un effet peut se déclencher à trois moments : au lancement de la technique, qu
 | `substitution` | contre | un nuage de fumée blanche là où le coup est tombé, une bûche à sa place qui bascule puis s'efface ; une bouffée de fumée là où il réapparaît | Naruto, Kawarimi |
 | `clones` | lancement et touche | deux clones sortent de la fumée à ses côtés au départ ; à l'impact, quatre clones encerclent la cible puis disparaissent en fumée | Naruto, Uzumaki Rendan |
 | `crescent` | touche | un grand croissant de lame tombe à travers la cible, le sol éclate (débris, poussière) | Kenshin, Ryū Tsui Sen |
+| `chidori` | pendant la ruée et touche | la main traîne des éclairs qui labourent le sol, avec des brûlures de lumière ; à l'impact, des éclairs jaillissent de la cible dans toutes les directions et courent au sol | Sasuke, Chidori |
+| `sharingan` | posture et contre | yeux rouges allumés pendant la posture de contre ; au déclenchement, le motif aux trois virgules apparaît devant son visage et tourne, l'attaquant est pris dans une lueur rouge | Sasuke, Sharingan |
 | `whirl` | contre | un tour complet de lame à hauteur de taille, un anneau de lumière qui s'ouvre | Kenshin, Ryū Kan Sen |
 
 ## Pour tous
