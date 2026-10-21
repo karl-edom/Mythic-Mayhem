@@ -124,14 +124,16 @@ export class SpecialFx {
     if (fx === "sharingan" && !h && me.model) {
       // Red eyes lit in the counter stance.
       const obj = new THREE.Group();
+      // Painted red points (they hold against a pale wall), a red glow over them.
       const eyes = [-1, 1].map(() => {
-        const e = added(glow, 0xff1a1a, 1);
-        e.scale.setScalar(0.09);
+        const e = painted(glow, 0xe00010, 1);
+        e.scale.setScalar(0.1);
+        e.renderOrder = 4;
         obj.add(e);
         return e;
       });
-      const glare = added(glow, 0xff2020, 0.35);
-      glare.scale.setScalar(0.45);
+      const glare = added(glow, 0xff2020, 0.5);
+      glare.scale.setScalar(0.5);
       obj.add(glare);
       me.root.parent?.add(obj);
       h = {
@@ -139,10 +141,11 @@ export class SpecialFx {
         obj,
         update: (m, tt) => {
           const side = new THREE.Vector3().crossVectors(m.facing, UP);
-          const front = m.head.clone().addScaledVector(m.facing, 0.12);
+          // Eye height of a 1.8 m figure, scaled with the fighter's on-screen size.
+          const front = m.feet.clone().add(new THREE.Vector3(0, 1.6 * m.root.scale.y, 0)).addScaledVector(m.facing, 0.14);
           eyes.forEach((e, i) => e.position.copy(front).addScaledVector(side, i ? 0.035 : -0.035));
           glare.position.copy(front);
-          glare.material.opacity = 0.3 + 0.1 * Math.sin(tt * 9);
+          glare.material.opacity = 0.45 + 0.15 * Math.sin(tt * 9);
         },
       };
       this.held.set(me.root, h);
@@ -178,7 +181,8 @@ export class SpecialFx {
   /** The counter triggers: `me` dodged `attacker`'s blow and reappears behind it. */
   counter(fx: Fx | undefined, me: FxFighter, attacker: FxFighter): void {
     if (fx === "whirl") this.whirl(me.center, me.accent);
-    if (fx === "sharingan") this.tomoe(me.head.clone().addScaledVector(me.facing, 0.2), attacker);
+    // (From the simulation's position: the drawn model has not caught up with the jump yet.)
+    if (fx === "sharingan") this.tomoe(me.center.clone().add(new THREE.Vector3(0, 0.62, 0)).addScaledVector(me.facing, 0.35), attacker);
     if (fx === "substitution") {
       // Where the blow landed: a puff of smoke, and a log in his place.
       const spot = attacker.feet.clone().addScaledVector(attacker.facing, 1.1);
@@ -258,7 +262,7 @@ export class SpecialFx {
     s.renderOrder = 5;
     this.vfx.add(s, 0.65, (k) => {
       const pop = Math.min(1, k / 0.15);
-      s.scale.setScalar(0.25 + 1.0 * pop * (1 - 0.15 * k));
+      s.scale.setScalar(0.2 + 0.6 * pop * (1 - 0.15 * k));
       s.material.rotation = -k * 7;
       s.material.opacity = k < 0.6 ? 1 : (1 - k) / 0.4;
     });
