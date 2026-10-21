@@ -338,16 +338,20 @@ function instantiateAnime(lib: ModelLibrary, look: Look): ModelInstance {
   rig.traverse((o) => {
     if (!(o instanceof THREE.Mesh)) return;
     // Own copies (hit flashes, mask colour), reflections, a thin ink line for readability.
-    const m = (o.material as THREE.MeshStandardMaterial).clone();
-    m.envMap = proceduralEnv.map;
-    m.envMapIntensity = 0.8;
-    // Painted decals (a face) lie on the skin: no ink line round their edge.
-    if (m.transparent) noOutline(m);
-    else outlineOf(m, 0.0022);
-    o.material = m;
+    // A mesh may carry several materials (one per group of faces).
+    const own = (src: THREE.Material) => {
+      const m = src.clone() as THREE.MeshStandardMaterial;
+      m.envMap = proceduralEnv.map;
+      m.envMapIntensity = 0.8;
+      // Painted decals (a face) lie on the skin: no ink line round their edge.
+      if (m.transparent) noOutline(m);
+      else outlineOf(m, 0.0022);
+      materials.push(m);
+      return m;
+    };
+    o.material = Array.isArray(o.material) ? o.material.map(own) : own(o.material);
     o.castShadow = true;
     o.frustumCulled = false;
-    materials.push(m);
   });
   clenchFists(rig);
   t.dress?.(rig, look);

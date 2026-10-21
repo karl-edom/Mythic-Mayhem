@@ -58,6 +58,9 @@ interface FighterView {
   moveFx: { slot: number; hand: HandLook | null; weapon: THREE.Group | null; bare: boolean }[];
   /** The weapons held the rest of the time (hidden while a special's own weapon is out). */
   mainWeapons: THREE.Object3D[];
+  /** Shut in an egg (a capture special) until then, sim time; the egg, made when first needed. */
+  eggUntil: number;
+  egg: THREE.Mesh | null;
   /** look.burning: the main blade's fire (smouldering, blazing at each blow) and the embers round the body. */
   burning: { blade: ReturnType<typeof bladeFire> | null; embers: ReturnType<typeof emberAura> } | null;
   /** Afterimages left behind on a dash (rush, dive), made on the first one. */
@@ -398,7 +401,7 @@ export class ArenaView {
 
     this.scene.add(root);
     return {
-      root, model, animator, materials, shadow, ring, tag, guard, aura, stars, chargeOrb, energy, lowHp, trail,
+      root, model, animator, materials, shadow, ring, tag, guard, aura, stars, chargeOrb, energy, lowHp, trail, eggUntil: -Infinity, egg: null,
       flashUntil: 0, slashKey: "", wasAirborne: false, windupKey: "", specials: 0, frame: 0, moveFx, mainWeapons, burning, ghosts: null,
     };
   }
@@ -468,6 +471,12 @@ export class ArenaView {
             const id = w.fighters[e.source]!.kit.specials[e.slot]?.id;
             const n = id ? this.characters[e.source]!.moves[id]?.slashes ?? 0 : 0;
             if (n > 0) this.vfx.slashes(this.center(w.fighters[e.target]!), n, this.characters[e.source]!.colors.primary);
+          }
+          // A capture: the target is shut in an egg while the stun lasts.
+          if (e.slot !== undefined) {
+            const id = w.fighters[e.source]!.kit.specials[e.slot]?.id;
+            const a = w.fighters[e.target]!.action;
+            if (id && this.characters[e.source]!.moves[id]?.capture === "egg" && a?.kind === "hitstun") this.fighters[e.target]!.eggUntil = a.until;
           }
           const fx = this.fxOf(e.source, e.slot);
           if (fx) this.specialFx.hit(fx, this.fxFighter(e.source), this.fxFighter(e.target));
@@ -744,6 +753,14 @@ export class ArenaView {
       v.aura.rotation.y += dt * (counter ? 1 : 3);
     }
     v.stars.visible = a?.kind === "guardbroken";
+    // Shut in an egg: it wobbles while the fighter struggles, then breaks open.
+    const egged = f.alive && this.world.time < v.eggUntil && a?.kind === "hitstun";
+    if (egged && !v.egg) v.root.add((v.egg = eggShell()));
+    if (v.egg) {
+      if (v.egg.visible && !egged) this.vfx.debris(this.center(f), 0xf6f1e2, 12, 0.18, 0.4);
+      v.egg.visible = egged;
+      v.egg.rotation.z = 0.12 * Math.sin(t * 18);
+    }
     v.stars.rotation.y = t * 6;
 
     // A special under way: its own weapon in hand, its light in the fist or on the blade.
@@ -1269,3 +1286,29 @@ export class ArenaView {
   }
 }
 
+
+/** An egg big enough to hold a fighter: white, with green spots (Yoshi's). */
+function eggShell(): THREE.Mesh {
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 128;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#f7f3e6";
+  g.fillRect(0, 0, 256, 128);
+  g.fillStyle = "#3cbf4a";
+  for (const [x, y, r] of [[30, 40, 16], [90, 80, 20], [150, 30, 14], [200, 90, 18], [240, 45, 12], [60, 105, 11], [125, 110, 9]]) {
+    for (const dx of [0, -256, 256]) {
+      g.beginPath();
+      g.arc(x! + dx, y!, r!, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const egg = new THREE.Mesh(new THREE.SphereGeometry(0.62, 32, 20), new THREE.MeshToonMaterial({ map: tex }));
+  egg.scale.set(1, 1.45, 1);
+  egg.position.y = FIGHTER_HEIGHT * 0.5;
+  egg.castShadow = true;
+  egg.visible = false;
+  return egg;
+}

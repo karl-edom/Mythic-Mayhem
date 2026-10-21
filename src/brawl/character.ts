@@ -63,6 +63,8 @@ export interface MoveStyle {
   callout?: string;
   /** Number of blade slashes drawn across the target when the special hits (0–12). */
   slashes?: number;
+  /** The target is drawn shut inside this while the special's stun lasts (Yoshi's egg). */
+  capture?: "egg";
   /** Look of a projectile special: a ball of light (default) or one of the drawn objects. */
   projectile?: (typeof PROJECTILE_LOOKS)[number];
   /** Look of a trap or a burst: a magic circle (default), fire, an explosion, a vortex, or lightning. */
@@ -131,6 +133,7 @@ function parseMoves(v: unknown): Record<string, MoveStyle> {
       if (t) style.callout = t;
     }
     if (typeof o.slashes === "number" && Number.isFinite(o.slashes)) style.slashes = Math.max(0, Math.min(12, Math.round(o.slashes)));
+    if (o.capture === "egg") style.capture = "egg";
     if ((PROJECTILE_LOOKS as readonly unknown[]).includes(o.projectile)) style.projectile = o.projectile as MoveStyle["projectile"];
     if ((ZONE_LOOKS as readonly unknown[]).includes(o.zone)) style.zone = o.zone as MoveStyle["zone"];
     if ((HAND_LOOKS as readonly unknown[]).includes(o.hand)) style.hand = o.hand as MoveStyle["hand"];
