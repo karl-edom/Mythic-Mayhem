@@ -88,9 +88,9 @@ export function localRoom(name: string): Room {
     rebuild();
   };
   const timer = setInterval(() => {
-    // Gone quiet for 15 s: left (a closed tab sends no goodbye; a busy one can stay
-    // silent for seconds while it loads).
-    for (const [p, t] of seen) if (p !== me && Date.now() - t > 15000) (state.delete(p), seen.delete(p), rebuild());
+    // Gone quiet for 60 s: left (a closed tab sends no goodbye; a busy one can stay
+    // silent for a long while as it builds an arena, in a browser without a GPU).
+    for (const [p, t] of seen) if (p !== me && Date.now() - t > 60000) (state.delete(p), seen.delete(p), rebuild());
     if (dirty || Date.now() - (seen.get(me) ?? 0) > 1000) {
       dirty = false;
       seen.set(me, Date.now());

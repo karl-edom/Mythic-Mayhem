@@ -132,6 +132,8 @@ interface Online {
   movedAt: number;
   /** Why it stopped early (desync, someone gone), if it did. */
   stopped?: string;
+  /** Since when each missing player has been missing from the room (ms). */
+  missingSince: Map<number, number>;
 }
 let game: Game | null = null;
 /** Menu backdrop: the chosen fighters idling in the chosen arena. */
@@ -553,7 +555,7 @@ function onlineMatch(world: BrawlWorld, o: { start: OnlineStart; link: NetLink; 
   const bots = new Map(start.seats.flatMap((s, i) => (s.peer ? [] : [[i, createBot(rng(start.seed + i), BOT_LEVELS[start.level])] as const])));
   link.match = start.id;
   const lock = new Lockstep({ world, peers: humans, me: o.seat, delay: start.delay, bots, send: (m) => link.send(m) });
-  const net: Online = { lock, link, room: o.room, seat: o.seat, start, movedAt: performance.now() };
+  const net: Online = { lock, link, room: o.room, seat: o.seat, start, movedAt: performance.now(), missingSince: new Map() };
   // A message counts only from the page that holds that fighter.
   link.onMessage((m, peer) => {
     if (start.seats[m.from]?.peer === peer) lock.receive(m);
@@ -565,7 +567,12 @@ function onlineMatch(world: BrawlWorld, o: { start: OnlineStart; link: NetLink; 
 /** During an online match: who is late, who is gone. */
 function watchOnline(g: Game, n: Online, now: number): void {
   const here = new Set(n.room.peers().map((p) => p.peer));
-  const gone = n.start.seats.findIndex((s, i) => s.peer && i !== n.seat && !here.has(s.peer));
+  // Gone for good only after 5 s away (a reconnection takes a moment).
+  n.start.seats.forEach((s, i) => {
+    if (!s.peer || i === n.seat || here.has(s.peer)) n.missingSince.delete(i);
+    else if (!n.missingSince.has(i)) n.missingSince.set(i, now);
+  });
+  const gone = [...n.missingSince].find(([, since]) => now - since > 5000)?.[0] ?? -1;
   if (gone >= 0) n.stopped = `${g.names[gone]} (J${gone + 1}) a quitté la partie.`;
   else if (now - n.movedAt > 10000) n.stopped = "Connexion perdue : plus rien reçu depuis 10 s.";
   else if (now - n.movedAt > 1500) g.hud.flash("CONNEXION…", 0.3);
