@@ -389,8 +389,9 @@ export class SpecialFx {
     const light = color.clone().lerp(new THREE.Color(0xffffff), 0.5);
     const rings = [0, 0.5].map((tilt, i) => {
       const r = new THREE.Group();
-      const blur = this.sheet(new THREE.RingGeometry(0.55, 1, 64, 1, 0, Math.PI * 1.5), i ? light : color, 0.45);
-      const edge = this.sheet(new THREE.RingGeometry(0.95, 1, 64, 1, 0, Math.PI * 1.5), 0xffffff, 0.8);
+      // In the colour, not white: on the pale paving, added white only washes out.
+      const blur = this.sheet(new THREE.RingGeometry(0.55, 1, 64, 1, 0, Math.PI * 1.5), color, 0.5);
+      const edge = this.sheet(new THREE.RingGeometry(0.95, 1, 64, 1, 0, Math.PI * 1.5), i ? color : light, 0.6);
       blur.rotation.x = edge.rotation.x = -Math.PI / 2;
       r.add(blur, edge);
       r.rotation.z = tilt;
@@ -405,8 +406,8 @@ export class SpecialFx {
       rings.forEach(({ r, blur, edge }, i) => {
         r.scale.setScalar(radius * grow * (i ? 0.8 : 1));
         r.rotation.y = (i ? -1 : 1) * k * 22;
-        (blur.material as THREE.MeshBasicMaterial).opacity = 0.45 * fade;
-        (edge.material as THREE.MeshBasicMaterial).opacity = 0.8 * fade;
+        (blur.material as THREE.MeshBasicMaterial).opacity = 0.5 * fade;
+        (edge.material as THREE.MeshBasicMaterial).opacity = 0.6 * fade;
       });
     });
   }
