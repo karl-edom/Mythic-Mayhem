@@ -65,6 +65,8 @@ interface FighterView {
   burning: { blade: ReturnType<typeof bladeFire> | null; embers: ReturnType<typeof emberAura> } | null;
   /** Afterimages left behind on a dash (rush, dive), made on the first one. */
   ghosts: GhostTrail | null;
+  /** A signature effect was drawn on the last frame (so it is put away once over). */
+  heldFx: boolean;
 }
 
 /** Small coloured label (« J1 », « CPU3 ») drawn on a canvas, for the tag over a fighter's head. */
@@ -402,7 +404,7 @@ export class ArenaView {
     this.scene.add(root);
     return {
       root, model, animator, materials, shadow, ring, tag, guard, aura, stars, chargeOrb, energy, lowHp, trail, eggUntil: -Infinity, egg: null,
-      flashUntil: 0, slashKey: "", wasAirborne: false, windupKey: "", specials: 0, frame: 0, moveFx, mainWeapons, burning, ghosts: null,
+      flashUntil: 0, slashKey: "", wasAirborne: false, windupKey: "", specials: 0, frame: 0, moveFx, mainWeapons, burning, ghosts: null, heldFx: false,
     };
   }
 
@@ -440,7 +442,14 @@ export class ArenaView {
       model: v.model?.root ?? null,
       color: new THREE.Color(this.characters[i]!.colors.secondary),
       accent: new THREE.Color(this.characters[i]!.colors.primary),
+      head: this.bonePos(v, "head") ?? this.center(f).add(new THREE.Vector3(0, 0.7, 0)),
+      hand: this.bonePos(v, "rightHand") ?? this.center(f).addScaledVector(new THREE.Vector3(f.facing.x, -0.3, f.facing.z), 0.5),
     };
+  }
+
+  private bonePos(v: FighterView, name: string): THREE.Vector3 | null {
+    const b = v.model?.root.getObjectByName(name);
+    return b ? b.getWorldPosition(new THREE.Vector3()) : null;
   }
 
   /** The signature effect of a fighter's special, if its pack names one. */
@@ -766,6 +775,9 @@ export class ArenaView {
     // A special under way: its own weapon in hand, its light in the fist or on the blade.
     const slot = a && (a.kind === "special" || a.kind === "rush" || a.kind === "dive" || a.kind === "counter") ? a.slot : -1;
     let swapped = false;
+    const special = f.alive && slot >= 0 ? this.fxOf(f.id, slot) : undefined;
+    if (special || v.heldFx) this.specialFx.frame(special, this.fxFighter(f.id), t);
+    v.heldFx = special !== undefined;
     for (const fx of v.moveFx) {
       const on = fx.slot === slot && f.alive;
       if (fx.weapon) fx.weapon.visible = on;
