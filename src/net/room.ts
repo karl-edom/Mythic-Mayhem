@@ -88,8 +88,9 @@ export function localRoom(name: string): Room {
     rebuild();
   };
   const timer = setInterval(() => {
-    // Gone quiet for 3 s: left (a closed tab sends no goodbye).
-    for (const [p, t] of seen) if (p !== me && Date.now() - t > 3000) (state.delete(p), seen.delete(p), rebuild());
+    // Gone quiet for 15 s: left (a closed tab sends no goodbye; a busy one can stay
+    // silent for seconds while it loads).
+    for (const [p, t] of seen) if (p !== me && Date.now() - t > 15000) (state.delete(p), seen.delete(p), rebuild());
     if (dirty || Date.now() - (seen.get(me) ?? 0) > 1000) {
       dirty = false;
       seen.set(me, Date.now());
