@@ -93,58 +93,24 @@ export class PortraitStudio {
     root.rotation.y = -0.38;
     this.scene.add(root);
     root.updateMatrixWorld(true);
-    // Only what shows (hidden accessories would widen the frame).
-    const box = new THREE.Box3();
-    root.traverseVisible((o) => {
-      const m = o as THREE.Mesh;
-      if (!m.isMesh) return;
-      m.geometry.computeBoundingBox();
-      box.union(m.geometry.boundingBox!.clone().applyMatrix4(m.matrixWorld));
-    });
-    const h = box.max.y - Math.max(0, box.min.y);
-    const centre = box.getCenter(new THREE.Vector3());
     this.rim.color.set(character.colors.primary);
     const [w, ht] = SIZE[cut];
-    this.renderer.setSize(w, ht, false);
-    const cam = new THREE.PerspectiveCamera(cut === "bust" ? 24 : 26, w / ht, 0.05, 50);
-    if (cut === "bust") {
-      // Head and shoulders, framed on the head bone (whatever the model's proportions).
-      const headBone = ["head", "Head", "J_Bip_C_Head"].map((n) => root.getObjectByName(n)).find((o) => o);
-      const head = headBone ? headBone.getWorldPosition(new THREE.Vector3()) : new THREE.Vector3(centre.x, box.max.y - h * 0.12, centre.z);
-      // From the neck to the top of the head, times three: the head and the shoulders.
-      // The top of the head: the parts the head bone carries (models built in code),
-      // else the top of the figure (skinned avatars).
-      const headBox = new THREE.Box3();
-      headBone?.traverseVisible((o) => {
-        const m = o as THREE.Mesh;
-        if (m.isMesh && !(m as THREE.SkinnedMesh).isSkinnedMesh) {
-          m.geometry.computeBoundingBox();
-          headBox.union(m.geometry.boundingBox!.clone().applyMatrix4(m.matrixWorld));
-        }
-      });
-      // Skinned avatars: from the head bone to the top of the figure (big-headed ones,
-      // Sonic, Mario, a Pokémon, need a much wider frame than a human head).
-      const top = headBox.isEmpty() ? THREE.MathUtils.clamp(box.max.y - head.y, 0.14, 1.2) : headBox.max.y - head.y;
-      const span = Math.max(0.38, top * 1.95);
-      const at = head.clone().add(new THREE.Vector3(0, top * 0.42, 0));
-      const dist = span / 2 / Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
-      cam.position.set(at.x + dist * 0.18, at.y + 0.04, at.z + dist);
-      cam.lookAt(at);
-    } else {
-      // Whole figure, from slightly below (heroic), in a wide frame: it is cut to the
-      // silhouette afterwards (see fit).
-      this.renderer.setSize(w * 2, ht * 2, false);
-      const dist = 1.5 / Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
-      cam.position.set(dist * 0.15, 0.85, dist);
-      cam.lookAt(0, 1.0, 0);
-    }
+    // The whole figure, from slightly below (heroic), in a wide frame; it is then cut to
+    // its silhouette (see fit), or to the top of it for a bust (head and shoulders,
+    // whatever the proportions: a big-headed Sonic as well as a tall Batman).
+    const [fw, fh] = SIZE.full;
+    this.renderer.setSize(fw * 2, fh * 2, false);
+    const cam = new THREE.PerspectiveCamera(26, fw / fh, 0.05, 50);
+    const dist = 1.5 / Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
+    cam.position.set(dist * 0.15, 0.85, dist);
+    cam.lookAt(0, 1.0, 0);
     // A few frames, so the cloth and hair (moved as they are drawn) settle where they hang.
     for (let i = 0; i < 3; i++) {
       this.renderer.setRenderTarget(null);
       this.renderer.clear();
       this.outline.render(this.scene, cam);
     }
-    const url = cut === "full" ? fit(this.renderer.domElement, w, ht) : this.renderer.domElement.toDataURL("image/png");
+    const url = fit(this.renderer.domElement, w, ht, cut === "bust" ? 0.42 : 1);
     this.scene.remove(root);
     return url;
   }
@@ -155,7 +121,7 @@ export class PortraitStudio {
  * (the figure fills the height, feet at the bottom), and their densest column the
  * centre, so a staff or a sword held out does not push the body aside.
  */
-function fit(src: HTMLCanvasElement, w: number, h: number): string {
+function fit(src: HTMLCanvasElement, w: number, h: number, band = 1): string {
   const tmp = document.createElement("canvas");
   tmp.width = src.width;
   tmp.height = src.height;
@@ -185,8 +151,26 @@ function fit(src: HTMLCanvasElement, w: number, h: number): string {
     mass += k;
   });
   const cx = sum / mass;
-  const k = (h * 0.96) / (bottom - top + 1);
   const o = out.getContext("2d")!;
+  if (band < 1) {
+    // A bust: the top `band` of the figure, centred on the head (the densest columns
+    // of that top part), a little headroom above.
+    const span = (bottom - top + 1) * band;
+    let hs = 0;
+    let hm = 0;
+    for (let y = top; y < top + span; y++)
+      for (let x = 0; x < tmp.width; x++)
+        if (data[(y * tmp.width + x) * 4 + 3]! > 24) {
+          hs += x;
+          hm += 1;
+        }
+    const hx = hm ? hs / hm : cx;
+    const side = span * 1.08;
+    const k2 = h / side;
+    o.drawImage(tmp, 0, 0, tmp.width, tmp.height, w / 2 - hx * k2, (top - side * 0.06) * -k2, tmp.width * k2, tmp.height * k2);
+    return out.toDataURL("image/png");
+  }
+  const k = (h * 0.96) / (bottom - top + 1);
   o.drawImage(tmp, 0, 0, tmp.width, tmp.height, w / 2 - cx * k, h - (bottom + 1) * k, tmp.width * k, tmp.height * k);
   return out.toDataURL("image/png");
 }
