@@ -22,6 +22,7 @@ import { buildPizza } from "./pizza.ts";
 import { Vfx } from "./vfx.ts";
 import { PostFX } from "./postfx.ts";
 import { GhostTrail, SpecialFx, type FxFighter } from "./specialFx.ts";
+import { sound, type HeldSound } from "./audio.ts";
 import { bladeFire, chargeAura, eggTexture, emberAura, handLook, projectileLook, zoneFlames, zoneLightning, zoneVortex, type HandLook, type ProjectileLook } from "./moveFx.ts";
 
 interface FighterView {
@@ -67,6 +68,9 @@ interface FighterView {
   ghosts: GhostTrail | null;
   /** A signature effect was drawn on the last frame (so it is put away once over). */
   heldFx: boolean;
+  /** The hum of an energy charge, while it lasts; the last strike heard (one swing sound each). */
+  chargeSound: HeldSound | null;
+  swingKey: string;
 }
 
 /** Small coloured label (« J1 », « CPU3 ») drawn on a canvas, for the tag over a fighter's head. */
@@ -404,7 +408,7 @@ export class ArenaView {
     this.scene.add(root);
     return {
       root, model, animator, materials, shadow, ring, tag, guard, aura, stars, chargeOrb, energy, lowHp, trail, eggUntil: -Infinity, egg: null,
-      flashUntil: 0, slashKey: "", wasAirborne: false, windupKey: "", specials: 0, frame: 0, moveFx, mainWeapons, burning, ghosts: null, heldFx: false,
+      flashUntil: 0, slashKey: "", wasAirborne: false, windupKey: "", specials: 0, frame: 0, moveFx, mainWeapons, burning, ghosts: null, heldFx: false, chargeSound: null, swingKey: "",
     };
   }
 
@@ -428,6 +432,12 @@ export class ArenaView {
   /** Simulation speed wanted by the view: slow motion right after a K.-O. */
   timeScale(): number {
     return performance.now() < this.slowUntil ? 0.3 : 1;
+  }
+
+  /** Where a sound comes from, left (-1) to right (1), as seen by the camera. */
+  private pan(p: THREE.Vector3 | { x: number; y: number; z: number }): number {
+    const v = new THREE.Vector3(p.x, p.y, p.z).project(this.camera);
+    return THREE.MathUtils.clamp(v.x * 0.8, -1, 1);
   }
 
   /** A fighter as the signature effects see it. */
@@ -475,6 +485,14 @@ export class ArenaView {
           const big = !own && (e.knockdown || e.by === "heavy" || e.by === "special" || e.by === "throw");
           this.fighters[e.target]!.flashUntil = w.time + 0.1;
           this.vfx.hit(this.center(w.fighters[e.target]!), this.characters[e.source]!.colors.secondary, big);
+          {
+            const pan = this.pan(w.fighters[e.target]!.pos);
+            sound.hit(Math.min(1, e.amount / 160 + (e.knockdown ? 0.25 : 0)), pan);
+            const sfx = this.fxOf(e.source, e.slot);
+            if (sfx === "chidori") sound.zap(0.5, pan);
+            if (sfx === "spiral" || sfx === "whirl") sound.wind(pan);
+            if (sfx === "clones") sound.poof(pan);
+          }
           // A special that cuts many times at once: its slashes across the target.
           if (e.slot !== undefined) {
             const id = w.fighters[e.source]!.kit.specials[e.slot]?.id;
@@ -496,8 +514,10 @@ export class ArenaView {
         }
         case "block":
           this.vfx.block(this.center(w.fighters[e.target]!));
+          sound.block(this.pan(w.fighters[e.target]!.pos));
           break;
         case "guardBreak":
+          sound.guardBreak(this.pan(w.fighters[e.target]!.pos));
           this.fighters[e.target]!.flashUntil = w.time + 0.15;
           this.vfx.hit(this.center(w.fighters[e.target]!), 0xffd60a, true);
           this.freezeUntil = now + 140;
@@ -506,9 +526,11 @@ export class ArenaView {
           const t = w.fighters[e.target]!;
           this.vfx.hit(this.center(t), 0xffffff, true);
           this.vfx.dust(new THREE.Vector3(t.pos.x, t.floor, t.pos.z), 8);
+          sound.hit(0.8, this.pan(t.pos));
           break;
         }
         case "ko":
+          sound.ko(this.pan(w.fighters[e.target]!.pos));
           this.vfx.impact(this.center(w.fighters[e.target]!), this.characters[e.killer]?.colors.secondary ?? 0xffffff);
           this.vfx.hit(this.center(w.fighters[e.target]!), 0xffffff, true);
           this.vfx.ring(this.center(w.fighters[e.target]!), 0xff4d4d, 6);
@@ -520,6 +542,7 @@ export class ArenaView {
           // 2/3 and 1/3 of its hit points it cracks, loses parts, and leans.
           const p = w.arena.props[e.prop]!;
           this.propShake.set(e.prop, now + 160);
+          if (e.amount >= 20) sound.hit(0.25, this.pan({ x: p.x, y: p.base, z: p.z }));
           if (e.amount >= 20) this.vfx.dust(new THREE.Vector3(p.x, p.base + Math.min(p.height * 0.5, 1.5), p.z), 3);
           const chips = applyWear(this.props[p.id]!, p, damageStage(p));
           if (chips.length) this.vfx.chips(chips);
@@ -529,6 +552,7 @@ export class ArenaView {
           const p = w.arena.props[e.prop]!;
           const obj = this.props[p.id]!;
           obj.visible = false;
+          sound.crash(this.pan({ x: p.x, y: p.base, z: p.z }));
           // Big props burst into more and bigger pieces, spread over their volume.
           const vol = p.halfW * p.halfD * p.height * 4;
           this.vfx.debris(
@@ -543,6 +567,7 @@ export class ArenaView {
         case "dodge":
         case "lift": {
           const f = w.fighters[e.unit]!;
+          if (e.type === "dodge") sound.dash(this.pan(f.pos));
           this.vfx.dust(new THREE.Vector3(f.pos.x, f.floor, f.pos.z), 4);
           break;
         }
@@ -552,19 +577,32 @@ export class ArenaView {
           const c = this.center(f);
           this.vfx.ring(c, 0xffffff, w.config.breakerRadius * 2);
           this.vfx.groundWave(new THREE.Vector3(f.pos.x, f.floor, f.pos.z), 0xbfefff, w.config.breakerRadius * 1.6);
+          sound.wind(this.pan(f.pos));
+          sound.hit(0.5, this.pan(f.pos));
           this.fighters[e.unit]!.flashUntil = w.time + 0.12;
           this.freezeUntil = now + 90;
           break;
         }
-        case "special":
+        case "special": {
           this.fighters[e.unit]!.specials++;
+          // The wind-up chime, and the sound of what glows in the hand.
+          const pan = this.pan(w.fighters[e.unit]!.pos);
+          sound.windup(pan);
+          const id = w.fighters[e.unit]!.kit.specials[e.slot]?.id;
+          const style = id ? this.characters[e.unit]!.moves[id] : undefined;
+          if (style?.hand === "lightning") sound.zap(0.6, pan);
+          if (style?.hand === "fire") sound.fire(pan);
+          if (style?.fx === "clones") sound.poof(pan);
           this.specialFx.start(this.fxOf(e.unit, e.slot), this.fxFighter(e.unit));
           break;
+        }
         case "counter": {
           // Counter: a flash where the defender reappears, behind the attacker.
           const d = w.fighters[e.unit]!;
           const fx = this.fxOf(e.unit, e.slot);
           if (fx) this.specialFx.counter(fx, this.fxFighter(e.unit), this.fxFighter(e.attacker));
+          sound.bell(this.pan(d.pos));
+          if (fx === "substitution") sound.poof(this.pan(d.pos));
           // (A technique with its own effect does without the generic flash.)
           else this.vfx.glint(this.center(d), 0xffffff, 2.2);
           this.vfx.ring(this.center(d), this.characters[e.unit]!.colors.primary, 2.4);
@@ -576,6 +614,7 @@ export class ArenaView {
           const d = w.fighters[e.unit]!;
           this.vfx.hit(this.center(d), 0xbff6ff, true);
           this.vfx.ring(this.center(d), 0xffffff, 2.6);
+          sound.bell(this.pan(d.pos));
           this.fighters[e.unit]!.flashUntil = w.time + 0.15;
           this.freezeUntil = now + 160;
           break;
@@ -586,18 +625,27 @@ export class ArenaView {
           const at = new THREE.Vector3(f.pos.x, f.floor + 0.05, f.pos.z);
           this.vfx.groundWave(at, 0xffffff, 1.8);
           this.vfx.dust(at, 6);
+          sound.dash(this.pan(at));
           break;
         }
         case "airJump": {
           // Double jump: a little ring of air under the feet.
           const f = w.fighters[e.unit]!;
           this.vfx.ring(new THREE.Vector3(f.pos.x, f.pos.y + 0.1, f.pos.z), 0xffffff, 1.4);
+          sound.jump(this.pan(f.pos));
           break;
         }
         case "blast": {
           // A burst, or a trap going off: a shockwave on the ground the size of the blast.
           const { color, look } = this.moveStyle(e.unit, e.slot);
           const at = new THREE.Vector3(e.center.x, e.center.y + 0.05, e.center.z);
+          {
+            const pan = this.pan(at);
+            const bfx = this.fxOf(e.unit, e.slot);
+            if (look === "lightning") sound.zap(0.5, pan);
+            else if (bfx === "windmill" || bfx === "flurry" || look === "vortex") sound.wind(pan);
+            else if (look !== "fire" && look !== "blast") sound.explosion(0.35, pan);
+          }
           if (look === "fire" || look === "blast") this.explosion(at.clone().setY(at.y + 0.6), e.radius * 0.6);
           if (look === "lightning") this.vfx.bolt(at, color);
           this.vfx.groundWave(at, color, e.radius * 2);
@@ -607,7 +655,11 @@ export class ArenaView {
           this.vfx.shake = Math.max(this.vfx.shake, 0.12 * e.radius);
           break;
         }
+        case "end":
+          sound.fanfare();
+          break;
         case "respawn":
+          sound.energy(this.pan(w.fighters[e.unit]!.pos));
           this.vfx.groundWave(new THREE.Vector3(w.fighters[e.unit]!.pos.x, 0, w.fighters[e.unit]!.pos.z), 0x9fe6ff, 2.5);
           break;
         default:
@@ -855,6 +907,19 @@ export class ArenaView {
       this.vfx.slash(origin, Math.atan2(f.facing.x, f.facing.z), tilt, strike.reach + strike.size * (a?.kind === "heavy" ? 1.3 : 1), color);
     }
 
+    // A swing heard once per strike, when its hitbox goes live: thinner for a blade.
+    if (strike && at >= strike.startup && v.swingKey !== key && f.alive) {
+      v.swingKey = key;
+      sound.swing(a?.kind === "heavy" || (a?.kind === "aerial" && a.strong) ? 1 : 0.35, !!v.model?.trail, this.pan(f.pos));
+    }
+    // The hum of an energy charge, as long as it lasts.
+    const charging = a?.kind === "charge" && f.alive;
+    if (charging && !v.chargeSound) v.chargeSound = sound.charge(this.pan(f.pos));
+    if (!charging && v.chargeSound) {
+      v.chargeSound.stop();
+      v.chargeSound = null;
+    }
+
     // Motion cues: speed lines when dashing, dust when landing.
     // Afterimages of the special dashes, in the character's colour.
     if ((a?.kind === "rush" || a?.kind === "dive") && v.model && f.alive) {
@@ -868,7 +933,11 @@ export class ArenaView {
       this.vfx.speedLines(this.center(f), dir, ch.colors.secondary);
     }
     const airborne = f.pos.y > f.floor + 0.05;
-    if (v.wasAirborne && !airborne && f.alive) this.vfx.dust(new THREE.Vector3(f.pos.x, f.floor, f.pos.z), 4);
+    if (v.wasAirborne && !airborne && f.alive) {
+      this.vfx.dust(new THREE.Vector3(f.pos.x, f.floor, f.pos.z), 4);
+      sound.land(this.pan(f.pos));
+    }
+    if (!v.wasAirborne && airborne && f.alive && f.vel.y > 2) sound.jump(this.pan(f.pos));
     v.wasAirborne = airborne;
   }
 
@@ -994,6 +1063,17 @@ export class ArenaView {
         const hand = this.fighters[p.owner]?.model?.root.getObjectByName("rightHand");
         const origin = hand ? hand.getWorldPosition(new THREE.Vector3()) : this.center(owner).add(new THREE.Vector3(owner.facing.x, 0, owner.facing.z).multiplyScalar(0.5));
         const look = projectileLook(this.scene, style?.projectile, color, p.size, origin);
+        {
+          const pan = this.pan(origin);
+          const kind = style?.projectile;
+          if (kind === "beam") sound.beam(pan);
+          else if (kind === "fire") sound.fire(pan);
+          else if (kind === "bullet") sound.shot(pan);
+          else if (kind === "rocket") sound.rocket(pan);
+          else if (kind === "tornado") sound.wind(pan);
+          else if (kind === undefined || kind === "disc") sound.energy(pan);
+          else sound.throwSound(pan);
+        }
         if (look) {
           g = look.group;
           this.looks.set(p, { look, kind: style?.projectile ?? "ball", color });
@@ -1059,6 +1139,7 @@ export class ArenaView {
 
   /** A burst of fire and smoke: rockets, fireballs, exploding areas. */
   private explosion(at: THREE.Vector3, size: number): void {
+    sound.explosion(size, this.pan(at));
     this.vfx.hit(at, 0xff7a1a, true);
     this.vfx.ring(at, 0xffb347, 2.4 * size);
     this.vfx.flames(at, Math.round(8 * size), size);

@@ -13,6 +13,7 @@ import { loadPhotoTextures } from "./villageTex.ts";
 import { PortraitStudio, type PortraitCut } from "./portraits.ts";
 import { loadArenaDefs, loadRoster, propCatalog, type RosterEntry } from "./roster.ts";
 import { AXES, rateProfiles, type Axis } from "../brawl/profile.ts";
+import { sound } from "./audio.ts";
 import type { Archetype, SpecialDelivery } from "../brawl/kit.ts";
 import { ArenaView, createRenderer } from "./scene.ts";
 import { Lockstep } from "../net/lockstep.ts";
@@ -28,6 +29,10 @@ const input = new Input(window);
 const roster = loadRoster();
 // The owner's own fighters (local packs) come first, and the player starts on one.
 const playable = roster.filter((r) => r.kit && !r.character.retired).sort((a, b) => Number(b.local) - Number(a.local));
+/** The sound engine starts on the first key or click (browsers allow sound only after one). */
+for (const ev of ["pointerdown", "keydown"] as const) window.addEventListener(ev, () => sound.unlock(), { capture: true });
+const VOLUMES = [0, 0.4, 0.8];
+
 /** Ratings 1–5 of the playable fighters, ranked against each other (select screen). */
 const ratings = rateProfiles(playable.map((r) => r.kit!));
 const arenas = loadArenaDefs();
@@ -224,9 +229,13 @@ function fighterCard(r: RosterEntry, parent: HTMLElement, index: number): void {
     t.style.background = colorOf(i);
   }
   // Pointing at a fighter shows its sheet in the panel of the player who is choosing.
-  card.addEventListener("mouseenter", () => previewSheet(r));
+  card.addEventListener("mouseenter", () => {
+    previewSheet(r);
+    sound.tick();
+  });
   card.addEventListener("mouseleave", () => previewSheet(null));
   card.addEventListener("click", () => {
+    sound.confirm();
     choice.slots[choice.active]!.entry = r;
     choice.active = (choice.active + 1) % choice.count;
     buildShowcase();
@@ -426,6 +435,10 @@ function showMenu(): void {
   chips(options, "Victoire", [["stock", "3 vies"], ["kills", "K.-O. au temps"]] as [Rule, string][], choice.rule, (v) => (choice.rule = v));
   chips(options, "Arène", arenas.map((a) => [a.id, a.name] as [string, string]), choice.arena?.id ?? "", (v) => (choice.arena = arenas.find((a) => a.id === v)), true);
   chips(options, "Bots", (Object.keys(BOT_LEVELS) as Level[]).map((l) => [l, LEVEL_NAMES[l]] as [Level, string]), choice.level, (v) => (choice.level = v));
+  chips(options, "Son", [[0, "Coupé"], [0.4, "Doux"], [0.8, "Fort"]] as [number, string][], VOLUMES.reduce((a, b) => (Math.abs(b - sound.volume) < Math.abs(a - sound.volume) ? b : a)), (v) => {
+    sound.volume = v;
+    sound.confirm();
+  });
   const start = h("button", "start", options);
   h("span", "start-kicker", start, "Prêts ?");
   h("span", "start-label", start, "COMBATTRE !");
@@ -539,6 +552,7 @@ function launch(online?: { start: OnlineStart; link: NetLink; room: Room; seat: 
   if (import.meta.env.DEV) (window as unknown as { __game: Game }).__game = game;
   input.clear();
   hud.flash("COMBATTEZ !", 1.2);
+  sound.gong();
 }
 
 function showEnd(g: Game): void {
@@ -765,6 +779,7 @@ function drawCursors(): void {
 }
 
 function padSelect(pad: number, button: MenuButton): boolean {
+  sound.unlock();
   const ctrl = ctrlOf(pad);
   let mine = activeSlots().findIndex((sl) => sl.ctrl === ctrl);
   let c = cursors.get(pad);
