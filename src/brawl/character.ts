@@ -95,7 +95,7 @@ export const PROJECTILE_LOOKS = ["pizza", "beam", "fire", "bullet", "rocket", "t
 export const ZONE_LOOKS = ["fire", "blast", "vortex", "lightning"] as const;
 export const HAND_LOOKS = ["ki", "orb", "lightning", "fire"] as const;
 /** Signature effects of the specials, by name: display only (see client/specialFx.ts). */
-export const SPECIAL_FX = ["spiral", "substitution", "clones"] as const;
+export const SPECIAL_FX = ["spiral", "substitution", "clones", "crescent", "whirl"] as const;
 
 const COLOR = /^#[0-9a-fA-F]{6}$/;
 

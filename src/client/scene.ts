@@ -21,7 +21,7 @@ import { WeaponTrail } from "./trail.ts";
 import { buildPizza } from "./pizza.ts";
 import { Vfx } from "./vfx.ts";
 import { PostFX } from "./postfx.ts";
-import { SpecialFx, type FxFighter } from "./specialFx.ts";
+import { GhostTrail, SpecialFx, type FxFighter } from "./specialFx.ts";
 import { bladeFire, chargeAura, emberAura, handLook, projectileLook, zoneFlames, zoneLightning, zoneVortex, type HandLook, type ProjectileLook } from "./moveFx.ts";
 
 interface FighterView {
@@ -58,6 +58,8 @@ interface FighterView {
   mainWeapons: THREE.Object3D[];
   /** look.burning: the main blade's fire (smouldering, blazing at each blow) and the embers round the body. */
   burning: { blade: ReturnType<typeof bladeFire> | null; embers: ReturnType<typeof emberAura> } | null;
+  /** Afterimages left behind on a dash (rush, dive), made on the first one. */
+  ghosts: GhostTrail | null;
 }
 
 /** Small coloured label (« J1 », « CPU3 ») drawn on a canvas, for the tag over a fighter's head. */
@@ -395,7 +397,7 @@ export class ArenaView {
     this.scene.add(root);
     return {
       root, model, animator, materials, shadow, ring, tag, guard, aura, stars, chargeOrb, energy, lowHp, trail,
-      flashUntil: 0, slashKey: "", wasAirborne: false, windupKey: "", frame: 0, moveFx, mainWeapons, burning,
+      flashUntil: 0, slashKey: "", wasAirborne: false, windupKey: "", frame: 0, moveFx, mainWeapons, burning, ghosts: null,
     };
   }
 
@@ -815,6 +817,12 @@ export class ArenaView {
     }
 
     // Motion cues: speed lines when dashing, dust when landing.
+    // Afterimages of the special dashes, in the character's colour.
+    if ((a?.kind === "rush" || a?.kind === "dive") && v.model && f.alive) {
+      v.ghosts ??= new GhostTrail(this.scene, v.model.root, ch.colors.secondary);
+      if (v.frame % 3 === 0) v.ghosts.drop();
+    }
+    v.ghosts?.update(dt);
     const fast = a?.kind === "rush" || a?.kind === "dodge";
     if (fast && this.frame % 2 === 0) {
       const dir = a?.kind === "dodge" ? new THREE.Vector3(a.dir.x, 0, a.dir.z) : new THREE.Vector3(f.facing.x, 0, f.facing.z);

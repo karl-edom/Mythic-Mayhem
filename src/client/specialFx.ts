@@ -52,6 +52,7 @@ export class SpecialFx {
 
   /** The special lands on `target`. */
   hit(fx: Fx | undefined, me: FxFighter, target: FxFighter): void {
+    if (fx === "crescent") this.crescent(target.center, me.facing, me.color);
     if (fx === "spiral") this.spiral(target.center, target.center.clone().sub(me.center).setY(0).normalize(), me.color);
     if (fx === "clones") {
       // Four clones round the target, all at it at once, gone in smoke.
@@ -66,6 +67,7 @@ export class SpecialFx {
 
   /** The counter triggers: `me` dodged `attacker`'s blow and reappears behind it. */
   counter(fx: Fx | undefined, me: FxFighter, attacker: FxFighter): void {
+    if (fx === "whirl") this.whirl(me.center, me.color);
     if (fx === "substitution") {
       // Where the blow landed: a puff of smoke, and a log in his place.
       const spot = attacker.feet.clone().addScaledVector(attacker.facing, 1.1);
@@ -73,6 +75,82 @@ export class SpecialFx {
       this.log(spot, attacker.facing);
       this.smoke(me.center, 0.9);
     }
+  }
+
+  /**
+   * A blade falling from the sky: a tall crescent of light cut top to bottom through the
+   * target (white edge, a tail of the fighter's colour), then the ground splits under it.
+   */
+  private crescent(at: THREE.Vector3, facing: THREE.Vector3, color: THREE.Color): void {
+    const g = new THREE.Group();
+    g.position.copy(at);
+    // The arc stands in the plane of the blow (facing and up), seen side on by the camera.
+    g.rotation.y = Math.atan2(facing.x, facing.z) - Math.PI / 2;
+    const arc = (r: number, w: number, c: THREE.ColorRepresentation, o: number) => {
+      const m = new THREE.Mesh(
+        new THREE.RingGeometry(r - w, r, 48, 1, -Math.PI * 0.15, Math.PI * 0.75),
+        noOutline(new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false })),
+      );
+      g.add(m);
+      return m;
+    };
+    const tail = arc(1.5, 0.45, color, 0.55);
+    const edge = arc(1.5, 0.09, 0xffffff, 1);
+    this.vfx.add(g, 0.32, (k) => {
+      // Sweeps down (the arc turns), thins out and fades.
+      g.rotation.z = -1.2 * Math.min(1, k / 0.35);
+      const fade = k < 0.35 ? 1 : (1 - k) / 0.65;
+      (tail.material as THREE.MeshBasicMaterial).opacity = 0.55 * fade;
+      (edge.material as THREE.MeshBasicMaterial).opacity = fade;
+      edge.scale.setScalar(1 + 0.08 * k);
+    });
+    const ground = at.clone().setY(Math.max(0, at.y - 0.9));
+    this.vfx.groundWave(ground, 0xffffff, 3);
+    this.vfx.debris(ground, 0x9a8f80, 12, 0.18, 0.6);
+    this.vfx.dust(ground, 8);
+    this.vfx.shake = Math.max(this.vfx.shake, 0.55);
+  }
+
+  /**
+   * A full turn of the blade round the fighter, at the waist: a flat ring of light that
+   * opens out, white at its leading edge, with wind thrown off it.
+   */
+  private whirl(at: THREE.Vector3, color: THREE.Color): void {
+    const g = new THREE.Group();
+    g.position.copy(at);
+    const ring = (inner: number, c: THREE.ColorRepresentation, o: number) => {
+      const m = new THREE.Mesh(
+        new THREE.RingGeometry(inner, 1, 64, 1, 0, Math.PI * 1.8),
+        noOutline(new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false })),
+      );
+      m.rotation.x = -Math.PI / 2;
+      g.add(m);
+      return m;
+    };
+    const band = ring(0.72, color, 0.5);
+    const edge = ring(0.94, 0xffffff, 1);
+    const wind = Array.from({ length: 12 }, (_, i) => {
+      const s = added(glow, i % 2 ? 0xffffff : color, 1);
+      g.add(s);
+      return { s, a: (i / 12) * Math.PI * 2 };
+    });
+    this.vfx.add(g, 0.4, (k) => {
+      const r = 0.6 + 1.6 * (1 - (1 - k) ** 2);
+      const fade = 1 - k;
+      for (const m of [band, edge]) {
+        m.scale.setScalar(r);
+        m.rotation.z = -k * 9;
+      }
+      (band.material as THREE.MeshBasicMaterial).opacity = 0.5 * fade;
+      (edge.material as THREE.MeshBasicMaterial).opacity = fade;
+      for (const w of wind) {
+        const a = w.a - k * 9;
+        w.s.position.set(Math.cos(a) * r * 1.1, 0, Math.sin(a) * r * 1.1);
+        w.s.scale.set(0.3 * fade, 0.08, 1);
+        w.s.material.opacity = fade;
+      }
+    });
+    this.vfx.shake = Math.max(this.vfx.shake, 0.35);
   }
 
   /**
@@ -185,7 +263,7 @@ export class SpecialFx {
     const balls = [0, 1].map((i) => {
       const m = new THREE.Mesh(
         new THREE.SphereGeometry(1, 28, 18),
-        noOutline(new THREE.MeshBasicMaterial({ map: swirlTexture(), color: i ? tint : 0xffffff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })),
+        noOutline(new THREE.MeshBasicMaterial({ map: swirlTexture(), color: i ? tint : 0xcfeeff, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false })),
       );
       g.add(m);
       return m;
@@ -216,12 +294,12 @@ export class SpecialFx {
       balls.forEach((b, i) => {
         b.scale.setScalar(r * (i ? 1.08 : 0.92));
         b.rotation.y = k * (i ? -38 : 46);
-        (b.material as THREE.MeshBasicMaterial).opacity = 0.9 * fade;
+        (b.material as THREE.MeshBasicMaterial).opacity = (i ? 0.8 : 0.45) * fade;
       });
-      heart.scale.setScalar(0.9 * r);
-      heart.material.opacity = fade;
-      halo.scale.setScalar(3.2 * r);
-      halo.material.opacity = 0.6 * fade;
+      heart.scale.setScalar(0.5 * r);
+      heart.material.opacity = 0.8 * fade;
+      halo.scale.setScalar(2.4 * r);
+      halo.material.opacity = 0.3 * fade;
       rings.forEach((ring, i) => {
         ring.scale.setScalar(r * (1.15 + 0.5 * k + i * 0.12));
         ring.rotation.z = k * (30 + i * 9);
@@ -237,5 +315,79 @@ export class SpecialFx {
     });
     this.vfx.groundWave(at.clone().setY(Math.max(0, at.y - 0.9)), tint, 3.4);
     this.vfx.shake = Math.max(this.vfx.shake, 0.5);
+  }
+}
+
+/**
+ * Afterimages: fading copies of the fighter, in its pose of the moment, left behind as
+ * it dashes (rush, dive). A few copies are made once and reused.
+ */
+export class GhostTrail {
+  private scene: THREE.Scene;
+  private model: THREE.Object3D;
+  private color: THREE.Color;
+  private pool: { holder: THREE.Group; pairs: [THREE.Object3D, THREE.Object3D][]; mat: THREE.MeshBasicMaterial; age: number }[] = [];
+  private static readonly LIFE = 0.28;
+  private static readonly MAX = 6;
+
+  constructor(scene: THREE.Scene, model: THREE.Object3D, color: THREE.ColorRepresentation) {
+    this.scene = scene;
+    this.model = model;
+    this.color = new THREE.Color(color);
+  }
+
+  /** Leaves a copy where the fighter is now. */
+  drop(): void {
+    let g = this.pool.find((p) => p.age >= GhostTrail.LIFE);
+    if (!g) {
+      if (this.pool.length >= GhostTrail.MAX) return;
+      const copy = SkeletonUtils.clone(this.model);
+      const mat = noOutline(new THREE.MeshBasicMaterial({ color: this.color, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+      copy.traverse((o) => {
+        if (o instanceof THREE.Mesh) {
+          o.material = mat;
+          o.castShadow = o.receiveShadow = false;
+        }
+        if (o instanceof THREE.Sprite || o instanceof THREE.Points || o instanceof THREE.Line) o.visible = false;
+      });
+      const holder = new THREE.Group();
+      holder.matrixAutoUpdate = false;
+      holder.add(copy);
+      const src: THREE.Object3D[] = [];
+      const dst: THREE.Object3D[] = [];
+      this.model.traverse((o) => src.push(o));
+      copy.traverse((o) => dst.push(o));
+      g = { holder, pairs: src.length === dst.length ? src.map((o, i) => [o, dst[i]!]) : [], mat, age: GhostTrail.LIFE };
+      this.pool.push(g);
+      this.scene.add(holder);
+    }
+    for (const [a, b] of g.pairs) {
+      b.position.copy(a.position);
+      b.quaternion.copy(a.quaternion);
+      b.scale.copy(a.scale);
+    }
+    this.model.parent?.updateMatrixWorld(true);
+    g.holder.matrix.copy(this.model.parent?.matrixWorld ?? new THREE.Matrix4());
+    g.holder.matrixWorldNeedsUpdate = true;
+    g.holder.visible = true;
+    g.age = 0;
+  }
+
+  update(dt: number): void {
+    for (const g of this.pool) {
+      if (g.age >= GhostTrail.LIFE) continue;
+      g.age += dt;
+      const k = Math.min(1, g.age / GhostTrail.LIFE);
+      g.mat.opacity = 0.4 * (1 - k);
+      if (k >= 1) g.holder.visible = false;
+    }
+  }
+
+  dispose(): void {
+    for (const g of this.pool) {
+      this.scene.remove(g.holder);
+      g.mat.dispose();
+    }
+    this.pool = [];
   }
 }
