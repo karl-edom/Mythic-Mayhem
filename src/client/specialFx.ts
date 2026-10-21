@@ -23,7 +23,9 @@ export interface FxFighter {
   /** The fighter's drawn root (its transform) and model (copied for clones), if any. */
   root: THREE.Object3D;
   model: THREE.Object3D | null;
+  /** Its second colour (light) and its main colour (strong): techniques are drawn in them. */
   color: THREE.Color;
+  accent: THREE.Color;
 }
 
 const glow = glowTexture();
@@ -52,7 +54,7 @@ export class SpecialFx {
 
   /** The special lands on `target`. */
   hit(fx: Fx | undefined, me: FxFighter, target: FxFighter): void {
-    if (fx === "crescent") this.crescent(target.center, me.facing, me.color);
+    if (fx === "crescent") this.crescent(target.center, me.facing, me.accent);
     if (fx === "spiral") this.spiral(target.center, target.center.clone().sub(me.center).setY(0).normalize(), me.color);
     if (fx === "clones") {
       // Four clones round the target, all at it at once, gone in smoke.
@@ -67,7 +69,7 @@ export class SpecialFx {
 
   /** The counter triggers: `me` dodged `attacker`'s blow and reappears behind it. */
   counter(fx: Fx | undefined, me: FxFighter, attacker: FxFighter): void {
-    if (fx === "whirl") this.whirl(me.center, me.color);
+    if (fx === "whirl") this.whirl(me.center, me.accent);
     if (fx === "substitution") {
       // Where the blow landed: a puff of smoke, and a log in his place.
       const spot = attacker.feet.clone().addScaledVector(attacker.facing, 1.1);
@@ -94,18 +96,19 @@ export class SpecialFx {
       g.add(m);
       return m;
     };
-    const tail = arc(1.5, 0.45, color, 0.55);
-    const edge = arc(1.5, 0.09, 0xffffff, 1);
+    const light = color.clone().lerp(new THREE.Color(0xffffff), 0.55);
+    const tail = arc(1.5, 0.45, color, 0.45);
+    const edge = arc(1.5, 0.07, light, 0.85);
     this.vfx.add(g, 0.32, (k) => {
       // Sweeps down (the arc turns), thins out and fades.
       g.rotation.z = -1.2 * Math.min(1, k / 0.35);
       const fade = k < 0.35 ? 1 : (1 - k) / 0.65;
-      (tail.material as THREE.MeshBasicMaterial).opacity = 0.55 * fade;
-      (edge.material as THREE.MeshBasicMaterial).opacity = fade;
+      (tail.material as THREE.MeshBasicMaterial).opacity = 0.45 * fade;
+      (edge.material as THREE.MeshBasicMaterial).opacity = 0.85 * fade;
       edge.scale.setScalar(1 + 0.08 * k);
     });
     const ground = at.clone().setY(Math.max(0, at.y - 0.9));
-    this.vfx.groundWave(ground, 0xffffff, 3);
+    this.vfx.groundWave(ground, light, 2.6);
     this.vfx.debris(ground, 0x9a8f80, 12, 0.18, 0.6);
     this.vfx.dust(ground, 8);
     this.vfx.shake = Math.max(this.vfx.shake, 0.55);
@@ -127,10 +130,11 @@ export class SpecialFx {
       g.add(m);
       return m;
     };
-    const band = ring(0.72, color, 0.5);
-    const edge = ring(0.94, 0xffffff, 1);
+    const light = color.clone().lerp(new THREE.Color(0xffffff), 0.55);
+    const band = ring(0.72, color, 0.4);
+    const edge = ring(0.94, light, 0.85);
     const wind = Array.from({ length: 12 }, (_, i) => {
-      const s = added(glow, i % 2 ? 0xffffff : color, 1);
+      const s = added(glow, i % 2 ? light : color, 0.8);
       g.add(s);
       return { s, a: (i / 12) * Math.PI * 2 };
     });
@@ -141,13 +145,13 @@ export class SpecialFx {
         m.scale.setScalar(r);
         m.rotation.z = -k * 9;
       }
-      (band.material as THREE.MeshBasicMaterial).opacity = 0.5 * fade;
-      (edge.material as THREE.MeshBasicMaterial).opacity = fade;
+      (band.material as THREE.MeshBasicMaterial).opacity = 0.4 * fade;
+      (edge.material as THREE.MeshBasicMaterial).opacity = 0.85 * fade;
       for (const w of wind) {
         const a = w.a - k * 9;
         w.s.position.set(Math.cos(a) * r * 1.1, 0, Math.sin(a) * r * 1.1);
         w.s.scale.set(0.3 * fade, 0.08, 1);
-        w.s.material.opacity = fade;
+        w.s.material.opacity = 0.8 * fade;
       }
     });
     this.vfx.shake = Math.max(this.vfx.shake, 0.35);
@@ -342,7 +346,8 @@ export class GhostTrail {
     if (!g) {
       if (this.pool.length >= GhostTrail.MAX) return;
       const copy = SkeletonUtils.clone(this.model);
-      const mat = noOutline(new THREE.MeshBasicMaterial({ color: this.color, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false }));
+      // Painted, not added: a tinted see-through copy that stays readable on a pale wall.
+      const mat = noOutline(new THREE.MeshBasicMaterial({ color: this.color, transparent: true, opacity: 0, depthWrite: false }));
       copy.traverse((o) => {
         if (o instanceof THREE.Mesh) {
           o.material = mat;
@@ -378,7 +383,7 @@ export class GhostTrail {
       if (g.age >= GhostTrail.LIFE) continue;
       g.age += dt;
       const k = Math.min(1, g.age / GhostTrail.LIFE);
-      g.mat.opacity = 0.4 * (1 - k);
+      g.mat.opacity = 0.32 * (1 - k);
       if (k >= 1) g.holder.visible = false;
     }
   }

@@ -434,6 +434,7 @@ export class ArenaView {
       root: v.root,
       model: v.model?.root ?? null,
       color: new THREE.Color(this.characters[i]!.colors.secondary),
+      accent: new THREE.Color(this.characters[i]!.colors.primary),
     };
   }
 
@@ -455,7 +456,9 @@ export class ArenaView {
     for (const e of w.events.slice(this.lastEvent)) {
       switch (e.type) {
         case "hit": {
-          const big = e.knockdown || e.by === "heavy" || e.by === "special" || e.by === "throw";
+          // A technique with its own impact (signature effect, slashes) keeps the generic burst small.
+          const own = this.fxOf(e.source, e.slot) !== undefined || (e.slot !== undefined && (this.characters[e.source]!.moves[w.fighters[e.source]!.kit.specials[e.slot]?.id ?? ""]?.slashes ?? 0) > 0);
+          const big = !own && (e.knockdown || e.by === "heavy" || e.by === "special" || e.by === "throw");
           this.fighters[e.target]!.flashUntil = w.time + 0.1;
           this.vfx.hit(this.center(w.fighters[e.target]!), this.characters[e.source]!.colors.secondary, big);
           // A special that cuts many times at once: its slashes across the target.
@@ -819,7 +822,7 @@ export class ArenaView {
     // Motion cues: speed lines when dashing, dust when landing.
     // Afterimages of the special dashes, in the character's colour.
     if ((a?.kind === "rush" || a?.kind === "dive") && v.model && f.alive) {
-      v.ghosts ??= new GhostTrail(this.scene, v.model.root, ch.colors.secondary);
+      v.ghosts ??= new GhostTrail(this.scene, v.model.root, ch.colors.primary);
       if (v.frame % 3 === 0) v.ghosts.drop();
     }
     v.ghosts?.update(dt);
