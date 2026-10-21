@@ -1,4 +1,4 @@
-# 0031 — Effets signature des techniques
+# 0032 — Effets signature des techniques
 
 Date : 2026-10-21. Statut : **acceptée** (ordre fixé par le porteur de projet : Naruto, Kenshin, Sasuke, les Tortues ninja, Saitō, Sanosuke, Tails, Metal Sonic).
 
