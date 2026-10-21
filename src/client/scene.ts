@@ -49,6 +49,8 @@ interface FighterView {
   slashKey: string;
   /** Last wind-up glinted (so each heavy or special glints once). */
   windupKey: string;
+  /** Specials started so far (tells one wind-up from the next). */
+  specials: number;
   /** Frames rendered for this fighter. */
   frame: number;
   wasAirborne: boolean;
@@ -397,7 +399,7 @@ export class ArenaView {
     this.scene.add(root);
     return {
       root, model, animator, materials, shadow, ring, tag, guard, aura, stars, chargeOrb, energy, lowHp, trail,
-      flashUntil: 0, slashKey: "", wasAirborne: false, windupKey: "", frame: 0, moveFx, mainWeapons, burning, ghosts: null,
+      flashUntil: 0, slashKey: "", wasAirborne: false, windupKey: "", specials: 0, frame: 0, moveFx, mainWeapons, burning, ghosts: null,
     };
   }
 
@@ -537,6 +539,7 @@ export class ArenaView {
           break;
         }
         case "special":
+          this.fighters[e.unit]!.specials++;
           this.specialFx.start(this.fxOf(e.unit, e.slot), this.fxFighter(e.unit));
           break;
         case "counter": {
@@ -685,7 +688,9 @@ export class ArenaView {
     const act = f.action;
     let windup: string | null = null;
     if (act?.kind === "heavy" && !act.charging) windup = `h${act.charge}`;
-    else if (act?.kind === "special") windup = `s${act.slot}:${w.tick - Math.round(act.t * w.config.tickRate)}`;
+    // Once per special, while it winds up: its start tick never changes, even through
+    // hit-stop (the world's clock runs on, the fighter's does not).
+    else if (act?.kind === "special" && !act.fired) windup = `s${act.slot}:${v.specials}`;
     // The meteor is slow on purpose: its glint, under the feet, is the cue to get away.
     else if (act?.kind === "aerial" && act.aim === "down") windup = `d${w.tick - Math.round(act.t * w.config.tickRate)}`;
     if (windup && windup !== v.windupKey) {
