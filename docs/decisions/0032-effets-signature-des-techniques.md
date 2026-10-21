@@ -18,7 +18,16 @@ Un effet peut se déclencher à trois moments : au lancement de la technique, qu
 | `crescent` | touche | un grand croissant de lame tombe à travers la cible, le sol éclate (débris, poussière) | Kenshin, Ryū Tsui Sen |
 | `chidori` | pendant la ruée et touche | la main traîne des éclairs qui labourent le sol, avec des brûlures de lumière ; à l'impact, des éclairs jaillissent de la cible dans toutes les directions et courent au sol | Sasuke, Chidori |
 | `sharingan` | posture et contre | yeux rouges allumés pendant la posture de contre ; au déclenchement, le motif aux trois virgules apparaît devant son visage et tourne, l'attaquant est pris dans une lueur rouge | Sasuke, Sharingan |
+| `cross` | touche | deux lames croisées en X à travers la cible, bords clairs sur la couleur du bandeau, l'une après l'autre | Leonardo, Lame du dragon |
+| `guard` | contre | deux lames croisées qui brillent devant lui, gerbe d'acier, anneau de la couleur du bandeau | Leonardo, Garde du chef |
+| `pow` | touche | une étoile d'impact de bande dessinée, jaune cernée de noir, avec un cœur de la couleur du personnage, qui éclate puis rétrécit | Donatello (perche, charge du bō), Michelangelo (roulade), Raphaël (roulade carapace) |
+| `windmill` | explosion | deux anneaux de flou de mouvement, à plat et inclinés, qui tournent jusqu'à la portée de l'explosion, poussière au sol | Donatello (moulinet), Michelangelo (tornade), Splinter (tourbillon), Shredder (senpū) |
+| `flurry` | explosion | une tempête de coups d'estoc rapides dans toutes les directions, l'un après l'autre | Raphaël, Furie |
+| `enso` | contre | un cercle de pinceau à l'encre noire (ensō) peint autour de lui d'un seul trait, sur une lueur de sa couleur | Splinter, Aiki |
+| `claws` | touche | trois griffures parallèles en diagonale, rouge sombre bordé d'acier pâle | Shredder, Shunsatsu et Zantetsu |
 | `whirl` | contre | un tour complet de lame à hauteur de taille, un anneau de lumière qui s'ouvre | Kenshin, Ryū Kan Sen |
+
+Le `crescent` sert aussi à Leonardo (Bond du ninja) et à Splinter (Saut du maître). Nouveau look de projectile, `sai` : Raphaël lance un vrai saï, pointe en avant, qui tourne sur son axe, au lieu d'une boule d'énergie.
 
 ## Pour tous
 
