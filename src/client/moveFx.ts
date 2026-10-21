@@ -499,6 +499,41 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
         dispose: done,
       };
     }
+    case "tongue": {
+      // A long pink tongue lashed out from the mouth to its round tip, then drawn back.
+      const mat = noOutline(new THREE.MeshToonMaterial({ color: 0xff6a8a }));
+      const geo = new THREE.CylinderGeometry(0.05, 0.07, 1, 10);
+      geo.translate(0, 0.5, 0);
+      const strand = new THREE.Mesh(geo, mat);
+      const tip = new THREE.Mesh(new THREE.SphereGeometry(Math.max(0.14, size * 0.35), 16, 12), mat);
+      extra.push(strand);
+      scene.add(strand);
+      group.add(tip);
+      const mouth = origin.clone().add(new THREE.Vector3(0, 0.45, 0));
+      return {
+        group,
+        update(_t, pos) {
+          const d = pos.clone().sub(mouth);
+          strand.position.copy(mouth);
+          strand.scale.set(1, Math.max(0.01, d.length()), 1);
+          if (d.lengthSq() > 1e-6) strand.quaternion.setFromUnitVectors(UP, d.normalize());
+        },
+        dispose: done,
+      };
+    }
+    case "egg": {
+      // A spotted egg (Yoshi's), tumbling as it flies.
+      const egg = new THREE.Mesh(new THREE.SphereGeometry(size * 0.6, 24, 16), noOutline(new THREE.MeshToonMaterial({ map: eggTexture() })));
+      egg.scale.set(1, 1.3, 1);
+      group.add(egg);
+      return {
+        group,
+        update(t) {
+          egg.rotation.set(t * 9, 0, t * 6);
+        },
+        dispose: done,
+      };
+    }
     case "rocket": {
       const rocket = new THREE.Group();
       const olive = new THREE.MeshStandardMaterial({ color: 0x55602f, roughness: 0.6 });
@@ -957,4 +992,27 @@ export function emberAura(): { obj: THREE.Group; update(t: number, level: number
       }
     },
   };
+}
+
+let eggTex: THREE.CanvasTexture | null = null;
+/** White shell with green spots (Yoshi's eggs). */
+export function eggTexture(): THREE.CanvasTexture {
+  if (eggTex) return eggTex;
+  const c = document.createElement("canvas");
+  c.width = 256;
+  c.height = 128;
+  const g = c.getContext("2d")!;
+  g.fillStyle = "#f7f3e6";
+  g.fillRect(0, 0, 256, 128);
+  g.fillStyle = "#3cbf4a";
+  for (const [x, y, r] of [[30, 40, 16], [90, 80, 20], [150, 30, 14], [200, 90, 18], [240, 45, 12], [60, 105, 11], [125, 110, 9]]) {
+    for (const dx of [0, -256, 256]) {
+      g.beginPath();
+      g.arc(x! + dx, y!, r!, 0, Math.PI * 2);
+      g.fill();
+    }
+  }
+  eggTex = new THREE.CanvasTexture(c);
+  eggTex.colorSpace = THREE.SRGBColorSpace;
+  return eggTex;
 }
