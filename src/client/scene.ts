@@ -601,7 +601,9 @@ export class ArenaView {
           if (look === "fire" || look === "blast") this.explosion(at.clone().setY(at.y + 0.6), e.radius * 0.6);
           if (look === "lightning") this.vfx.bolt(at, color);
           this.vfx.groundWave(at, color, e.radius * 2);
-          this.vfx.ring(at.clone().setY(at.y + 0.9), color, e.radius * 2);
+          const fx = this.fxOf(e.unit, e.slot);
+          if (fx) this.specialFx.blast(fx, this.fxFighter(e.unit), at, e.radius);
+          else this.vfx.ring(at.clone().setY(at.y + 0.9), color, e.radius * 2);
           this.vfx.shake = Math.max(this.vfx.shake, 0.12 * e.radius);
           break;
         }

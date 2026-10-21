@@ -40,6 +40,61 @@ const added = (map: THREE.Texture, color: THREE.ColorRepresentation, opacity = 1
 const painted = (map: THREE.Texture, color: THREE.ColorRepresentation, opacity = 1) =>
   new THREE.Sprite(noOutline(new THREE.SpriteMaterial({ map, color, transparent: true, opacity, depthWrite: false })));
 
+let powTex: THREE.CanvasTexture | null = null;
+/** A comic-book impact star: jagged points, black outline, white inside (tinted per sprite). */
+function powTexture(): THREE.CanvasTexture {
+  if (powTex) return powTex;
+  const c = document.createElement("canvas");
+  c.width = c.height = 128;
+  const g = c.getContext("2d")!;
+  let seed = 7;
+  const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  g.beginPath();
+  const n = 14;
+  for (let i = 0; i < n * 2; i++) {
+    const a = (i / (n * 2)) * Math.PI * 2;
+    const d = i % 2 ? 26 + r() * 8 : 50 + r() * 12;
+    const x = 64 + Math.cos(a) * d;
+    const y = 64 + Math.sin(a) * d;
+    if (i) g.lineTo(x, y);
+    else g.moveTo(x, y);
+  }
+  g.closePath();
+  g.fillStyle = "#fff2a0";
+  g.fill();
+  g.lineWidth = 4;
+  g.lineJoin = "round";
+  g.strokeStyle = "#15121f";
+  g.stroke();
+  powTex = new THREE.CanvasTexture(c);
+  powTex.colorSpace = THREE.SRGBColorSpace;
+  return powTex;
+}
+
+let ensoTex: THREE.CanvasTexture | null = null;
+/** The ensō: one brush stroke round, thick then dry, left open. */
+function ensoTexture(): THREE.CanvasTexture {
+  if (ensoTex) return ensoTex;
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const g = c.getContext("2d")!;
+  g.lineCap = "round";
+  const steps = 120;
+  for (let i = 0; i < steps; i++) {
+    const a0 = -1.2 + (i / steps) * Math.PI * 1.85;
+    const a1 = a0 + (Math.PI * 1.85) / steps + 0.01;
+    const k = i / steps;
+    g.strokeStyle = `rgba(255,255,255,${0.95 - 0.5 * k})`;
+    g.lineWidth = 22 * (1 - 0.7 * k) + 3;
+    g.beginPath();
+    g.arc(128, 128, 96 + 4 * Math.sin(k * 7), a0, a1);
+    g.stroke();
+  }
+  ensoTex = new THREE.CanvasTexture(c);
+  ensoTex.colorSpace = THREE.SRGBColorSpace;
+  return ensoTex;
+}
+
 let tomoeTex: THREE.CanvasTexture | null = null;
 /** The Sharingan: a red iris ringed in black, the pupil, three commas round it. */
 function tomoeTexture(): THREE.CanvasTexture {
@@ -166,6 +221,9 @@ export class SpecialFx {
   hit(fx: Fx | undefined, me: FxFighter, target: FxFighter): void {
     if (fx === "crescent") this.crescent(target.center, me.facing, me.accent);
     if (fx === "chidori") this.thunderclap(target.center, me.color);
+    if (fx === "cross") this.cross(target.center, me.facing, me.accent);
+    if (fx === "pow") this.pow(target.center, me.accent);
+    if (fx === "claws") this.claws(target.center, me.facing, me.accent);
     if (fx === "spiral") this.spiral(target.center, target.center.clone().sub(me.center).setY(0).normalize(), me.color);
     if (fx === "clones") {
       // Four clones round the target, all at it at once, gone in smoke.
@@ -178,9 +236,17 @@ export class SpecialFx {
     }
   }
 
+  /** A burst goes off round the fighter (`radius` metres). */
+  blast(fx: Fx | undefined, me: FxFighter, at: THREE.Vector3, radius: number): void {
+    if (fx === "windmill") this.windmill(at.clone().setY(me.center.y), radius, me.accent);
+    if (fx === "flurry") this.flurry(at.clone().setY(me.center.y), radius, me.accent);
+  }
+
   /** The counter triggers: `me` dodged `attacker`'s blow and reappears behind it. */
   counter(fx: Fx | undefined, me: FxFighter, attacker: FxFighter): void {
     if (fx === "whirl") this.whirl(me.center, me.accent);
+    if (fx === "guard") this.guard(me.center, me.accent);
+    if (fx === "enso") this.enso(me.center, me.accent);
     // (From the simulation's position: the drawn model has not caught up with the jump yet.)
     if (fx === "sharingan") this.tomoe(me.center.clone().add(new THREE.Vector3(0, 0.62, 0)).addScaledVector(me.facing, 0.35), attacker);
     if (fx === "substitution") {
@@ -190,6 +256,206 @@ export class SpecialFx {
       this.log(spot, attacker.facing);
       this.smoke(me.center, 0.9);
     }
+  }
+
+  /** A flat sheet of light in the colour, added to the scene (for the cuts and rings). */
+  private sheet(geo: THREE.BufferGeometry, color: THREE.ColorRepresentation, opacity: number): THREE.Mesh {
+    return new THREE.Mesh(geo, noOutline(new THREE.MeshBasicMaterial({ color, transparent: true, opacity, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false })));
+  }
+
+  /**
+   * Two blades crossed through the target (Leonardo): an X of light, white edges over
+   * the mask colour, opening outward, with steel sparks.
+   */
+  private cross(at: THREE.Vector3, facing: THREE.Vector3, color: THREE.Color): void {
+    const g = new THREE.Group();
+    g.position.copy(at);
+    g.rotation.y = Math.atan2(facing.x, facing.z) + Math.PI / 2;
+    const light = color.clone().lerp(new THREE.Color(0xffffff), 0.5);
+    const cuts = [-0.75, 0.75].map((a) => {
+      const c = new THREE.Group();
+      const band = this.sheet(new THREE.PlaneGeometry(2.6, 0.16), color, 0.6);
+      const edge = this.sheet(new THREE.PlaneGeometry(2.6, 0.04), light, 1);
+      c.add(band, edge);
+      c.rotation.z = a;
+      g.add(c);
+      return { c, band, edge };
+    });
+    this.vfx.add(g, 0.35, (k) => {
+      const draw = Math.min(1, k / 0.18);
+      const fade = k < 0.4 ? 1 : (1 - k) / 0.6;
+      cuts.forEach(({ c, band, edge }, i) => {
+        // The second cut follows the first by a blink.
+        const d = Math.max(0, Math.min(1, (draw - i * 0.3) / 0.7));
+        c.scale.set(d, 1 + 0.6 * k, 1);
+        (band.material as THREE.MeshBasicMaterial).opacity = 0.6 * fade;
+        (edge.material as THREE.MeshBasicMaterial).opacity = fade;
+      });
+    });
+    this.vfx.hit(at, light, false);
+    this.vfx.shake = Math.max(this.vfx.shake, 0.4);
+  }
+
+  /**
+   * The leader's guard holds (Leonardo's counter): two blades crossed before him flash,
+   * steel rings out (sparks), a ring of the mask colour.
+   */
+  private guard(at: THREE.Vector3, color: THREE.Color): void {
+    const g = new THREE.Group();
+    g.position.copy(at);
+    const light = color.clone().lerp(new THREE.Color(0xffffff), 0.6);
+    const blades = [-0.8, 0.8].map((a) => {
+      const m = this.sheet(new THREE.PlaneGeometry(0.05, 1.5), 0xffffff, 1);
+      m.rotation.z = a;
+      g.add(m);
+      return m;
+    });
+    const star = added(glow, light, 1);
+    g.add(star);
+    this.vfx.add(g, 0.45, (k) => {
+      for (const b of blades) (b.material as THREE.MeshBasicMaterial).opacity = 1 - k;
+      star.scale.setScalar(1.2 * (1 - k) + 0.2);
+      star.material.opacity = 1 - k;
+    });
+    this.vfx.ring(at, color, 2);
+    this.vfx.hit(at, 0xe8f4ff, false);
+  }
+
+  /**
+   * A comic-book impact (the Turtles): a jagged star of yellow and the colour, black
+   * outlined, popping big and shrinking, with speed streaks round it.
+   */
+  private pow(at: THREE.Vector3, color: THREE.Color): void {
+    const s = painted(powTexture(), 0xffffff, 1);
+    s.position.copy(at);
+    s.renderOrder = 5;
+    s.material.rotation = rnd(-0.4, 0.4);
+    const inner = painted(powTexture(), color, 0.9);
+    inner.position.copy(at);
+    inner.renderOrder = 6;
+    inner.material.rotation = s.material.rotation + 0.3;
+    const g = new THREE.Group();
+    g.add(s, inner);
+    this.vfx.add(g, 0.4, (k) => {
+      const pop = k < 0.12 ? 0.6 + 4 * k : 1.08 - 0.25 * (k - 0.12);
+      s.scale.setScalar(1.7 * pop);
+      inner.scale.setScalar(0.95 * pop);
+      const o = k < 0.6 ? 1 : (1 - k) / 0.4;
+      s.material.opacity = o;
+      inner.material.opacity = 0.9 * o;
+    });
+    this.vfx.speedLines(at, new THREE.Vector3(0, 1, 0), 0xffffff);
+    this.vfx.shake = Math.max(this.vfx.shake, 0.45);
+  }
+
+  /**
+   * Shredder's claws: three parallel rakes of light torn diagonally across the target,
+   * dark red edged in pale steel.
+   */
+  private claws(at: THREE.Vector3, facing: THREE.Vector3, color: THREE.Color): void {
+    const g = new THREE.Group();
+    g.position.copy(at);
+    g.rotation.y = Math.atan2(facing.x, facing.z) + Math.PI / 2;
+    const rakes = [-0.22, 0, 0.22].map((off) => {
+      const r = new THREE.Group();
+      const band = this.sheet(new THREE.PlaneGeometry(2, 0.12), color, 0.75);
+      const edge = this.sheet(new THREE.PlaneGeometry(2, 0.035), 0xe8ecf4, 1);
+      r.add(band, edge);
+      r.position.y = off;
+      g.add(r);
+      return { r, band, edge };
+    });
+    g.rotation.z = -0.6;
+    this.vfx.add(g, 0.35, (k) => {
+      const draw = Math.min(1, k / 0.15);
+      const fade = k < 0.4 ? 1 : (1 - k) / 0.6;
+      rakes.forEach(({ r, band, edge }, i) => {
+        r.scale.set(Math.max(0.01, Math.min(1, draw * 1.3 - i * 0.15)), 1, 1);
+        (band.material as THREE.MeshBasicMaterial).opacity = 0.75 * fade;
+        (edge.material as THREE.MeshBasicMaterial).opacity = fade;
+      });
+    });
+    this.vfx.hit(at, 0xe8ecf4, false);
+    this.vfx.shake = Math.max(this.vfx.shake, 0.45);
+  }
+
+  /**
+   * A weapon whirled round (bō, nunchaku, staff): two rings of motion blur, flat and
+   * tilted, spinning out to the burst's reach, with wind thrown off them.
+   */
+  private windmill(at: THREE.Vector3, radius: number, color: THREE.Color): void {
+    const g = new THREE.Group();
+    g.position.copy(at);
+    const light = color.clone().lerp(new THREE.Color(0xffffff), 0.5);
+    const rings = [0, 0.5].map((tilt, i) => {
+      const r = new THREE.Group();
+      const blur = this.sheet(new THREE.RingGeometry(0.55, 1, 64, 1, 0, Math.PI * 1.5), i ? light : color, 0.45);
+      const edge = this.sheet(new THREE.RingGeometry(0.95, 1, 64, 1, 0, Math.PI * 1.5), 0xffffff, 0.8);
+      blur.rotation.x = edge.rotation.x = -Math.PI / 2;
+      r.add(blur, edge);
+      r.rotation.z = tilt;
+      g.add(r);
+      return { r, blur, edge };
+    });
+    const dust = at.clone().setY(Math.max(0, at.y - 0.9));
+    this.vfx.dust(dust, 10);
+    this.vfx.add(g, 0.5, (k) => {
+      const grow = 0.4 + 0.6 * (1 - (1 - Math.min(1, k / 0.4)) ** 2);
+      const fade = k < 0.5 ? 1 : (1 - k) / 0.5;
+      rings.forEach(({ r, blur, edge }, i) => {
+        r.scale.setScalar(radius * grow * (i ? 0.8 : 1));
+        r.rotation.y = (i ? -1 : 1) * k * 22;
+        (blur.material as THREE.MeshBasicMaterial).opacity = 0.45 * fade;
+        (edge.material as THREE.MeshBasicMaterial).opacity = 0.8 * fade;
+      });
+    });
+  }
+
+  /**
+   * Raphaël's fury: a storm of quick stabs all round him, short bright thrusts in every
+   * direction, one after another.
+   */
+  private flurry(at: THREE.Vector3, radius: number, color: THREE.Color): void {
+    const light = color.clone().lerp(new THREE.Color(0xffffff), 0.5);
+    for (let i = 0; i < 14; i++) {
+      const dir = new THREE.Vector3(rnd(-1, 1), rnd(-0.5, 0.6), rnd(-1, 1)).normalize();
+      const len = radius * rnd(0.6, 1);
+      const stab = this.sheet(new THREE.PlaneGeometry(len, 0.07), i % 2 ? light : color, 0.9);
+      const g = new THREE.Group();
+      g.position.copy(at);
+      g.quaternion.setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir);
+      stab.position.x = len / 2;
+      g.add(stab);
+      const delay = (i / 14) * 0.6;
+      this.vfx.add(g, 0.35, (k) => {
+        const kk = Math.max(0, (k - delay) / (1 - delay));
+        // Thrust out fast, then thin away.
+        g.scale.set(Math.min(1, kk * 4) + 0.001, 1 - kk, 1);
+        (stab.material as THREE.MeshBasicMaterial).opacity = kk > 0 ? 0.9 * (1 - kk) : 0;
+      });
+    }
+    this.vfx.ring(at, color, radius * 2);
+  }
+
+  /**
+   * The master's calm (Splinter's aiki): a brush circle, the ensō, painted round him in
+   * one stroke of black ink over a glow of the colour, then it fades like ink drying.
+   */
+  private enso(at: THREE.Vector3, color: THREE.Color): void {
+    const s = painted(ensoTexture(), 0x1a1414, 1);
+    s.position.copy(at);
+    s.renderOrder = 5;
+    const back = added(glow, color.clone().lerp(new THREE.Color(0xffffff), 0.4), 0.5);
+    back.position.copy(at);
+    const g = new THREE.Group();
+    g.add(back, s);
+    this.vfx.add(g, 0.8, (k) => {
+      s.scale.setScalar(2.2 + 0.3 * k);
+      s.material.rotation = -0.4 + 0.25 * k;
+      s.material.opacity = k < 0.6 ? Math.min(1, k * 8) : (1 - k) / 0.4;
+      back.scale.setScalar(2.4);
+      back.material.opacity = 0.5 * (1 - k);
+    });
   }
 
   /**

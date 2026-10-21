@@ -7,6 +7,7 @@
 import * as THREE from "three";
 import type { MoveStyle } from "../brawl/character.ts";
 import { glowTexture, noOutline } from "./toon.ts";
+import { buildWeapon } from "./weapons.ts";
 
 const glow = glowTexture();
 
@@ -428,6 +429,30 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
         update(t) {
           twister.rotation.y = t * 18;
           twister.rotation.z = 0.08 * Math.sin(t * 7);
+        },
+        dispose: done,
+      };
+    }
+    case "sai": {
+      // A thrown sai (Raphaël): the real weapon, point first, spinning on its long axis,
+      // a thin streak of light behind it.
+      const sai = buildWeapon("Sai");
+      const holder = new THREE.Group();
+      if (sai) {
+        sai.scale.setScalar(1.3);
+        sai.position.y = -0.3;
+        holder.add(sai);
+      }
+      const streak = new THREE.Sprite(additive(glow, color, 0.6));
+      streak.scale.set(0.12, 0.9, 1);
+      streak.position.y = -0.55;
+      holder.add(streak);
+      group.add(holder);
+      return {
+        group,
+        update(t, _pos, dir) {
+          holder.quaternion.setFromUnitVectors(UP, dir.lengthSq() > 0 ? dir.clone().normalize() : UP);
+          if (sai) sai.rotation.y = t * 40;
         },
         dispose: done,
       };
