@@ -46,6 +46,8 @@ export class NetLink {
   private pairs = new Map<string, Pair>();
   private relaySeen = new Map<string, unknown>();
   private relayRtt = new Map<string, number>();
+  /** Each peer's last ping seen in its presence, and when it was first seen here. */
+  private pingSeen = new Map<string, { at: number; seenAt: number }>();
   private unsubscribe: () => void;
   private timer: ReturnType<typeof setInterval>;
   private readonly rtc: boolean;
@@ -59,12 +61,7 @@ export class NetLink {
     this.timer = setInterval(() => {
       const at = Date.now();
       for (const [, p] of this.pairs) if (p.channel?.readyState === "open") p.channel.send(JSON.stringify({ g: "", m: { t: "ping", at } } satisfies Wire));
-      const pong: Record<string, number> = {};
-      for (const q of this.room.peers()) {
-        const ping = q.presence.ping;
-        if (!q.sameTab && typeof ping === "number") pong[q.peer] = ping;
-      }
-      void this.room.presence({ ping: at, pong }).catch(() => undefined);
+      void this.room.presence({ ping: at }).catch(() => undefined);
     }, 500);
   }
 
@@ -137,9 +134,20 @@ export class NetLink {
       // Round trip through the room: they echo our ping.
       const pong = q.presence.pong as Record<string, unknown> | undefined;
       const echoed = pong?.[me];
-      if (typeof echoed === "number" && this.relaySeen.get(q.peer + "pong") !== echoed) {
-        this.relaySeen.set(q.peer + "pong", echoed);
-        this.relayRtt.set(q.peer, Date.now() - echoed);
+      if (Array.isArray(echoed) && typeof echoed[0] === "number" && typeof echoed[1] === "number" && this.relaySeen.get(q.peer + "pong") !== echoed[0]) {
+        this.relaySeen.set(q.peer + "pong", echoed[0]);
+        const rtt = Date.now() - echoed[0] - echoed[1];
+        if (rtt >= 0 && rtt < 5000) this.relayRtt.set(q.peer, rtt);
+      }
+      // Their ping: echoed at once, with how long it waited here (a busy page answers
+      // late, and that wait is not network time).
+      const ping = q.presence.ping;
+      if (typeof ping === "number" && this.pingSeen.get(q.peer)?.at !== ping) {
+        const now = Date.now();
+        this.pingSeen.set(q.peer, { at: ping, seenAt: now });
+        const pongs: Record<string, [number, number]> = {};
+        for (const [peer, v] of this.pingSeen) pongs[peer] = [v.at, now - v.seenAt];
+        void this.room.presence({ pong: pongs }).catch(() => undefined);
       }
       if (this.rtc) void this.handshake(me, q);
     }
