@@ -306,6 +306,9 @@ function showMenu(): void {
   const title = h("div", "select-title", top);
   h("span", "", title, "Sélection des combattants");
   h("span", "select-rules", title, `${choice.count} combattants · ${choice.mode === "teams" ? "équipes" : "chacun pour soi"} · ${choice.rule === "stock" ? "3 vies" : "K.-O. au temps"}${choice.arena ? ` · ${choice.arena.name}` : ""}`);
+  // Online play: at the top, always in sight.
+  const online = h("button", "chip online-open", top, "🌐 Jouer en ligne");
+  online.addEventListener("click", openOnline);
   if (playable.length === 0) {
     h("p", "error", menuRoot, "Aucun combattant valide trouvé.");
     return;
@@ -360,8 +363,6 @@ function showMenu(): void {
     start.title = "Il faut au moins un combattant dans chaque équipe";
   }
   start.addEventListener("click", startGame);
-  const online = h("button", "chip online-open", options, "🌐 En ligne");
-  online.addEventListener("click", openOnline);
 
   drawCursors();
 
