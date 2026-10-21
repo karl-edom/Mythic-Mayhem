@@ -9,7 +9,7 @@ import * as THREE from "three";
 import { OutlineEffect } from "three/examples/jsm/effects/OutlineEffect.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
 import { distToProp, segmentInterval, surfaceAt } from "../brawl/arena.ts";
-import type { Character } from "../brawl/character.ts";
+import type { Character, MoveStyle } from "../brawl/character.ts";
 import type { Strike } from "../brawl/kit.ts";
 import { FIGHTER_HEIGHT, aerialCenter, aerialStrike, bodyCenter, lockTarget, strongAerialStrike, sweepCenters, type BrawlWorld, type Fighter } from "../brawl/world.ts";
 import { Animator } from "./animator.ts";
@@ -21,6 +21,7 @@ import { WeaponTrail } from "./trail.ts";
 import { buildPizza } from "./pizza.ts";
 import { Vfx } from "./vfx.ts";
 import { PostFX } from "./postfx.ts";
+import { GhostTrail, SpecialFx, type FxFighter } from "./specialFx.ts";
 import { bladeFire, chargeAura, emberAura, handLook, projectileLook, zoneFlames, zoneLightning, zoneVortex, type HandLook, type ProjectileLook } from "./moveFx.ts";
 
 interface FighterView {
@@ -60,6 +61,8 @@ interface FighterView {
   egg: THREE.Mesh | null;
   /** look.burning: the main blade's fire (smouldering, blazing at each blow) and the embers round the body. */
   burning: { blade: ReturnType<typeof bladeFire> | null; embers: ReturnType<typeof emberAura> } | null;
+  /** Afterimages left behind on a dash (rush, dive), made on the first one. */
+  ghosts: GhostTrail | null;
 }
 
 /** Small coloured label (« J1 », « CPU3 ») drawn on a canvas, for the tag over a fighter's head. */
@@ -161,6 +164,7 @@ export class ArenaView {
   private propShake = new Map<number, number>();
   private raycaster = new THREE.Raycaster();
   private vfx: Vfx;
+  private specialFx: SpecialFx;
   private outline: OutlineEffect;
   /** Occlusion, bloom, colour grade, tone mapping (postfx.ts). */
   private post: PostFX;
@@ -210,6 +214,7 @@ export class ArenaView {
     this.outline = new OutlineEffect(renderer, { defaultThickness: 0.003, defaultColor: [0.08, 0.06, 0.1], defaultAlpha: 1 });
     this.post = new PostFX(renderer, this.scene, this.camera, this.outline);
     this.vfx = new Vfx(this.scene);
+    this.specialFx = new SpecialFx(this.vfx);
     // A soft studio reflection for the physically lit models (shell, steel, lacquer).
     if (!proceduralEnv.map) proceduralEnv.map = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
     // Image-based light for everything physically lit: soft reflections and fill.
@@ -395,7 +400,7 @@ export class ArenaView {
     this.scene.add(root);
     return {
       root, model, animator, materials, shadow, ring, tag, guard, aura, stars, chargeOrb, energy, lowHp, trail, eggUntil: -Infinity, egg: null,
-      flashUntil: 0, slashKey: "", wasAirborne: false, windupKey: "", frame: 0, moveFx, mainWeapons, burning,
+      flashUntil: 0, slashKey: "", wasAirborne: false, windupKey: "", frame: 0, moveFx, mainWeapons, burning, ghosts: null,
     };
   }
 
@@ -421,6 +426,28 @@ export class ArenaView {
     return performance.now() < this.slowUntil ? 0.3 : 1;
   }
 
+  /** A fighter as the signature effects see it. */
+  private fxFighter(i: number): FxFighter {
+    const f = this.world.fighters[i]!;
+    const v = this.fighters[i]!;
+    return {
+      center: this.center(f),
+      feet: new THREE.Vector3(f.pos.x, f.pos.y, f.pos.z),
+      facing: new THREE.Vector3(f.facing.x, 0, f.facing.z).normalize(),
+      root: v.root,
+      model: v.model?.root ?? null,
+      color: new THREE.Color(this.characters[i]!.colors.secondary),
+      accent: new THREE.Color(this.characters[i]!.colors.primary),
+    };
+  }
+
+  /** The signature effect of a fighter's special, if its pack names one. */
+  private fxOf(unit: number, slot: number | undefined): MoveStyle["fx"] {
+    if (slot === undefined) return undefined;
+    const id = this.world.fighters[unit]!.kit.specials[slot]?.id;
+    return id ? this.characters[unit]!.moves[id]?.fx : undefined;
+  }
+
   private center(f: Fighter): THREE.Vector3 {
     const c = bodyCenter(f);
     return new THREE.Vector3(c.x, c.y, c.z);
@@ -432,7 +459,9 @@ export class ArenaView {
     for (const e of w.events.slice(this.lastEvent)) {
       switch (e.type) {
         case "hit": {
-          const big = e.knockdown || e.by === "heavy" || e.by === "special" || e.by === "throw";
+          // A technique with its own impact (signature effect, slashes) keeps the generic burst small.
+          const own = this.fxOf(e.source, e.slot) !== undefined || (e.slot !== undefined && (this.characters[e.source]!.moves[w.fighters[e.source]!.kit.specials[e.slot]?.id ?? ""]?.slashes ?? 0) > 0);
+          const big = !own && (e.knockdown || e.by === "heavy" || e.by === "special" || e.by === "throw");
           this.fighters[e.target]!.flashUntil = w.time + 0.1;
           this.vfx.hit(this.center(w.fighters[e.target]!), this.characters[e.source]!.colors.secondary, big);
           // A special that cuts many times at once: its slashes across the target.
@@ -447,6 +476,8 @@ export class ArenaView {
             const a = w.fighters[e.target]!.action;
             if (id && this.characters[e.source]!.moves[id]?.capture === "egg" && a?.kind === "hitstun") this.fighters[e.target]!.eggUntil = a.until;
           }
+          const fx = this.fxOf(e.source, e.slot);
+          if (fx) this.specialFx.hit(fx, this.fxFighter(e.source), this.fxFighter(e.target));
           if (e.knockdown) this.vfx.groundWave(new THREE.Vector3(w.fighters[e.target]!.pos.x, w.fighters[e.target]!.floor, w.fighters[e.target]!.pos.z), 0xffffff, 3);
           // Directional aerials: streaks show where the blow sends (up, or slammed down).
           if (e.aim) this.vfx.speedLines(this.center(w.fighters[e.target]!), new THREE.Vector3(0, e.aim === "up" ? 1 : -1, 0), this.characters[e.source]!.colors.secondary);
@@ -514,10 +545,16 @@ export class ArenaView {
           this.freezeUntil = now + 90;
           break;
         }
+        case "special":
+          this.specialFx.start(this.fxOf(e.unit, e.slot), this.fxFighter(e.unit));
+          break;
         case "counter": {
           // Counter: a flash where the defender reappears, behind the attacker.
           const d = w.fighters[e.unit]!;
-          this.vfx.glint(this.center(d), 0xffffff, 2.2);
+          const fx = this.fxOf(e.unit, e.slot);
+          if (fx) this.specialFx.counter(fx, this.fxFighter(e.unit), this.fxFighter(e.attacker));
+          // (A technique with its own effect does without the generic flash.)
+          else this.vfx.glint(this.center(d), 0xffffff, 2.2);
           this.vfx.ring(this.center(d), this.characters[e.unit]!.colors.primary, 2.4);
           this.freezeUntil = now + 120;
           break;
@@ -800,6 +837,12 @@ export class ArenaView {
     }
 
     // Motion cues: speed lines when dashing, dust when landing.
+    // Afterimages of the special dashes, in the character's colour.
+    if ((a?.kind === "rush" || a?.kind === "dive") && v.model && f.alive) {
+      v.ghosts ??= new GhostTrail(this.scene, v.model.root, ch.colors.primary);
+      if (v.frame % 3 === 0) v.ghosts.drop();
+    }
+    v.ghosts?.update(dt);
     const fast = a?.kind === "rush" || a?.kind === "dodge";
     if (fast && this.frame % 2 === 0) {
       const dir = a?.kind === "dodge" ? new THREE.Vector3(a.dir.x, 0, a.dir.z) : new THREE.Vector3(f.facing.x, 0, f.facing.z);
