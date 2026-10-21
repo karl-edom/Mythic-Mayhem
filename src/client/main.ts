@@ -25,7 +25,7 @@ const renderer = createRenderer(canvas);
 const input = new Input(window);
 const roster = loadRoster();
 // The owner's own fighters (local packs) come first, and the player starts on one.
-const playable = roster.filter((r) => r.kit).sort((a, b) => Number(b.local) - Number(a.local));
+const playable = roster.filter((r) => r.kit && !r.character.retired).sort((a, b) => Number(b.local) - Number(a.local));
 const arenas = loadArenaDefs();
 let library: ModelLibrary | null = null;
 

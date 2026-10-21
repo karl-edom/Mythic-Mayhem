@@ -56,6 +56,8 @@ export interface Character {
   look?: Look;
   /** Presentation of specials, by special id: display only. */
   moves: Record<string, MoveStyle>;
+  /** Set aside for now: kept in the published page, not offered in the select screen. */
+  retired?: boolean;
 }
 
 export interface MoveStyle {
@@ -117,6 +119,7 @@ export function parseCharacter(data: unknown, fallbackName: string): Character {
     },
     look: parseLook(o.look),
     moves: parseMoves(o.moves),
+    ...(o.retired === true ? { retired: true } : {}),
   };
 }
 
