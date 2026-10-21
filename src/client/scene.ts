@@ -434,6 +434,13 @@ export class ArenaView {
     return performance.now() < this.slowUntil ? 0.3 : 1;
   }
 
+  /** Where a point of the arena shows on the page, in pixels (damage numbers). */
+  toScreen(p: { x: number; y: number; z: number }): { x: number; y: number; front: boolean } {
+    const v = new THREE.Vector3(p.x, p.y, p.z).project(this.camera);
+    const r = this.renderer.domElement.getBoundingClientRect();
+    return { x: r.left + ((v.x + 1) / 2) * r.width, y: r.top + ((1 - v.y) / 2) * r.height, front: v.z < 1 && Math.abs(v.x) < 1.2 && Math.abs(v.y) < 1.2 };
+  }
+
   /** Where a sound comes from, left (-1) to right (1), as seen by the camera. */
   private pan(p: THREE.Vector3 | { x: number; y: number; z: number }): number {
     const v = new THREE.Vector3(p.x, p.y, p.z).project(this.camera);

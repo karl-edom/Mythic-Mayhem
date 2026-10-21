@@ -543,7 +543,14 @@ function launch(online?: { start: OnlineStart; link: NetLink; room: Room; seat: 
   // Several players on one screen, or more than two fighters: one shared camera.
   const shared = slots.length > 2 || humans.length > 1;
   const view = new ArenaView(renderer, world, characters, focus, library, { colors, labels, shared });
-  const hud = new Hud(hudRoot, world, characters, focus, colors, { labels, humans, keyboard: ctrls.map((c) => c === "kb"), pads: input.connectedPads().length > 0 });
+  const hud = new Hud(hudRoot, world, characters, focus, colors, {
+    labels,
+    humans,
+    keyboard: ctrls.map((c) => c === "kb"),
+    pads: input.connectedPads().length > 0,
+    portrait: (i, img) => photo(img, slots[i]!.entry!, "bust"),
+  });
+  hud.project = (p) => view.toScreen(p);
   const seed = rng((Math.random() * 2 ** 32) >>> 0);
   const bots = ctrls.map((c) => (c === "cpu" && !online ? createBot(seed, BOT_LEVELS[choice.level]) : null));
   game = { world, view, hud, bots, ctrls, rumbleAt: 0, paused: false, names: characters.map((c) => c.name) };

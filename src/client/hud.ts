@@ -2,7 +2,8 @@
 // Built with textContent only: names from fan packs are never parsed as HTML.
 
 import type { Character } from "../brawl/character.ts";
-import { canSee, dodgeStaleNow, grabbable, lockTarget, type BrawlWorld } from "../brawl/world.ts";
+import { bodyCenter, canSee, dodgeStaleNow, grabbable, lockTarget, type BrawlWorld } from "../brawl/world.ts";
+import type { SpecialDelivery } from "../brawl/kit.ts";
 import { KEY_HELP, PAD_HELP } from "./input.ts";
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?: HTMLElement, text?: string): HTMLElementTagNameMap[K] {
@@ -14,6 +15,11 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, cls: string, parent?:
 }
 
 interface Side {
+  hpBar: HTMLDivElement;
+  hpNum: HTMLSpanElement;
+  enBar: HTMLDivElement;
+  enNum: HTMLSpanElement;
+  lastHp: number;
   hp: HTMLDivElement;
   hpLag: HTMLDivElement;
   energy: HTMLDivElement;
@@ -26,6 +32,16 @@ interface Side {
   panel: HTMLDivElement;
   pipBox: HTMLDivElement | null;
 }
+
+/** Where on screen a point of the world is (pixels in the page), and whether it is in front of the camera. */
+export type Projector = (p: { x: number; y: number; z: number }) => { x: number; y: number; front: boolean };
+
+const ICONS: Record<SpecialDelivery["type"], string> = { projectile: "➶", rush: "»", dive: "⤓", burst: "✸", trap: "◎", counter: "↺" };
+/** A technique's name from its id, when its pack gives none. */
+const moveName = (id: string) => {
+  const t = id.replace(/[-_]+/g, " ").trim();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
 
 const SPECIAL_KEYS = ["U", "I", "O"];
 const PAD_SPECIALS = ["B", "B+stick", "LT"];
@@ -43,6 +59,11 @@ export class Hud {
   private comboCount = 0;
   private comboUntil = 0;
   private player: number;
+  /** Damage numbers: the one still showing per target, to add up a flurry of blows. */
+  private numbers = new Map<number, { el: HTMLDivElement; total: number; until: number }>();
+  private root: HTMLElement;
+  /** Set by the game: turns a point of the arena into a place on screen (damage numbers). */
+  project: Projector | null = null;
 
   private world: BrawlWorld;
 
@@ -52,9 +73,10 @@ export class Hud {
     characters: Character[],
     player: number,
     colors: string[] = [],
-    opts: { labels?: string[]; humans?: number[]; keyboard?: boolean[]; pads?: boolean } = {},
+    opts: { labels?: string[]; humans?: number[]; keyboard?: boolean[]; pads?: boolean; portrait?: (i: number, img: HTMLImageElement) => void } = {},
   ) {
     this.world = world;
+    this.root = root;
     this.player = player;
     const humans = opts.humans ?? [player];
     const human = (i: number) => humans.includes(i);
@@ -73,25 +95,41 @@ export class Hud {
       if (colors[i]) panel.style.setProperty("--slot", colors[i]!);
       panel.style.setProperty("--primary", ch.colors.primary);
       panel.style.setProperty("--secondary", ch.colors.secondary);
-      const title = el("div", "hud-name", panel, ch.name);
+      // Its techniques' damage numbers are drawn in its colour.
+      root.style.setProperty(`--dmg-${i}`, ch.colors.primary);
+      // The fighter's face in a slanted frame of the player's colour, as in fighting games.
+      const face = el("div", "hud-portrait", panel);
+      if (opts.portrait) opts.portrait(i, el("img", "hud-face", face));
+      const body = el("div", "hud-body", panel);
+      const title = el("div", "hud-name", body, ch.name);
       el("span", "hud-tag", title, opts.labels && (many || humans.length > 1) ? opts.labels[i]! : i === player ? "Toi" : many ? `CPU${i + 1}` : "Bot");
       // « Out of sight » makes sense in a duel; with everyone on screen, it would only clutter.
       if (i === player && !many && humans.length === 1) this.hidden = el("span", "hud-tag hidden-tag", title, "Hors de vue");
-      el("div", "hud-universe", panel, ch.universe);
-      const hpBar = el("div", "bar hp", panel);
+      const hpBar = el("div", "bar hp", body);
       const hpLag = el("div", "fill lag", hpBar);
       const hp = el("div", "fill", hpBar);
-      const enBar = el("div", "bar energy", panel);
+      el("div", "bar-shine", hpBar);
+      const hpNum = el("span", "bar-num", hpBar);
+      const enBar = el("div", "bar energy", body);
       const energy = el("div", "fill", enBar);
+      el("div", "bar-shine", enBar);
+      const enNum = el("span", "bar-num", enBar);
       for (const sp of f.kit.specials) {
         const mark = el("div", "cost-mark", enBar);
         mark.style[i === 0 ? "left" : "right"] = `${sp.energyCost}%`;
       }
       // Compact panels (3 or more fighters) keep only the player's own specials.
       const detailed = !many || human(i);
-      const specials = detailed ? el("div", "hud-specials", panel) : null;
+      const specials = detailed ? el("div", "hud-specials", body) : null;
       const specialEls = specials
-        ? f.kit.specials.map((sp, s) => el("div", "special", specials, `${hint(i, s) ? hint(i, s) + " · " : ""}${sp.id} (${sp.energyCost})`))
+        ? f.kit.specials.map((sp, s) => {
+            const chip = el("div", "special", specials);
+            if (hint(i, s)) el("span", "special-key", chip, hint(i, s));
+            el("span", "special-icon", chip, ICONS[sp.delivery.type]).setAttribute("aria-hidden", "true");
+            el("span", "special-name", chip, ch.moves[sp.id]?.name ?? moveName(sp.id));
+            el("span", "special-cost", chip, String(sp.energyCost));
+            return chip;
+          })
         : [];
       // The breaker is everyone's escape: shown with the specials, lit when affordable.
       const breaker = specials ? el("div", "special breaker", specials, `${breakerHint(i) ? breakerHint(i) + " · " : ""}dégagement (${world.config.breakerCost})`) : null;
@@ -99,8 +137,8 @@ export class Hud {
       const dodge = specials ? el("div", "special dodge-wear ready", specials) : null;
       if (dodge) dodge.title = "Usure des esquives";
       if (!many && i === 0) top.appendChild(this.center());
-      const pipBox = many ? el("div", "pips", panel) : null;
-      this.sides.push({ hp, hpLag, energy, specials: specialEls, breaker, dodge, pips: [], count: null, panel, pipBox });
+      const pipBox = many ? el("div", "pips", body) : null;
+      this.sides.push({ hpBar, hpNum, enBar, enNum, lastHp: f.hp, hp, hpLag, energy, specials: specialEls, breaker, dodge, pips: [], count: null, panel, pipBox });
     });
     this.timer = root.querySelector(".hud-timer")!;
     // Victory gauge: lives left (« 3 vies »), or K.-O. scored toward the cap, or a plain count.
@@ -124,6 +162,43 @@ export class Hud {
       el("b", "", row, k);
       el("span", "", row, v);
     }
+  }
+
+  /**
+   * A damage number over the target's head: it pops in big, rises and fades. Blows that
+   * follow within half a second add up in the same number, which pops again. Light blows
+   * in white, heavy ones in gold, techniques in the attacker's colour, blocked damage
+   * small and grey.
+   */
+  private damage(target: number, amount: number, kind: "light" | "heavy" | "special" | "blocked", source: number): void {
+    const f = this.world.fighters[target];
+    if (!f || !this.project || amount <= 0) return;
+    const now = performance.now();
+    const at = bodyCenter(f);
+    const p = this.project({ x: at.x, y: at.y + 1.05, z: at.z });
+    if (!p.front) return;
+    let n = this.numbers.get(target);
+    if (!n || now > n.until || kind === "blocked") {
+      const box = el("div", "dmg", this.root);
+      box.style.left = `${p.x + (Math.random() - 0.5) * 36}px`;
+      box.style.top = `${p.y}px`;
+      n = { el: box, total: 0, until: 0 };
+      if (kind !== "blocked") this.numbers.set(target, n);
+      box.addEventListener("animationend", (ev) => {
+        if (ev.animationName === "dmg-rise") box.remove();
+      });
+    }
+    n.total += amount;
+    n.until = now + 500;
+    const strong = kind === "heavy" || kind === "special";
+    n.el.className = `dmg ${kind}${n.total >= 120 ? " big" : ""}`;
+    if (kind === "special") n.el.style.setProperty("--tint", this.world.fighters[source] ? `var(--dmg-${source}, #ffcf3f)` : "#ffcf3f");
+    n.el.style.setProperty("--size", `${Math.min(64, 24 + Math.sqrt(n.total) * (strong ? 3.4 : 2.6))}px`);
+    n.el.textContent = String(Math.round(n.total));
+    // Restart the pop (and the rise) on every added blow.
+    n.el.style.animation = "none";
+    void n.el.offsetWidth;
+    n.el.style.animation = "";
   }
 
   private center(): HTMLDivElement {
@@ -163,6 +238,21 @@ export class Hud {
       const lag = parseFloat(s.hpLag.style.width || "100");
       s.hpLag.style.width = `${Math.max(hp, lag - 0.6)}%`;
       s.energy.style.width = `${(100 * f.energy) / w.config.energyMax}%`;
+      // Life: its number, its colour turning yellow then red, the panel jolting when hurt.
+      const hpText = String(f.alive ? Math.ceil(f.hp) : 0);
+      if (s.hpNum.textContent !== hpText) s.hpNum.textContent = hpText;
+      s.hpBar.classList.toggle("mid", hp <= 50 && hp > 25);
+      s.hpBar.classList.toggle("low", hp <= 25);
+      if (f.hp < s.lastHp - 0.5) {
+        s.panel.classList.remove("hurt");
+        void s.panel.offsetWidth;
+        s.panel.classList.add("hurt");
+      }
+      s.lastHp = f.hp;
+      const enText = String(Math.floor(f.energy));
+      if (s.enNum.textContent !== enText) s.enNum.textContent = enText;
+      // Enough for the dearest technique: the gauge glows.
+      s.enBar.classList.toggle("full", f.alive && f.kit.specials.length > 0 && f.energy >= Math.max(...f.kit.specials.map((sp) => sp.energyCost)));
       s.specials.forEach((el, k) => el.classList.toggle("ready", f.alive && f.energy >= f.kit.specials[k]!.energyCost));
       s.breaker?.classList.toggle("ready", f.alive && f.energy >= w.config.breakerCost);
       if (s.dodge) {
@@ -188,6 +278,9 @@ export class Hud {
     this.timer.textContent = `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`;
 
     for (const e of w.events.slice(this.lastEvent)) {
+      if (e.type === "hit") this.damage(e.target, e.amount, e.knockdown || e.by === "heavy" || e.by === "throw" ? "heavy" : e.by === "special" ? "special" : "light", e.source);
+      if (e.type === "block") this.damage(e.target, e.amount, "blocked", e.source);
+      if (e.type === "slam") this.damage(e.target, e.amount, "heavy", -1);
       // Combo counter: consecutive hits landed by the player.
       if (e.type === "hit" && e.source === this.player) {
         this.comboCount = performance.now() < this.comboUntil ? this.comboCount + 1 : 1;
