@@ -22,7 +22,7 @@ import { buildPizza } from "./pizza.ts";
 import { Vfx } from "./vfx.ts";
 import { PostFX } from "./postfx.ts";
 import { GhostTrail, SpecialFx, type FxFighter } from "./specialFx.ts";
-import { bladeFire, chargeAura, emberAura, handLook, projectileLook, zoneFlames, zoneLightning, zoneVortex, type HandLook, type ProjectileLook } from "./moveFx.ts";
+import { bladeFire, chargeAura, eggTexture, emberAura, handLook, projectileLook, zoneFlames, zoneLightning, zoneVortex, type HandLook, type ProjectileLook } from "./moveFx.ts";
 
 interface FighterView {
   root: THREE.Group;
@@ -1303,22 +1303,7 @@ export class ArenaView {
 
 /** An egg big enough to hold a fighter: white, with green spots (Yoshi's). */
 function eggShell(): THREE.Mesh {
-  const c = document.createElement("canvas");
-  c.width = 256;
-  c.height = 128;
-  const g = c.getContext("2d")!;
-  g.fillStyle = "#f7f3e6";
-  g.fillRect(0, 0, 256, 128);
-  g.fillStyle = "#3cbf4a";
-  for (const [x, y, r] of [[30, 40, 16], [90, 80, 20], [150, 30, 14], [200, 90, 18], [240, 45, 12], [60, 105, 11], [125, 110, 9]]) {
-    for (const dx of [0, -256, 256]) {
-      g.beginPath();
-      g.arc(x! + dx, y!, r!, 0, Math.PI * 2);
-      g.fill();
-    }
-  }
-  const tex = new THREE.CanvasTexture(c);
-  tex.colorSpace = THREE.SRGBColorSpace;
+  const tex = eggTexture();
   const egg = new THREE.Mesh(new THREE.SphereGeometry(0.62, 32, 20), new THREE.MeshToonMaterial({ map: tex }));
   egg.scale.set(1, 1.45, 1);
   egg.position.y = FIGHTER_HEIGHT * 0.5;

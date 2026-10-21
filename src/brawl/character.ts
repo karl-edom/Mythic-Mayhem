@@ -95,7 +95,7 @@ export const SIGNATURE_POSES = [
   "spin-ball", "homing", "drill-dive",
 ] as const;
 
-export const PROJECTILE_LOOKS = ["pizza", "beam", "fire", "bullet", "rocket", "tornado", "disc", "sai"] as const;
+export const PROJECTILE_LOOKS = ["pizza", "beam", "fire", "bullet", "rocket", "tornado", "disc", "sai", "tongue", "egg"] as const;
 export const ZONE_LOOKS = ["fire", "blast", "vortex", "lightning"] as const;
 export const HAND_LOOKS = ["ki", "orb", "lightning", "fire"] as const;
 /** Signature effects of the specials, by name: display only (see client/specialFx.ts). */

@@ -122,11 +122,11 @@ export class PortraitStudio {
           headBox.union(m.geometry.boundingBox!.clone().applyMatrix4(m.matrixWorld));
         }
       });
-      const top = headBox.isEmpty() ? 0 : headBox.max.y - head.y;
-      // Models built in code know their head's height; skinned avatars do not (their
-      // bounds are those of the rest pose), so they get a fixed, close frame.
-      const span = headBox.isEmpty() ? 0.38 : top * 1.95;
-      const at = head.clone().add(new THREE.Vector3(0, headBox.isEmpty() ? 0.025 : top * 0.42, 0));
+      // Skinned avatars: from the head bone to the top of the figure (big-headed ones,
+      // Sonic, Mario, a Pokémon, need a much wider frame than a human head).
+      const top = headBox.isEmpty() ? THREE.MathUtils.clamp(box.max.y - head.y, 0.14, 1.2) : headBox.max.y - head.y;
+      const span = Math.max(0.38, top * 1.95);
+      const at = head.clone().add(new THREE.Vector3(0, top * 0.42, 0));
       const dist = span / 2 / Math.tan(THREE.MathUtils.degToRad(cam.fov / 2));
       cam.position.set(at.x + dist * 0.18, at.y + 0.04, at.z + dist);
       cam.lookAt(at);
