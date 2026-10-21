@@ -911,12 +911,19 @@ async function boot(): Promise<void> {
   if (library) {
     // The packs' VRM avatars (a few MB each), before portraits and showcase use them.
     const packs = playable.flatMap((r) => (r.character.look ? [{ dir: r.dir, look: r.character.look }] : []));
-    if (packs.some((p) => p.look.model === "vrm")) {
+    // Development aid: "?lite" skips the avatars (much faster in a headless browser).
+    const lite = import.meta.env.DEV && new URLSearchParams(location.search).has("lite");
+    if (!lite && packs.some((p) => p.look.model === "vrm")) {
       label.textContent = "Chargement des avatars…";
       fill.style.width = "0%";
       await loadVrmModels(library, packs, (done, total) => {
         fill.style.width = `${(100 * done) / total}%`;
       });
+    }
+    if (lite) {
+      buildShowcase();
+      showMenu();
+      return;
     }
     studio = new PortraitStudio(library);
     if (import.meta.env.DEV) (window as unknown as { __studio: PortraitStudio }).__studio = studio;
