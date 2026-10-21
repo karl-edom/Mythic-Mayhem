@@ -73,6 +73,8 @@ export interface MoveStyle {
   color?: string;
   /** A weapon taken in hand for this special only (a chainsaw, a rifle), by name; "None": bare hands. */
   weapon?: string;
+  /** A signature effect drawn at its launch, along its way, on its hit or its counter (see specialFx.ts). */
+  fx?: (typeof SPECIAL_FX)[number];
   /** The technique's own animation (a swordsman's signature move), else its style's. */
   pose?: (typeof SIGNATURE_POSES)[number];
 }
@@ -92,6 +94,8 @@ export const SIGNATURE_POSES = [
 export const PROJECTILE_LOOKS = ["pizza", "beam", "fire", "bullet", "rocket", "tornado", "disc"] as const;
 export const ZONE_LOOKS = ["fire", "blast", "vortex", "lightning"] as const;
 export const HAND_LOOKS = ["ki", "orb", "lightning", "fire"] as const;
+/** Signature effects of the specials, by name: display only (see client/specialFx.ts). */
+export const SPECIAL_FX = ["spiral", "substitution", "clones"] as const;
 
 const COLOR = /^#[0-9a-fA-F]{6}$/;
 
@@ -130,6 +134,7 @@ function parseMoves(v: unknown): Record<string, MoveStyle> {
     if ((PROJECTILE_LOOKS as readonly unknown[]).includes(o.projectile)) style.projectile = o.projectile as MoveStyle["projectile"];
     if ((ZONE_LOOKS as readonly unknown[]).includes(o.zone)) style.zone = o.zone as MoveStyle["zone"];
     if ((HAND_LOOKS as readonly unknown[]).includes(o.hand)) style.hand = o.hand as MoveStyle["hand"];
+    if ((SPECIAL_FX as readonly unknown[]).includes(o.fx)) style.fx = o.fx as MoveStyle["fx"];
     if (typeof o.color === "string" && COLOR.test(o.color)) style.color = o.color;
     if (typeof o.weapon === "string" && /^[A-Za-z0-9_]{1,40}$/.test(o.weapon)) style.weapon = o.weapon;
     if ((SIGNATURE_POSES as readonly unknown[]).includes(o.pose)) style.pose = o.pose as MoveStyle["pose"];

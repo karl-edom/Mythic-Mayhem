@@ -113,6 +113,7 @@ interface Effect {
   life: number;
   /** k goes 0 → 1 over the effect's life. */
   update: (k: number, dt: number) => void;
+  keep: boolean;
 }
 
 export class Vfx {
@@ -127,9 +128,13 @@ export class Vfx {
     this.scene = scene;
   }
 
-  private add(obj: THREE.Object3D, life: number, update: Effect["update"]): void {
+  /**
+   * Adds a short-lived effect, driven by `update(k, dt)` (k 0 → 1 over `life` seconds).
+   * `keep`: its geometries and materials are shared (a copy of a fighter): not disposed.
+   */
+  add(obj: THREE.Object3D, life: number, update: Effect["update"], keep = false): void {
     this.scene.add(obj);
-    this.effects.push({ obj, age: 0, life, update });
+    this.effects.push({ obj, age: 0, life, update, keep });
   }
 
   private sprite(map: THREE.Texture, color: THREE.ColorRepresentation, opacity = 1): THREE.Sprite {
@@ -516,7 +521,7 @@ export class Vfx {
       e.update(k, dt);
       if (k < 1) return true;
       this.scene.remove(e.obj);
-      e.obj.traverse((o) => {
+      if (!e.keep) e.obj.traverse((o) => {
         if (o instanceof THREE.Mesh || o instanceof THREE.Sprite) {
           if (o instanceof THREE.Mesh) o.geometry.dispose();
           for (const m of [o.material].flat() as THREE.Material[]) m.dispose();

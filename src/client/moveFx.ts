@@ -207,7 +207,7 @@ function streamTexture(): THREE.CanvasTexture {
 
 let swirlTex: THREE.CanvasTexture | null = null;
 /** Diagonal streaks of wind (wrapped on a ball and spun, they swirl). */
-function swirlTexture(): THREE.CanvasTexture {
+export function swirlTexture(): THREE.CanvasTexture {
   if (swirlTex) return swirlTex;
   const c = document.createElement("canvas");
   c.width = 256;
