@@ -811,6 +811,31 @@ export function zoneVortex(radius: number, color: string): THREE.Group {
 }
 
 /**
+ * Lightning gathering over a trap (Fatal-Foudre): arcs crackling at a few points of
+ * the circle, more of them as it arms. `userData.flicker(t, k)` as zoneFlames.
+ */
+export function zoneLightning(radius: number, color: string): THREE.Group {
+  const g = new THREE.Group();
+  const sparks = [0, 1, 2, 3, 4].map((i) => {
+    const h = handLook("lightning", color, 0);
+    const a = (i / 5) * Math.PI * 2;
+    const r = i === 0 ? 0 : radius * 0.6;
+    h.obj.position.set(Math.cos(a) * r, 0.25, Math.sin(a) * r);
+    h.obj.scale.setScalar(1.6);
+    g.add(h.obj);
+    return h;
+  });
+  g.userData.flicker = (t: number, k: number) => {
+    sparks.forEach((h, i) => {
+      // One more point lights up with each fifth of the arming.
+      h.obj.visible = i === 0 || k >= i / 5;
+      if (h.obj.visible) h.update(t);
+    });
+  };
+  return g;
+}
+
+/**
  * The aura of a fighter charging energy, round its feet (fighter space, 1.8 m tall):
  * tongues of flame in its colour licking up round the body, motes of energy shooting
  * up, a glowing circle on the ground and pebbles lifting off it. Driven by the clock

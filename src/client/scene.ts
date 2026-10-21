@@ -21,7 +21,7 @@ import { WeaponTrail } from "./trail.ts";
 import { buildPizza } from "./pizza.ts";
 import { Vfx } from "./vfx.ts";
 import { PostFX } from "./postfx.ts";
-import { bladeFire, chargeAura, emberAura, handLook, projectileLook, zoneFlames, zoneVortex, type HandLook, type ProjectileLook } from "./moveFx.ts";
+import { bladeFire, chargeAura, emberAura, handLook, projectileLook, zoneFlames, zoneLightning, zoneVortex, type HandLook, type ProjectileLook } from "./moveFx.ts";
 
 interface FighterView {
   root: THREE.Group;
@@ -541,6 +541,7 @@ export class ArenaView {
           const { color, look } = this.moveStyle(e.unit, e.slot);
           const at = new THREE.Vector3(e.center.x, e.center.y + 0.05, e.center.z);
           if (look === "fire" || look === "blast") this.explosion(at.clone().setY(at.y + 0.6), e.radius * 0.6);
+          if (look === "lightning") this.vfx.bolt(at, color);
           this.vfx.groundWave(at, color, e.radius * 2);
           this.vfx.ring(at.clone().setY(at.y + 0.9), color, e.radius * 2);
           this.vfx.shake = Math.max(this.vfx.shake, 0.12 * e.radius);
@@ -1026,8 +1027,8 @@ export class ArenaView {
         group.position.set(z.center.x, z.center.y + 0.04, z.center.z);
         this.scene.add(group);
         entry = { group, circle, fill, core };
-        if (look === "fire" || look === "vortex") {
-          entry.fire = look === "fire" ? zoneFlames(z.radius) : zoneVortex(z.radius, color);
+        if (look === "fire" || look === "vortex" || look === "lightning") {
+          entry.fire = look === "fire" ? zoneFlames(z.radius) : look === "vortex" ? zoneVortex(z.radius, color) : zoneLightning(z.radius, color);
           group.add(entry.fire);
         }
         this.zones.set(z, entry);

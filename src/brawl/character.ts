@@ -65,7 +65,7 @@ export interface MoveStyle {
   slashes?: number;
   /** Look of a projectile special: a ball of light (default) or one of the drawn objects. */
   projectile?: (typeof PROJECTILE_LOOKS)[number];
-  /** Look of a trap or a burst: a magic circle (default), fire, an explosion, or a vortex. */
+  /** Look of a trap or a burst: a magic circle (default), fire, an explosion, a vortex, or lightning. */
   zone?: (typeof ZONE_LOOKS)[number];
   /** What glows in the hand (or on the blade) from the start of the special to its end. */
   hand?: (typeof HAND_LOOKS)[number];
@@ -90,7 +90,7 @@ export const SIGNATURE_POSES = [
 ] as const;
 
 export const PROJECTILE_LOOKS = ["pizza", "beam", "fire", "bullet", "rocket", "tornado", "disc"] as const;
-export const ZONE_LOOKS = ["fire", "blast", "vortex"] as const;
+export const ZONE_LOOKS = ["fire", "blast", "vortex", "lightning"] as const;
 export const HAND_LOOKS = ["ki", "orb", "lightning", "fire"] as const;
 
 const COLOR = /^#[0-9a-fA-F]{6}$/;

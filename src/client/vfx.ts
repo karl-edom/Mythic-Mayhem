@@ -247,6 +247,47 @@ export class Vfx {
     ring.onBeforeRender = (_r, _s, cam) => ring.quaternion.copy(cam.quaternion);
   }
 
+  /**
+   * A bolt of lightning striking the ground at `pos` from high above: a jagged white
+   * line with a coloured glow down its length, a flash where it lands, gone in a blink.
+   */
+  bolt(pos: THREE.Vector3, color: THREE.ColorRepresentation, height = 14): void {
+    const pts: number[] = [];
+    let x = 0;
+    let z = 0;
+    const n = 14;
+    for (let i = 0; i < n; i++) {
+      const y0 = height * (1 - i / n);
+      const y1 = height * (1 - (i + 1) / n);
+      const nx = i === n - 1 ? 0 : x + (Math.random() - 0.5) * 1.2;
+      const nz = i === n - 1 ? 0 : z + (Math.random() - 0.5) * 1.2;
+      pts.push(x, y0, z, nx, y1, nz);
+      x = nx;
+      z = nz;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+    const core = noOutline(new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    const group = new THREE.Group();
+    group.add(new THREE.LineSegments(geo, core));
+    const sheath = this.sprite(this.glow, color, 0.7);
+    sheath.scale.set(1.6, height, 1);
+    sheath.position.y = height / 2;
+    const flash = this.sprite(this.glow, 0xffffff);
+    flash.scale.setScalar(3.5);
+    flash.position.y = 0.4;
+    group.add(sheath, flash);
+    group.position.copy(pos);
+    this.add(group, 0.35, (k) => {
+      // It flickers out: on, off, on, fading.
+      const on = k < 0.15 || (k > 0.3 && k < 0.5) ? 1 : 0.35;
+      core.opacity = on * (1 - k);
+      sheath.material.opacity = 0.7 * on * (1 - k);
+      flash.material.opacity = 1 - k;
+    });
+    this.shake = Math.max(this.shake, 0.35);
+  }
+
   /** Ground shockwave (landing a heavy blow, knockdown, area special). */
   groundWave(pos: THREE.Vector3, color: THREE.ColorRepresentation, size: number): void {
     const m = noOutline(new THREE.MeshBasicMaterial({ color, map: ringTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
