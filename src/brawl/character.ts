@@ -61,6 +61,8 @@ export interface Character {
 }
 
 export interface MoveStyle {
+  /** The technique's name as shown on the select screen (« Ryū Tsui Sen »), ≤ 28 characters, plain text. */
+  name?: string;
   /** The technique's name (e.g. in kanji), ≤ 8 characters. No longer shown on screen (2026-10-20): kept so packs stay valid. */
   callout?: string;
   /** Number of blade slashes drawn across the target when the special hits (0–12). */
@@ -131,6 +133,11 @@ function parseMoves(v: unknown): Record<string, MoveStyle> {
     const o = m as Record<string, unknown>;
     const style: MoveStyle = {};
     // Letters only (any script), no markup or control characters.
+    if (typeof o.name === "string") {
+      // Plain text only: letters, digits, spaces and a little punctuation.
+      const t = [...o.name.trim()].filter((ch) => /[\p{L}\p{N} '’.\-!?]/u.test(ch)).slice(0, 28).join("").trim();
+      if (t) style.name = t;
+    }
     if (typeof o.callout === "string") {
       const t = [...o.callout.trim()].filter((ch) => /\p{L}|\p{N}/u.test(ch)).slice(0, 8).join("");
       if (t) style.callout = t;

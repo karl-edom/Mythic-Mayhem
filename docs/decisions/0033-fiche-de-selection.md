@@ -14,6 +14,8 @@ Le panneau de chaque joueur, en bas de l'écran, porte désormais la **fiche** d
 
 Quand on survole une carte (à la souris ou au curseur de la manette), le panneau du joueur qui choisit montre la fiche de ce personnage, marquée « Aperçu ». Il revient à son choix dès que le pointeur quitte la carte.
 
+Les techniques s'affichent sous leur vrai nom, avec les accents (« Ryū Tsui Sen », « Saï lancé », « Aurasphère »). Ce nom vient d'un nouveau champ de pack, `moves.<id>.name` : du texte simple de 28 caractères au plus, limité aux lettres, chiffres, espaces et à un peu de ponctuation (test dans `tests/brawl.test.ts`). Sans lui, le nom est tiré de l'identifiant (« lame-du-dragon » → « Lame du dragon »).
+
 ## D'où viennent les jauges
 
 Elles sont **calculées à partir des chiffres du kit**, jamais saisies à la main (`src/brawl/profile.ts`, testé dans `tests/profile.test.ts`). Elles restent donc toujours vraies, même après un rééquilibrage :

@@ -245,7 +245,7 @@ const DELIVERIES: Record<SpecialDelivery["type"], { icon: string; name: string; 
   trap: { icon: "◎", name: "Piège", does: "posé au sol, il explose quand un ennemi y entre", answer: "ne marche pas dessus, saute par-dessus ou traverse-le en esquive" },
   counter: { icon: "↺", name: "Contre", does: "posture : un coup reçu au corps à corps est esquivé et puni dans le dos", answer: "ne le frappe pas pendant sa posture, attends ou attaque de loin" },
 };
-/** A technique's name from its id: « lame-du-dragon » → « Lame du dragon ». */
+/** A technique's name from its id, when its pack gives none: « lame-du-dragon » → « Lame du dragon ». */
 const moveName = (id: string) => {
   const t = id.replace(/[-_]+/g, " ").trim();
   return t.charAt(0).toUpperCase() + t.slice(1);
@@ -276,11 +276,12 @@ function fillPlate(el: HTMLElement, r: RosterEntry): void {
   const moves = h("div", "sheet-moves", sheet);
   for (const sp of kit.specials) {
     const d = DELIVERIES[sp.delivery.type];
+    const name = r.character.moves[sp.id]?.name ?? moveName(sp.id);
     const m = h("span", "move", moves);
     h("span", "move-icon", m, d.icon).setAttribute("aria-hidden", "true");
-    h("span", "move-name", m, moveName(sp.id));
+    h("span", "move-name", m, name);
     h("span", "move-cost", m, String(sp.energyCost));
-    m.title = `${moveName(sp.id)} — ${d.name}, ${sp.energyCost} d'énergie${sp.guardBreak ? ", brise la garde" : ""}.\nIl ${d.does}.\nPour la contrer : ${d.answer}.`;
+    m.title = `${name} — ${d.name}, ${sp.energyCost} d'énergie${sp.guardBreak ? ", brise la garde" : ""}.\nIl ${d.does}.\nPour la contrer : ${d.answer}.`;
   }
 }
 

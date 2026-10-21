@@ -345,6 +345,9 @@ test("apparence : un look valide est lu, un look invalide est ignoré", async ()
   assert.equal(parseCharacter({ look: { model: "swordsman", show: [], burning: true } }, "x").look?.burning, true);
   assert.equal(parseCharacter({ look: { model: "swordsman", show: [], burning: "yes" } }, "x").look?.burning, undefined);
   assert.deepEqual(parseCharacter({ moves: { a: { fx: "clones" }, b: { fx: "eval" } } }, "x").moves, { a: { fx: "clones" }, b: {} });
+  assert.equal(parseCharacter({ moves: { a: { name: "  Ryū Tsui Sen " } } }, "x").moves.a?.name, "Ryū Tsui Sen");
+  assert.equal(parseCharacter({ moves: { a: { name: "<b>Saï</b> lancé" } } }, "x").moves.a?.name, "bSaïb lancé");
+  assert.equal(parseCharacter({ moves: { a: { name: "x".repeat(40) } } }, "x").moves.a?.name?.length, 28);
   // Technique presentation: letters only (any script), at most 8; slashes within 0–12.
   const moves = parseCharacter({ moves: { "coup-1": { callout: "龍<b>槌</b>閃", slashes: 40 }, "BAD ID": { callout: "x" } } }, "x").moves;
   assert.deepEqual(moves, { "coup-1": { callout: "龍b槌b閃", slashes: 12 } });
