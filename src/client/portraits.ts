@@ -80,11 +80,13 @@ export class PortraitStudio {
     const inst = instantiate(this.lib, look);
     const root = inst.root;
     root.traverse((o) => {
-      const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial | undefined;
-      if (m && "envMap" in m && m.envMap === proceduralEnv.map && m.envMap) m.envMap = this.env;
+      for (const m of [(o as THREE.Mesh).material ?? []].flat() as THREE.MeshStandardMaterial[])
+        if ("envMap" in m && m.envMap === proceduralEnv.map && m.envMap) m.envMap = this.env;
     });
     // The fighting stance, a beat into it.
-    const idle = inst.clips.get("Idle");
+    // Bare-handed fighters: the relaxed stance (their guard, fists before the face,
+    // would hide the face of a short-armed, big-headed avatar).
+    const idle = (look.show.length === 0 ? inst.clips.get("Unarmed_Idle") : undefined) ?? inst.clips.get("Idle");
     if (idle) {
       inst.mixer.clipAction(idle).play();
       inst.mixer.setTime(idle.duration * 0.3);
@@ -110,7 +112,18 @@ export class PortraitStudio {
       this.renderer.clear();
       this.outline.render(this.scene, cam);
     }
-    const url = fit(this.renderer.domElement, w, ht, cut === "bust" ? 0.42 : 1);
+    // Where the head is in the picture (the base of the skull: the head bone).
+    // A bone of that name (a mesh may be called "head" too).
+    let headBone: THREE.Object3D | undefined;
+    for (const n of ["head", "Head", "J_Bip_C_Head"])
+      root.traverse((o) => {
+        if (!headBone && o.name === n && (o as THREE.Bone).isBone) headBone = o;
+      });
+    headBone ??= ["head", "Head"].map((n) => root.getObjectByName(n)).find((o) => o);
+    const p = headBone?.getWorldPosition(new THREE.Vector3()).project(cam);
+    const c = this.renderer.domElement;
+    const head = p ? { x: ((p.x + 1) / 2) * c.width, y: ((1 - p.y) / 2) * c.height } : undefined;
+    const url = fit(c, w, ht, cut === "bust" ? head ?? null : undefined);
     this.scene.remove(root);
     return url;
   }
@@ -121,7 +134,7 @@ export class PortraitStudio {
  * (the figure fills the height, feet at the bottom), and their densest column the
  * centre, so a staff or a sword held out does not push the body aside.
  */
-function fit(src: HTMLCanvasElement, w: number, h: number, band = 1): string {
+function fit(src: HTMLCanvasElement, w: number, h: number, bust?: { x: number; y: number } | null): string {
   const tmp = document.createElement("canvas");
   tmp.width = src.width;
   tmp.height = src.height;
@@ -152,22 +165,16 @@ function fit(src: HTMLCanvasElement, w: number, h: number, band = 1): string {
   });
   const cx = sum / mass;
   const o = out.getContext("2d")!;
-  if (band < 1) {
-    // A bust: the top `band` of the figure, centred on the head (the densest columns
-    // of that top part), a little headroom above.
-    const span = (bottom - top + 1) * band;
-    let hs = 0;
-    let hm = 0;
-    for (let y = top; y < top + span; y++)
-      for (let x = 0; x < tmp.width; x++)
-        if (data[(y * tmp.width + x) * 4 + 3]! > 24) {
-          hs += x;
-          hm += 1;
-        }
-    const hx = hm ? hs / hm : cx;
-    const side = span * 1.08;
+  if (bust !== undefined) {
+    // A bust: head and shoulders, on the head (its bone, else the top of the figure).
+    // The frame grows with the head: a Sonic, all head, shows his chest too.
+    const fig = bottom - top + 1;
+    const hx = bust?.x ?? cx;
+    const hy = bust ? Math.max(top, Math.min(bottom, bust.y)) : top + fig * 0.12;
+    const side = Math.max((hy - top) * 1.7, fig * 0.36);
+    const y0 = Math.max(hy - side * 0.6, top - side * 0.06);
     const k2 = h / side;
-    o.drawImage(tmp, 0, 0, tmp.width, tmp.height, w / 2 - hx * k2, (top - side * 0.06) * -k2, tmp.width * k2, tmp.height * k2);
+    o.drawImage(tmp, 0, 0, tmp.width, tmp.height, w / 2 - hx * k2, -y0 * k2, tmp.width * k2, tmp.height * k2);
     return out.toDataURL("image/png");
   }
   const k = (h * 0.96) / (bottom - top + 1);

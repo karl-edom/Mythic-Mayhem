@@ -21,6 +21,13 @@ const VRMUtils = (ThreeVrm as unknown as {
   VRMUtils: { removeUnnecessaryVertices(root: THREE.Object3D): void; rotateVRM0(vrm: VRM): void };
 }).VRMUtils;
 
+interface MToonLike {
+  isMToonMaterial?: boolean;
+  shadeColorFactor?: THREE.Color;
+  shadeMultiplyTexture?: THREE.Texture | null;
+  map?: THREE.Texture | null;
+}
+
 /** "json" on hosts that serve no .glb/.vrm files (the published page): wrapped in JSON. */
 const EXT = (import.meta.env?.VITE_MODEL_EXT as string | undefined) ?? "glb";
 
@@ -69,6 +76,19 @@ export async function loadVrm(url: string): Promise<VrmRig> {
   const gltf = await parsing;
   const vrm = gltf.userData.vrm as VRM;
   VRMUtils.removeUnnecessaryVertices(gltf.scene);
+  // Toon materials whose shaded side is plain white, with no texture of its own: every
+  // part turned from the light comes out white. Their shade takes the main texture,
+  // a little darker, as most avatars do.
+  gltf.scene.traverse((o) => {
+    for (const m of [(o as THREE.Mesh).material ?? []].flat() as unknown as MToonLike[]) {
+      const shade = m.shadeColorFactor;
+      if (!m.isMToonMaterial || !shade || m.shadeMultiplyTexture || !m.map) continue;
+      if (shade.r > 0.9 && shade.g > 0.9 && shade.b > 0.9) {
+        m.shadeMultiplyTexture = m.map;
+        shade.setScalar(0.72);
+      }
+    }
+  });
   // VRM 0.x avatars face −Z: a half turn, as VRM 1.0 ones (no-op for those).
   VRMUtils.rotateVRM0(vrm);
   // The bones under their humanoid names (VRM 1.0 names, three-vrm converts 0.x ones).
