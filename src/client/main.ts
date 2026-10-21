@@ -12,6 +12,8 @@ import { loadModels, loadVrmModels, type ModelLibrary } from "./models.ts";
 import { loadPhotoTextures } from "./villageTex.ts";
 import { PortraitStudio, type PortraitCut } from "./portraits.ts";
 import { loadArenaDefs, loadRoster, propCatalog, type RosterEntry } from "./roster.ts";
+import { AXES, rateProfiles, type Axis } from "../brawl/profile.ts";
+import type { Archetype, SpecialDelivery } from "../brawl/kit.ts";
 import { ArenaView, createRenderer } from "./scene.ts";
 import { Lockstep } from "../net/lockstep.ts";
 import type { NetLink } from "../net/link.ts";
@@ -26,6 +28,8 @@ const input = new Input(window);
 const roster = loadRoster();
 // The owner's own fighters (local packs) come first, and the player starts on one.
 const playable = roster.filter((r) => r.kit && !r.character.retired).sort((a, b) => Number(b.local) - Number(a.local));
+/** Ratings 1–5 of the playable fighters, ranked against each other (select screen). */
+const ratings = rateProfiles(playable.map((r) => r.kit!));
 const arenas = loadArenaDefs();
 let library: ModelLibrary | null = null;
 
@@ -219,12 +223,76 @@ function fighterCard(r: RosterEntry, parent: HTMLElement, index: number): void {
     const t = h("span", "slot-tag", tagBox, shortLabel(i));
     t.style.background = colorOf(i);
   }
+  // Pointing at a fighter shows its sheet in the panel of the player who is choosing.
+  card.addEventListener("mouseenter", () => previewSheet(r));
+  card.addEventListener("mouseleave", () => previewSheet(null));
   card.addEventListener("click", () => {
     choice.slots[choice.active]!.entry = r;
     choice.active = (choice.active + 1) % choice.count;
     buildShowcase();
     showMenu();
   });
+}
+
+const STYLE_NAMES: Record<Archetype, string> = { rushdown: "Rapide", balanced: "Polyvalent", heavy: "Lourd", zoner: "À distance" };
+const AXIS_NAMES: Record<Axis, string> = { power: "Puissance", speed: "Vitesse", reach: "Portée", toughness: "Résistance", mobility: "Mobilité" };
+/** What each kind of technique does, and how to answer it (the combat contract, in a sentence). */
+const DELIVERIES: Record<SpecialDelivery["type"], { icon: string; name: string; does: string; answer: string }> = {
+  projectile: { icon: "➶", name: "Tir", does: "part vers la cible et touche le premier ennemi", answer: "esquive sur le côté ou garde" },
+  rush: { icon: "»", name: "Ruée", does: "fonce droit devant et s'arrête au premier ennemi touché", answer: "esquive ou garde" },
+  dive: { icon: "⤓", name: "Plongée", does: "fond sur la cible en ligne droite, même depuis les airs", answer: "esquive au bon moment, garde, ou bouge pendant la préparation" },
+  burst: { icon: "✸", name: "Explosion", does: "frappe tout autour de lui", answer: "éloigne-toi, garde ou saute" },
+  trap: { icon: "◎", name: "Piège", does: "posé au sol, il explose quand un ennemi y entre", answer: "ne marche pas dessus, saute par-dessus ou traverse-le en esquive" },
+  counter: { icon: "↺", name: "Contre", does: "posture : un coup reçu au corps à corps est esquivé et puni dans le dos", answer: "ne le frappe pas pendant sa posture, attends ou attaque de loin" },
+};
+/** A technique's name from its id: « lame-du-dragon » → « Lame du dragon ». */
+const moveName = (id: string) => {
+  const t = id.replace(/[-_]+/g, " ").trim();
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+
+/**
+ * The fighter on a player's panel: name, universe, and its sheet (style, five ratings,
+ * the three techniques with their cost; pointing at one tells what it does and how to
+ * answer it).
+ */
+function fillPlate(el: HTMLElement, r: RosterEntry): void {
+  el.replaceChildren();
+  h("div", "plate-name", el, r.character.name);
+  h("div", "plate-universe", el, r.character.universe.replace(/\s*\(.*\)\s*$/, ""));
+  const kit = r.kit;
+  if (!kit) return;
+  const sheet = h("div", "sheet", el);
+  h("span", "sheet-style", sheet, STYLE_NAMES[kit.archetype]);
+  const stats = h("div", "sheet-stats", sheet);
+  const rating = ratings.get(kit);
+  for (const a of AXES) {
+    const row = h("div", "stat", stats);
+    h("span", "stat-name", row, AXIS_NAMES[a]);
+    const bar = h("span", "stat-bar", row);
+    bar.setAttribute("aria-label", `${AXIS_NAMES[a]} ${rating?.[a] ?? 3} sur 5`);
+    for (let k = 1; k <= 5; k++) h("span", `stat-pip${k <= (rating?.[a] ?? 3) ? " on" : ""}`, bar);
+  }
+  const moves = h("div", "sheet-moves", sheet);
+  for (const sp of kit.specials) {
+    const d = DELIVERIES[sp.delivery.type];
+    const m = h("span", "move", moves);
+    h("span", "move-icon", m, d.icon).setAttribute("aria-hidden", "true");
+    h("span", "move-name", m, moveName(sp.id));
+    h("span", "move-cost", m, String(sp.energyCost));
+    m.title = `${moveName(sp.id)} — ${d.name}, ${sp.energyCost} d'énergie${sp.guardBreak ? ", brise la garde" : ""}.\nIl ${d.does}.\nPour la contrer : ${d.answer}.`;
+  }
+}
+
+/** Shows `r`'s sheet in the choosing player's panel while it is pointed at (null: back). */
+function previewSheet(r: RosterEntry | null): void {
+  const plateEl = document.querySelector<HTMLElement>(".plate.active");
+  const who = plateEl?.querySelector<HTMLElement>(".plate-who");
+  const own = choice.slots[choice.active]?.entry;
+  if (!plateEl || !who) return;
+  const shown = r ?? own;
+  plateEl.classList.toggle("previewing", !!r && r !== own);
+  if (shown) fillPlate(who, shown);
 }
 
 /**
@@ -249,8 +317,8 @@ function plate(i: number): HTMLElement {
   const info = h("div", "plate-info", p);
   const top = h("div", "plate-label", info, slotLabel(i));
   if (ready.has(i) && isHuman(i)) h("span", "ready-tag", top, "PRÊT");
-  h("div", "plate-name", info, r.character.name);
-  h("div", "plate-universe", info, r.character.universe);
+  const who = h("div", "plate-who", info);
+  fillPlate(who, r);
   const row = h("div", "plate-chips", info);
   const c = h("button", "ctrl-chip", row, CTRL_NAMES(sl.ctrl));
   c.title = "Qui joue ce combattant (clic pour changer)";
@@ -685,6 +753,7 @@ function drawCursors(): void {
       const t = h("span", "pad-cursor", card, shortLabel(slot));
       t.style.background = color;
       card.classList.add("hovered");
+      if (slot === choice.active) previewSheet(playable[c.i] ?? null);
     } else {
       const b = buttons[c.i];
       if (!b) continue;
