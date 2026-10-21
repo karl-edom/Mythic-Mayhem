@@ -13,6 +13,10 @@ import { loadPhotoTextures } from "./villageTex.ts";
 import { PortraitStudio, type PortraitCut } from "./portraits.ts";
 import { loadArenaDefs, loadRoster, propCatalog, type RosterEntry } from "./roster.ts";
 import { ArenaView, createRenderer } from "./scene.ts";
+import { Lockstep } from "../net/lockstep.ts";
+import type { NetLink } from "../net/link.ts";
+import type { Room } from "../net/room.ts";
+import { showOnline, type OnlineStart } from "./online.ts";
 
 const canvas = document.querySelector<HTMLCanvasElement>("#view")!;
 const hudRoot = document.querySelector<HTMLDivElement>("#hud")!;
@@ -115,6 +119,19 @@ interface Game {
   rumbleAt: number;
   paused: boolean;
   names: string[];
+  /** Online match: the lockstep that runs it, the links, this page's fighter. */
+  net?: Online;
+}
+interface Online {
+  lock: Lockstep;
+  link: NetLink;
+  room: Room;
+  seat: number;
+  start: OnlineStart;
+  /** Wall-clock time the match last moved on (to tell a lost player). */
+  movedAt: number;
+  /** Why it stopped early (desync, someone gone), if it did. */
+  stopped?: string;
 }
 let game: Game | null = null;
 /** Menu backdrop: the chosen fighters idling in the chosen arena. */
@@ -343,6 +360,8 @@ function showMenu(): void {
     start.title = "Il faut au moins un combattant dans chaque équipe";
   }
   start.addEventListener("click", startGame);
+  const online = h("button", "chip online-open", options, "🌐 En ligne");
+  online.addEventListener("click", openOnline);
 
   drawCursors();
 
@@ -410,7 +429,7 @@ function startGame(): void {
   versus(launch);
 }
 
-function launch(): void {
+function launch(online?: { start: OnlineStart; link: NetLink; room: Room; seat: number }): void {
   const slots = activeSlots();
   menuRoot.classList.add("hidden");
   showcase?.dispose();
@@ -431,17 +450,19 @@ function launch(): void {
   );
   const characters = slots.map((sl) => sl.entry!.character);
   const colors = slots.map((_, i) => colorOf(i));
-  const labels = slots.map((_, i) => shortLabel(i));
+  // Online, the other players are people too, just not at this keyboard.
+  const labels = slots.map((_, i) => (online ? (online.start.seats[i]!.peer ? `J${i + 1}` : `CPU${i + 1}`) : shortLabel(i)));
   const ctrls = slots.map((sl) => sl.ctrl);
   const humans = ctrls.flatMap((c, i) => (c !== "cpu" ? [i] : []));
-  const focus = humans[0] ?? 0;
+  const focus = online ? online.seat : (humans[0] ?? 0);
   // Several players on one screen, or more than two fighters: one shared camera.
   const shared = slots.length > 2 || humans.length > 1;
   const view = new ArenaView(renderer, world, characters, focus, library, { colors, labels, shared });
   const hud = new Hud(hudRoot, world, characters, focus, colors, { labels, humans, keyboard: ctrls.map((c) => c === "kb"), pads: input.connectedPads().length > 0 });
   const seed = rng((Math.random() * 2 ** 32) >>> 0);
-  const bots = ctrls.map((c) => (c === "cpu" ? createBot(seed, BOT_LEVELS[choice.level]) : null));
+  const bots = ctrls.map((c) => (c === "cpu" && !online ? createBot(seed, BOT_LEVELS[choice.level]) : null));
   game = { world, view, hud, bots, ctrls, rumbleAt: 0, paused: false, names: characters.map((c) => c.name) };
+  if (online) game.net = onlineMatch(world, online);
   // Development aid (absent from builds): lets automated checks reach the match state.
   if (import.meta.env.DEV) (window as unknown as { __game: Game }).__game = game;
   input.clear();
@@ -479,11 +500,74 @@ function showEnd(g: Game): void {
     })
     .join(" · ");
   h("div", "end-score", box, `${line} · ${Math.round(w.time)} s`);
+  if (g.net) {
+    if (g.net.stopped) h("div", "end-score", box, g.net.stopped);
+    const back = h("button", "start", box, "RETOUR AU SALON");
+    back.addEventListener("click", quitMatch);
+    return;
+  }
   const again = h("button", "start", box, "REVANCHE");
   again.addEventListener("click", startGame);
   const back = h("button", "chip", box, "Changer de combattants");
   back.addEventListener("click", quitMatch);
   h("div", "pause-hint", box, "Manette : A revanche · B changer de combattants");
+}
+
+// ---------------------------------------------------------------------------
+// Online play (decision 0026, step 3): the lobby is in online.ts; here, the match.
+
+function openOnline(): void {
+  void showOnline({
+    root: menuRoot,
+    playable,
+    arenas,
+    pick: () => choice.slots[0]?.entry,
+    back: () => showMenu(),
+    start: launchOnline,
+  });
+}
+
+/** The host started: the same match as everyone, from the start's numbers only. */
+function launchOnline(start: OnlineStart, link: NetLink, room: Room): void {
+  const me = room.peers().find((p) => p.sameTab)?.peer;
+  const seat = start.seats.findIndex((s) => s.peer === me);
+  // This page's controller: the one on the select screen (keyboard if a bot had it).
+  const mine: Controller = choice.slots[0]?.ctrl !== "cpu" ? choice.slots[0]!.ctrl : "kb";
+  choice.count = start.seats.length;
+  choice.mode = "ffa";
+  choice.rule = start.rule;
+  choice.level = start.level;
+  choice.arena = arenas.find((a) => a.id === start.arena);
+  start.seats.forEach((s, i) => {
+    choice.slots[i] = { entry: playable.find((r) => r.dir === s.pack), team: i, ctrl: i === seat ? mine : "cpu" };
+  });
+  menuRoot.classList.add("hidden");
+  versus(() => launch({ start, link, room, seat }));
+}
+
+function onlineMatch(world: BrawlWorld, o: { start: OnlineStart; link: NetLink; room: Room; seat: number }): Online {
+  const { start, link } = o;
+  const humans = start.seats.flatMap((s, i) => (s.peer ? [{ id: i, units: [i] }] : []));
+  // Bots run on every page alike: same seeds, nothing sent for them.
+  const bots = new Map(start.seats.flatMap((s, i) => (s.peer ? [] : [[i, createBot(rng(start.seed + i), BOT_LEVELS[start.level])] as const])));
+  link.match = start.id;
+  const lock = new Lockstep({ world, peers: humans, me: o.seat, delay: start.delay, bots, send: (m) => link.send(m) });
+  const net: Online = { lock, link, room: o.room, seat: o.seat, start, movedAt: performance.now() };
+  // A message counts only from the page that holds that fighter.
+  link.onMessage((m, peer) => {
+    if (start.seats[m.from]?.peer === peer) lock.receive(m);
+  });
+  lock.onDesync = () => (net.stopped = "Désynchronisation : vos parties ont divergé. Relancez depuis le salon.");
+  return net;
+}
+
+/** During an online match: who is late, who is gone. */
+function watchOnline(g: Game, n: Online, now: number): void {
+  const here = new Set(n.room.peers().map((p) => p.peer));
+  const gone = n.start.seats.findIndex((s, i) => s.peer && i !== n.seat && !here.has(s.peer));
+  if (gone >= 0) n.stopped = `${g.names[gone]} (J${gone + 1}) a quitté la partie.`;
+  else if (now - n.movedAt > 10000) n.stopped = "Connexion perdue : plus rien reçu depuis 10 s.";
+  else if (now - n.movedAt > 1500) g.hud.flash("CONNEXION…", 0.3);
 }
 
 /** Gamepads rumble on hits: hard for the one hit, lighter for the one hitting. */
@@ -502,6 +586,12 @@ function rumbles(g: Game): void {
 
 function togglePause(g: Game): void {
   if (g.world.over) return;
+  if (g.net) {
+    // Online the match goes on for the others: the menu shows, the clock does not stop.
+    if (menuRoot.classList.contains("hidden")) showPause(g);
+    else menuRoot.classList.add("hidden");
+    return;
+  }
   g.paused = !g.paused;
   if (g.paused) {
     pauseFocus = 0;
@@ -675,8 +765,17 @@ function showPause(g: Game): void {
 }
 
 function quitMatch(): void {
+  const net = game?.net;
   game?.view.dispose();
   game = null;
+  if (net) {
+    // Back to the room (it is kept between matches).
+    net.link.match = "";
+    menuIntro = true;
+    buildShowcase();
+    openOnline();
+    return;
+  }
   menuIntro = true;
   buildShowcase();
   showMenu();
@@ -754,13 +853,20 @@ function frame(now: number): void {
   input.poll();
   padMenus();
   const g = game;
-  if (g && !g.paused && !g.world.over) {
+  if (g && !g.paused && !g.world.over && !g.net?.stopped) {
     const tick = 1 / g.world.config.tickRate;
     // Slow motion after a K.-O.: the simulation simply advances slower.
     acc += dt * GAME_SPEED * g.view.timeScale();
-    while (acc >= tick && !g.world.over) {
+    while (acc >= tick && !g.world.over && !g.net?.stopped) {
       acc -= tick;
       g.view.capture();
+      if (g.net) {
+        // Online: this page's commands go into the lockstep, which runs the match when
+        // everyone's are in (net/lockstep.ts).
+        const n = g.net;
+        if (n.lock.frame([input.command(n.seat, g.ctrls[n.seat]!, g.view.forward())]) > 0) n.movedAt = now;
+        continue;
+      }
       const w = g.world;
       const fwd = g.view.forward();
       step(
@@ -773,7 +879,8 @@ function frame(now: number): void {
     }
     rumbles(g);
     g.hud.update(g.names);
-    if (g.world.over) showEnd(g);
+    if (g.net && !g.net.stopped && !g.world.over) watchOnline(g, g.net, now);
+    if (g.world.over || g.net?.stopped) showEnd(g);
   }
   if (g) g.view.render(dt * (g.paused ? 0 : GAME_SPEED * g.view.timeScale()), g.paused ? 1 : acc / (1 / g.world.config.tickRate));
   else if (showcase) showcase.showcase(dt);

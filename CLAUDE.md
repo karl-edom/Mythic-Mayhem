@@ -21,6 +21,7 @@
   2. tout commiter et pousser : `npm run artifact` refuse de compiler sinon ;
   3. lancer `npm run artifact`, qui produit `dist/artifact/index.html` et la liste `dist/artifact/files.json` ;
   4. publier `dist/artifact/index.html` à l'adresse ci-dessus, avec `root: "dist/artifact"` et les fichiers de `files.json` (seulement ceux qui ont changé suffisent : les autres restent en place).
+- **Jeu en ligne** : la page déclare la capacité `room` (salle temps réel de claude.ai, décision 0026, étape 3). Elle est déclarée une fois (`capabilities: {room: {}}` à la publication) puis conservée : ne pas passer `capabilities` aux publications suivantes, sauf pour la changer.
 - **Tout changement de `packs/local/`** (réglage, nouveau personnage) doit être suivi d'une publication. Sinon il est perdu à la fin de la session.
 - **Si la publication est refusée parce qu'une autre session vient de publier** : comparer les packs de la version en ligne avec les siens (`extractPacks` de `tools/artifact.ts` sur la page enregistrée par le refus), reprendre les packs qu'elle a changés, garder les siens, recompiler, puis republier. Ne jamais forcer.
 - Dire au porteur de projet quel commit a été publié.
