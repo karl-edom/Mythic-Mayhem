@@ -263,9 +263,9 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
       const body = new THREE.Group();
       const unit = new THREE.CylinderGeometry(1, 1, 1, 28, 1, true);
       unit.translate(0, 0.5, 0);
-      const haloMat = energyMaterial(color, { core: 0.9, intensity: 0.45, opacity: 0.55, flow: [0.6, -3.5], grain: [2, 1] });
-      const bodyMat = energyMaterial(color, { core: 1.2, intensity: 1.6, flow: [0.2, -5], grain: [3, 1] });
-      const coreMat = energyMaterial(new THREE.Color(color).lerp(new THREE.Color(1, 1, 1), 0.6), { core: 2.4, intensity: 1.4, flow: [0, -7], grain: [2, 1] });
+      const haloMat = energyMaterial(color, { core: 0.9, intensity: 0.3, opacity: 0.5, flow: [0.6, -3.5], grain: [2, 1] });
+      const bodyMat = energyMaterial(color, { core: 1.1, intensity: 1.15, flow: [0.2, -5], grain: [3, 1], hot: 0.25 });
+      const coreMat = energyMaterial(new THREE.Color(color).lerp(new THREE.Color(1, 1, 1), 0.5), { core: 2.6, intensity: 0.9, flow: [0, -7], grain: [2, 1] });
       const halo = new THREE.Mesh(unit, haloMat);
       const sheath = new THREE.Mesh(unit, bodyMat);
       const core = new THREE.Mesh(unit, coreMat);

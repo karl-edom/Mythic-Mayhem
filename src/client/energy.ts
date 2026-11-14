@@ -55,6 +55,8 @@ export interface EnergyOptions {
   /** Overall brightness (the bloom picks up above ~1.6). */
   intensity?: number;
   opacity?: number;
+  /** How much of its core turns white-hot (0 none, 1 all of it). */
+  hot?: number;
 }
 
 /**
@@ -72,6 +74,7 @@ export function energyMaterial(color: THREE.ColorRepresentation, o: EnergyOption
       grain: { value: new THREE.Vector2(...(o.grain ?? [2, 1])) },
       intensity: { value: o.intensity ?? 2.2 },
       opacity: { value: o.opacity ?? 1 },
+      hotness: { value: o.hot ?? 0.7 },
     },
     vertexShader: /* glsl */ `
       varying vec3 vN;
@@ -85,7 +88,7 @@ export function energyMaterial(color: THREE.ColorRepresentation, o: EnergyOption
         gl_Position = projectionMatrix * mv;
       }`,
     fragmentShader: /* glsl */ `
-      uniform float time, core, intensity, opacity;
+      uniform float time, core, intensity, opacity, hotness;
       uniform vec3 color;
       uniform vec2 flow, grain;
       uniform sampler2D noise;
@@ -100,7 +103,7 @@ export function energyMaterial(color: THREE.ColorRepresentation, o: EnergyOption
         float n = texture2D(noise, uv).r * 0.65 + texture2D(noise, uv * 2.3 - flow * time * 0.7).r * 0.35;
         float e = min(1.0, body * (0.5 + 0.8 * n));
         // White-hot in the core, the technique's colour around it, darker at the rim.
-        vec3 hot = mix(color, vec3(1.0), smoothstep(0.55, 1.0, e));
+        vec3 hot = mix(color, vec3(1.0), smoothstep(0.55, 1.0, e) * hotness);
         vec3 col = mix(color * 0.35, hot, smoothstep(0.05, 0.6, e)) * intensity;
         gl_FragColor = vec4(col * e * opacity, e * opacity);
       }`,

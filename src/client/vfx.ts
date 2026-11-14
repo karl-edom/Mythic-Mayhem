@@ -174,7 +174,7 @@ export class Vfx {
    * colour), sparks that fly off, fall and stretch with their speed, a shockwave ring.
    */
   hit(pos: THREE.Vector3, color: THREE.ColorRepresentation, big: boolean): void {
-    const size = big ? 2.3 : 1.4;
+    const size = big ? 1.7 : 1.1;
     const tint = new THREE.Color(color);
     const hot = tint.clone().lerp(new THREE.Color(1, 1, 1), 0.55);
     // A short, tight white core (not a blob that hides the fighters).
@@ -277,10 +277,10 @@ export class Vfx {
     }
     // Dust kicked along the ground, and the shockwave.
     this.dustRing(new THREE.Vector3(pos.x, floor, pos.z), 2.4 * size, 18);
-    this.groundWave(new THREE.Vector3(pos.x, floor, pos.z), color, 3.2 * size);
+    this.groundWave(new THREE.Vector3(pos.x, floor, pos.z), color, 2.4 * size);
     this.marks.add(new THREE.Vector3(pos.x, floor, pos.z), 3.4 * size, "scorch", 7);
     this.screen.ripple(pos, 0.025 * Math.min(1.6, size), 4.5 * size, 0.6);
-    this.screen.kick(0.012 * Math.min(1.5, size), 0.18);
+    this.screen.kick(0.012 * Math.min(1.5, size), 0.06, 0xffb070);
     this.shake = Math.max(this.shake, 0.4 * size);
   }
 
@@ -402,7 +402,7 @@ export class Vfx {
     // A sharp, quick shockwave: it reads as a snap, not as a veil over the fighters.
     this.add(ring, 0.24, (k) => {
       ring.scale.setScalar(size * 0.5 * (0.25 + (1 - (1 - k) ** 3) * 0.8));
-      m.opacity = 0.55 * (1 - k) ** 1.5;
+      m.opacity = 0.4 * (1 - k) ** 1.5;
     });
     ring.onBeforeRender = (_r, _s, cam) => ring.quaternion.copy(cam.quaternion);
   }
@@ -463,7 +463,7 @@ export class Vfx {
     ring.position.copy(pos).setY(pos.y + 0.05);
     this.add(ring, 0.45, (k) => {
       ring.scale.setScalar(size * (0.2 + (1 - (1 - k) ** 3) * 0.9));
-      m.opacity = 0.95 * (1 - k);
+      m.opacity = 0.6 * (1 - k) ** 1.4;
     });
     this.dustRing(pos, size * 0.45, 10);
     // The ground kicks up: dust thrown out along the front.
