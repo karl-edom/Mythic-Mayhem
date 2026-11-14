@@ -13,6 +13,7 @@ import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { Pass } from "three/examples/jsm/postprocessing/Pass.js";
 import { ShaderPass } from "three/examples/jsm/postprocessing/ShaderPass.js";
 import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import type { ScreenFx } from "./fxkit.ts";
 
 /** Draws the scene (and the ink outlines) into the composer's buffer. */
 class SceneOutlinePass extends Pass {
@@ -63,12 +64,71 @@ const GradeShader = {
 };
 
 /**
+ * What the effects do to the picture (fxkit.ts, ScreenFx): shockwaves that bend it, a
+ * chromatic split towards the edges, a zoom blur towards a blow, a flash, and the
+ * inverted « impact frame » of a K.O.
+ */
+const ImpactShader = {
+  uniforms: {
+    tDiffuse: { value: null as THREE.Texture | null },
+    ripples: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
+    aspect: { value: 1 },
+    aberration: { value: 0 },
+    zoom: { value: 0 },
+    zoomAt: { value: new THREE.Vector2(0.5, 0.5) },
+    flash: { value: 0 },
+    flashColor: { value: new THREE.Color(1, 1, 1) },
+    invert: { value: 0 },
+  },
+  vertexShader: /* glsl */ `
+    varying vec2 vUv;
+    void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+  fragmentShader: /* glsl */ `
+    uniform sampler2D tDiffuse;
+    uniform vec4 ripples[4];
+    uniform float aspect, aberration, zoom, flash, invert;
+    uniform vec2 zoomAt;
+    uniform vec3 flashColor;
+    varying vec2 vUv;
+    void main() {
+      vec2 uv = vUv;
+      // Shockwaves: a ring of bent picture travelling out from each centre.
+      for (int i = 0; i < 4; i++) {
+        vec4 r = ripples[i];
+        if (r.w <= 0.0) continue;
+        vec2 d = (uv - r.xy) * vec2(aspect, 1.0);
+        float dist = length(d);
+        float x = (dist - r.z) / 0.045;
+        float bend = exp(-x * x) * r.w;
+        if (dist > 1e-4) uv -= (d / dist) / vec2(aspect, 1.0) * bend;
+      }
+      vec3 col;
+      if (zoom > 0.002) {
+        // Zoom blur towards the blow.
+        vec2 dir = uv - zoomAt;
+        col = vec3(0.0);
+        for (int i = 0; i < 8; i++) col += texture2D(tDiffuse, uv - dir * zoom * 0.09 * float(i)).rgb;
+        col /= 8.0;
+      } else col = texture2D(tDiffuse, uv).rgb;
+      if (aberration > 0.0005) {
+        // Chromatic split, stronger towards the edges.
+        vec2 off = (uv - 0.5) * aberration;
+        col.r = texture2D(tDiffuse, uv + off).r;
+        col.b = texture2D(tDiffuse, uv - off).b;
+      }
+      col = mix(col, flashColor * 2.0, clamp(flash, 0.0, 1.0));
+      if (invert > 0.0) col = mix(col, vec3(1.2) - min(col, vec3(1.2)) * vec3(1.0, 0.9, 0.8), invert);
+      gl_FragColor = vec4(col, 1.0);
+    }`,
+};
+
+/**
  * Light (linear, before tone mapping) above which things glow. A white garment in full
  * sun reaches about 1.2: under this, it would shine like a lantern. Lanterns, techniques
  * and sparks are drawn brighter than that (see vfx: HDR).
  */
 export const BLOOM_THRESHOLD = 1.6;
-const HDR_BOOST = 2.4;
+const HDR_BOOST = 1.8;
 
 export type Quality = "high" | "medium" | "low";
 
@@ -82,10 +142,15 @@ export class PostFX {
   quality: Quality = "high";
   private renderer: THREE.WebGLRenderer;
   private scene: THREE.Scene;
+  private camera: THREE.PerspectiveCamera;
+  private impact: ShaderPass;
+  /** What the effects ask of the picture (set by the scene). */
+  screen: ScreenFx | null = null;
 
   constructor(renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera, outline: OutlineEffect) {
     this.renderer = renderer;
     this.scene = scene;
+    this.camera = camera;
     const size = renderer.getDrawingBufferSize(new THREE.Vector2());
     const target = new THREE.WebGLRenderTarget(size.x, size.y, { type: THREE.HalfFloatType, samples: 4 });
     this.composer = new EffectComposer(renderer, target);
@@ -112,6 +177,8 @@ export class PostFX {
     this.composer.addPass(this.ao);
     this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.5, 0.5, BLOOM_THRESHOLD);
     this.composer.addPass(this.bloom);
+    this.impact = new ShaderPass(ImpactShader);
+    this.composer.addPass(this.impact);
     this.composer.addPass(new ShaderPass(GradeShader));
     this.composer.addPass(new OutputPass());
     this.settleUntil = performance.now() + 4000;
@@ -144,6 +211,7 @@ export class PostFX {
       if (avg > 24) this.lower();
     }
     this.brightenEffects();
+    this.updateImpact();
     this.composer.render();
   }
 
@@ -162,6 +230,41 @@ export class PostFX {
         m.color.multiplyScalar(HDR_BOOST);
       }
     });
+  }
+
+  /** Screen effects: world positions to screen, faded with their age. */
+  private updateImpact(): void {
+    const sc = this.screen;
+    const u = this.impact.uniforms as typeof ImpactShader.uniforms;
+    const size = this.renderer.getSize(new THREE.Vector2());
+    u.aspect.value = size.x / Math.max(1, size.y);
+    const toUv = (p: THREE.Vector3) => {
+      const v = p.clone().project(this.camera);
+      return new THREE.Vector2(v.x * 0.5 + 0.5, v.y * 0.5 + 0.5);
+    };
+    const right = new THREE.Vector3().setFromMatrixColumn(this.camera.matrixWorld, 0);
+    for (let i = 0; i < 4; i++) {
+      const r = sc?.ripples[i];
+      const slot = u.ripples.value[i]!;
+      if (!r) {
+        slot.set(0, 0, 0, 0);
+        continue;
+      }
+      const k = r.age / r.life;
+      const c = toUv(r.at);
+      // The front's reach in screen terms: how far `reach` metres look from here.
+      const edge = toUv(r.at.clone().addScaledVector(right, r.reach));
+      const reach = Math.hypot((edge.x - c.x) * u.aspect.value, edge.y - c.y);
+      const ease = 1 - (1 - k) ** 3;
+      slot.set(c.x, c.y, reach * ease, r.strength * (1 - k) * (1 - k));
+    }
+    u.aberration.value = sc ? Math.min(0.03, sc.aberration) : 0;
+    u.flash.value = sc ? Math.min(0.85, sc.flash) : 0;
+    if (sc) u.flashColor.value.copy(sc.flashColor);
+    u.invert.value = sc && sc.invert > 0 ? 1 : 0;
+    u.zoom.value = sc ? Math.min(1, sc.zoom) : 0;
+    if (sc && sc.zoom > 0.002) u.zoomAt.value.copy(toUv(sc.zoomAt));
+    this.impact.enabled = !!sc && (sc.ripples.length > 0 || sc.aberration > 0.0005 || sc.flash > 0.002 || sc.invert > 0 || sc.zoom > 0.002);
   }
 
   private lower(): void {

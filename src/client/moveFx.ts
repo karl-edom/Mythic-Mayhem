@@ -6,6 +6,7 @@
 
 import * as THREE from "three";
 import type { MoveStyle } from "../brawl/character.ts";
+import { energyMaterial, energyTick } from "./energy.ts";
 import { glowTexture, noOutline } from "./toon.ts";
 import { buildWeapon } from "./weapons.ts";
 
@@ -255,24 +256,25 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
   };
   switch (look) {
     case "beam": {
-      // A column of light from the hands to the head of the beam: a white core in a
-      // coloured sheath, and a big bright ball at the head.
-      // Energy streams along it (a scrolled texture), a soft outer glow, rings racing
-      // forward, sparks thrown off the head, a burning point at the hands.
+      // A column of energy from the hands to its head: a wide soft halo, a coloured
+      // body with energy streaming along it, a thin white-hot core; rings racing
+      // forward; a ball of energy at the head and another at the hands, each with a
+      // star flare; sparks shed by the head.
       const body = new THREE.Group();
-      const unit = new THREE.CylinderGeometry(1, 1, 1, 20, 1, true);
+      const unit = new THREE.CylinderGeometry(1, 1, 1, 28, 1, true);
       unit.translate(0, 0.5, 0);
-      const stream = streamTexture().clone();
-      stream.needsUpdate = true;
-      const sheath = new THREE.Mesh(unit, noOutline(new THREE.MeshBasicMaterial({ color, map: stream, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })));
-      const outer = new THREE.Mesh(unit, noOutline(new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide })));
-      const core = new THREE.Mesh(unit, noOutline(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false })));
-      body.add(outer, sheath, core);
+      const haloMat = energyMaterial(color, { core: 0.9, intensity: 0.9, opacity: 0.55, flow: [0.6, -3.5], grain: [2, 1] });
+      const bodyMat = energyMaterial(color, { core: 1.4, intensity: 2.2, flow: [0.2, -5], grain: [3, 1] });
+      const coreMat = energyMaterial(new THREE.Color(color).lerp(new THREE.Color(1, 1, 1), 0.7), { core: 2.2, intensity: 3.2, flow: [0, -7], grain: [2, 1] });
+      const halo = new THREE.Mesh(unit, haloMat);
+      const sheath = new THREE.Mesh(unit, bodyMat);
+      const core = new THREE.Mesh(unit, coreMat);
+      body.add(halo, sheath, core);
       const rings: THREE.Mesh[] = [];
       for (let i = 0; i < 3; i++) {
         const ring = new THREE.Mesh(
-          new THREE.TorusGeometry(1, 0.08, 6, 28).rotateX(Math.PI / 2),
-          noOutline(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false })),
+          new THREE.TorusGeometry(1, 0.05, 6, 32).rotateX(Math.PI / 2),
+          noOutline(new THREE.MeshBasicMaterial({ color: new THREE.Color(color).lerp(new THREE.Color(1, 1, 1), 0.5), transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false })),
         );
         rings.push(ring);
         body.add(ring);
@@ -280,70 +282,83 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
       body.position.copy(origin);
       scene.add(body);
       extra.push(body);
-      const muzzle = new THREE.Sprite(additive(glow, color));
+      const ballGeo = new THREE.SphereGeometry(1, 24, 16);
+      const muzzle = new THREE.Group();
+      const muzzleBall = new THREE.Mesh(ballGeo, energyMaterial(color, { core: 1.1, intensity: 2.4, flow: [0.8, -1.5] }));
+      const muzzleFlare = new THREE.Sprite(additive(flareTexture(), color, 0.9));
+      muzzle.add(muzzleBall, muzzleFlare);
       muzzle.position.copy(origin);
       scene.add(muzzle);
       extra.push(muzzle);
       const motes = new Motes();
       scene.add(motes.group);
       extra.push(motes.group);
-      const head = new THREE.Sprite(additive(glow, color));
-      const headCore = new THREE.Sprite(additive(glow, 0xffffff));
-      group.add(head, headCore);
+      const headBall = new THREE.Mesh(ballGeo, energyMaterial(color, { core: 1.0, intensity: 2.6, flow: [1.2, -2] }));
+      const headHalo = new THREE.Sprite(additive(glow, color, 0.45));
+      const headFlare = new THREE.Sprite(additive(flareTexture(), 0xffffff, 0.8));
+      group.add(headHalo, headBall, headFlare);
+      const mats = [haloMat, bodyMat, coreMat, muzzleBall.material as THREE.ShaderMaterial, headBall.material as THREE.ShaderMaterial];
       const last = origin.clone();
       let prev = -1;
+      let fade = 1;
       return {
         group,
         update(t, pos) {
           const dt = prev < 0 ? 0 : Math.min(0.05, Math.max(0, t - prev));
           prev = t;
           last.copy(pos);
+          for (const m of mats) energyTick(m, t);
           const d = pos.clone().sub(origin);
           const len = Math.max(0.01, d.length());
           const dir = d.normalize();
           body.quaternion.setFromUnitVectors(UP, dir);
-          const r = size * (0.55 + 0.06 * Math.sin(t * 40));
+          const r = size * (0.5 + 0.05 * Math.sin(t * 40)) * fade;
+          halo.scale.set(r * 2.3, len, r * 2.3);
           sheath.scale.set(r, len, r);
-          outer.scale.set(r * 1.9, len, r * 1.9);
-          core.scale.set(r * 0.3, len, r * 0.3);
-          stream.repeat.set(2, len / 1.6);
-          stream.offset.y = -t * 6;
+          core.scale.set(r * 0.32, len, r * 0.32);
+          for (const m of [haloMat, bodyMat, coreMat]) m.uniforms.grain!.value.y = len / 2.5;
           rings.forEach((ring, i) => {
-            const along = ((t * 2.2 + i / rings.length) % 1) * len;
+            const along = ((t * 2.4 + i / rings.length) % 1) * len;
             ring.position.set(0, along, 0);
-            ring.scale.setScalar(r * (1.25 + 0.35 * Math.sin(t * 20 + i)));
-            (ring.material as THREE.MeshBasicMaterial).opacity = 0.6 * (1 - along / len);
+            ring.scale.setScalar(r * (1.5 + 0.3 * Math.sin(t * 20 + i)));
+            (ring.material as THREE.MeshBasicMaterial).opacity = 0.5 * (1 - along / len) * fade;
           });
-          muzzle.scale.setScalar(size * (2.4 + 0.4 * Math.sin(t * 45)));
-          head.scale.setScalar(size * (2.1 + 0.25 * Math.sin(t * 33)));
-          headCore.scale.setScalar(size * 0.8);
+          muzzleBall.scale.setScalar(size * (0.95 + 0.12 * Math.sin(t * 45)) * fade);
+          muzzleFlare.scale.setScalar(size * 3.4 * fade);
+          muzzleFlare.material.rotation = t * 2;
+          headBall.scale.setScalar(size * (1.05 + 0.1 * Math.sin(t * 33)));
+          headHalo.scale.setScalar(size * 3.6);
+          headFlare.scale.setScalar(size * 4.2);
+          headFlare.material.rotation = -t * 3;
           for (let i = 0; i < 3; i++) {
             const v = anyDir().multiplyScalar(3 + Math.random() * 4).addScaledVector(dir, -2);
-            motes.emit(pos, v, i ? color : 0xffffff, size * 0.35, 0.25 + Math.random() * 0.2);
+            motes.emit(pos, v, i ? color : 0xffffff, size * 0.3, 0.25 + Math.random() * 0.2);
           }
           motes.update(dt);
         },
         // The column stays a moment after the impact, thinning out, so the beam reads.
         dispose() {
           scene.remove(group);
-          const r0 = sheath.scale.x;
           const start = performance.now();
-          const fade = () => {
-            const k = (performance.now() - start) / 350;
+          const step = () => {
+            const k = (performance.now() - start) / 380;
             if (k >= 1) {
               motes.dispose();
               done();
               return;
             }
+            fade = 1 - k;
             motes.update(1 / 60);
-            muzzle.scale.multiplyScalar(0.9);
-            sheath.scale.x = sheath.scale.z = r0 * (1 - k);
-            core.scale.x = core.scale.z = r0 * 0.45 * (1 - k * k);
-            (sheath.material as THREE.MeshBasicMaterial).opacity = 0.8 * (1 - k);
-            requestAnimationFrame(fade);
+            const r = size * 0.5 * fade;
+            halo.scale.x = halo.scale.z = r * 2.3;
+            sheath.scale.x = sheath.scale.z = r;
+            core.scale.x = core.scale.z = r * 0.32 * (1 - k);
+            muzzle.scale.setScalar(fade);
+            for (const m of mats) m.uniforms.opacity!.value = (m === haloMat ? 0.55 : 1) * fade;
+            requestAnimationFrame(step);
           };
           void last;
-          requestAnimationFrame(fade);
+          requestAnimationFrame(step);
         },
       };
     }
@@ -1015,4 +1030,39 @@ export function eggTexture(): THREE.CanvasTexture {
   eggTex = new THREE.CanvasTexture(c);
   eggTex.colorSpace = THREE.SRGBColorSpace;
   return eggTex;
+}
+
+let flareTex: THREE.CanvasTexture | null = null;
+/** A lens-flare star: a hot core and long thin spikes, the « ping » of focused energy. */
+export function flareTexture(): THREE.CanvasTexture {
+  if (flareTex) return flareTex;
+  const c = document.createElement("canvas");
+  c.width = c.height = 256;
+  const g = c.getContext("2d")!;
+  g.translate(128, 128);
+  const spikes: [number, number, number][] = [[0, 124, 5], [Math.PI / 2, 124, 5], [Math.PI / 4, 70, 3], [-Math.PI / 4, 70, 3]];
+  for (const [a, len, w] of spikes)
+    for (const s of [1, -1]) {
+      g.save();
+      g.rotate(a + (s < 0 ? Math.PI : 0));
+      const grad = g.createLinearGradient(0, 0, len, 0);
+      grad.addColorStop(0, "rgba(255,255,255,1)");
+      grad.addColorStop(1, "rgba(255,255,255,0)");
+      g.fillStyle = grad;
+      g.beginPath();
+      g.moveTo(0, -w);
+      g.lineTo(len, 0);
+      g.lineTo(0, w);
+      g.fill();
+      g.restore();
+    }
+  const core = g.createRadialGradient(0, 0, 0, 0, 0, 40);
+  core.addColorStop(0, "rgba(255,255,255,1)");
+  core.addColorStop(0.3, "rgba(255,255,255,0.5)");
+  core.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = core;
+  g.fillRect(-40, -40, 80, 80);
+  flareTex = new THREE.CanvasTexture(c);
+  flareTex.colorSpace = THREE.SRGBColorSpace;
+  return flareTex;
 }

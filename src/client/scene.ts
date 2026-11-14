@@ -8,7 +8,7 @@
 import * as THREE from "three";
 import { OutlineEffect } from "three/examples/jsm/effects/OutlineEffect.js";
 import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment.js";
-import { distToProp, segmentInterval, surfaceAt } from "../brawl/arena.ts";
+import { distToProp, groundHeight, segmentInterval, surfaceAt } from "../brawl/arena.ts";
 import type { Character, MoveStyle } from "../brawl/character.ts";
 import type { Strike } from "../brawl/kit.ts";
 import { FIGHTER_HEIGHT, aerialCenter, aerialStrike, bodyCenter, lockTarget, strongAerialStrike, sweepCenters, type BrawlWorld, type Fighter } from "../brawl/world.ts";
@@ -21,9 +21,10 @@ import { WeaponTrail } from "./trail.ts";
 import { buildPizza } from "./pizza.ts";
 import { Vfx } from "./vfx.ts";
 import { PostFX } from "./postfx.ts";
+import { energyMaterial, energyTick } from "./energy.ts";
 import { GhostTrail, SpecialFx, type FxFighter } from "./specialFx.ts";
 import { sound, type HeldSound } from "./audio.ts";
-import { bladeFire, chargeAura, eggTexture, emberAura, handLook, projectileLook, zoneFlames, zoneLightning, zoneVortex, type HandLook, type ProjectileLook } from "./moveFx.ts";
+import { bladeFire, chargeAura, eggTexture, emberAura, flareTexture, handLook, projectileLook, zoneFlames, zoneLightning, zoneVortex, type HandLook, type ProjectileLook } from "./moveFx.ts";
 
 interface FighterView {
   root: THREE.Group;
@@ -222,6 +223,7 @@ export class ArenaView {
     this.outline = new OutlineEffect(renderer, { defaultThickness: 0.003, defaultColor: [0.08, 0.06, 0.1], defaultAlpha: 1 });
     this.post = new PostFX(renderer, this.scene, this.camera, this.outline);
     this.vfx = new Vfx(this.scene);
+    this.post.screen = this.vfx.screen;
     this.specialFx = new SpecialFx(this.vfx);
     // A soft studio reflection for the physically lit models (shell, steel, lacquer).
     if (!proceduralEnv.map) proceduralEnv.map = new THREE.PMREMGenerator(renderer).fromScene(new RoomEnvironment(), 0.04).texture;
@@ -780,6 +782,14 @@ export class ArenaView {
         : this.center(f).add(new THREE.Vector3(f.facing.x, 0.25, f.facing.z).multiplyScalar(0.6));
       this.vfx.glint(at, color, act?.kind === "heavy" ? 1.6 : 1.3);
     } else if (!windup) v.windupKey = "";
+    // A special winding up: energy drawn in to the hand, in the technique's colour.
+    if (act?.kind === "special" && !act.fired && f.alive && this.frame % 2 === 0) {
+      const id = f.kit.specials[act.slot]?.id;
+      const style = id ? this.characters[f.id]!.moves[id] : undefined;
+      const hand = v.model?.root.getObjectByName("rightHand");
+      const at = hand ? hand.getWorldPosition(new THREE.Vector3()) : this.center(f).add(new THREE.Vector3(f.facing.x, 0.2, f.facing.z).multiplyScalar(0.5));
+      this.vfx.gather(at, style?.color ?? this.characters[f.id]!.colors.secondary, 1.1, 2);
+    }
 
     const a = f.action;
     const flashing = v.flashUntil > t;
@@ -1087,6 +1097,7 @@ export class ArenaView {
           if (style?.projectile === "bullet" || style?.projectile === "rocket") this.vfx.glint(origin, 0xffd27a, 1.2);
           if (style?.projectile === "beam") this.vfx.ring(origin, color, 1.6);
           this.projectiles.set(p, g);
+          this.lightFollow(p, color, style?.projectile);
         } else {
           g = new THREE.Group();
           const pizzaLook = style?.projectile === "pizza";
@@ -1098,27 +1109,38 @@ export class ArenaView {
             g.add(pizza);
           }
           const halo = new THREE.Sprite(
-            noOutline(new THREE.SpriteMaterial({ map: this.glow, color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })),
+            noOutline(new THREE.SpriteMaterial({ map: this.glow, color, transparent: true, opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false })),
           );
-          halo.scale.setScalar(p.size * 3.4);
-          const core = new THREE.Sprite(
-            noOutline(new THREE.SpriteMaterial({ map: this.glow, color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })),
-          );
-          core.scale.setScalar(p.size * 0.9);
+          halo.scale.setScalar(p.size * 3.2);
           // Behind a drawn object, only a faint glow.
           if (pizzaLook) {
             halo.material.opacity = 0.18;
             g.add(halo);
-          } else g.add(halo, core);
+          } else {
+            // A ball of energy: light from inside, streaming; a star flare on it.
+            const ball = new THREE.Mesh(new THREE.SphereGeometry(p.size * 0.85, 24, 16), energyMaterial(color, { core: 1.1, intensity: 2.5, flow: [1.4, -2.2] }));
+            ball.userData.energy = true;
+            const flare = new THREE.Sprite(noOutline(new THREE.SpriteMaterial({ map: flareTexture(), color, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false })));
+            flare.scale.setScalar(p.size * 3.6);
+            flare.userData.flare = true;
+            g.add(halo, ball, flare);
+          }
           this.scene.add(g);
           this.projectiles.set(p, g);
+          if (!pizzaLook) this.lightFollow(p, color, undefined);
         }
       }
       g.position.copy(this.drawn(p));
       const dir = new THREE.Vector3(p.dir.x, p.dir.y, p.dir.z);
       this.looks.get(p)?.look.update(t, g.position, dir);
-      for (const c of g.children) if (c.userData.spin) c.rotation.y += 0.45;
+      for (const c of g.children) {
+        if (c.userData.spin) c.rotation.y += 0.45;
+        if (c.userData.energy) energyTick((c as THREE.Mesh).material as THREE.ShaderMaterial, t);
+        if (c.userData.flare) (c as THREE.Sprite).material.rotation = t * 2.5;
+      }
       const kind = this.looks.get(p)?.kind;
+      // Energy leaves a glowing wake.
+      if (kind === undefined || kind === "ball" || kind === "disc" || kind === "fire") this.vfx.trail(g.position.clone(), dir, kind === "fire" ? 0xff7a2a : color, Math.max(0.18, p.size * 0.8), kind === "fire" ? 3 : 2);
       if (kind === "fire" || kind === "rocket") {
         if (this.frame % 3 === 0) this.vfx.puff(g.position.clone().addScaledVector(dir, -0.4), kind === "rocket" ? 0.5 : 0.7);
       } else if (kind !== "beam" && kind !== "ball" && this.frame % 2 === 0) this.vfx.speedLines(g.position.clone(), dir, color);
@@ -1131,13 +1153,16 @@ export class ArenaView {
           look.look.dispose();
           this.looks.delete(p);
           if (look.kind === "rocket" || look.kind === "fire") this.explosion(at, look.kind === "rocket" ? 1.4 : 0.9);
+          else if (look.kind === "egg" || look.kind === "tongue" || look.kind === "pizza") this.vfx.ring(at, look.color, 1.2);
           else if (look.kind === "beam") {
             this.vfx.hit(at, look.color, true);
             this.vfx.ring(at, look.color, 3);
           } else if (look.kind === "ball") this.vfx.ring(at, look.color, 1.8);
           else this.vfx.glint(at, 0xffd27a, 0.8);
         } else {
+          // An energy ball bursting: a ring, sparks, a puff of its light.
           this.vfx.ring(at, 0xffffff, 1.5);
+          this.vfx.hit(at, this.projectileColor(p as { owner: number; slot: number }), false);
           this.scene.remove(g);
         }
         this.projectiles.delete(p);
@@ -1147,10 +1172,24 @@ export class ArenaView {
   /** A burst of fire and smoke: rockets, fireballs, exploding areas. */
   private explosion(at: THREE.Vector3, size: number): void {
     sound.explosion(size, this.pan(at));
-    this.vfx.hit(at, 0xff7a1a, true);
-    this.vfx.ring(at, 0xffb347, 2.4 * size);
-    this.vfx.flames(at, Math.round(8 * size), size);
-    this.vfx.shake = Math.max(this.vfx.shake, 0.3 * size);
+    this.vfx.explode(at, size, 0xff6a1a, groundHeight(this.world.arena, at.x, at.z));
+  }
+
+  /** The colour a projectile is drawn in. */
+  private projectileColor(p: { owner: number; slot: number }): THREE.ColorRepresentation {
+    const ch = this.characters[p.owner]!;
+    const id = this.world.fighters[p.owner]!.kit.specials[p.slot]?.id;
+    return (id ? ch.moves[id]?.color : undefined) ?? ch.colors.secondary;
+  }
+
+  /** A projectile carries its light along while it flies. */
+  private lightFollow(p: object, color: THREE.ColorRepresentation, kind: string | undefined): void {
+    if (kind === "bullet" || kind === "egg" || kind === "tongue" || kind === "pizza" || kind === "sai") return;
+    const c = new THREE.Color(kind === "fire" || kind === "rocket" ? 0xff8a3a : color);
+    this.vfx.lights.flash(new THREE.Vector3(), c, kind === "beam" ? 5 : 2.5, kind === "beam" ? 7 : 4.5, 6, () => {
+      const g = this.projectiles.get(p as never);
+      return g ? g.position : null;
+    });
   }
 
   /** A special's colour and zone look (fire, blast), from the character sheet. */

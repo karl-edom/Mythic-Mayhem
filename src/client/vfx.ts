@@ -3,6 +3,7 @@
 // each with a short life. Purely visual: nothing here touches the simulation.
 
 import * as THREE from "three";
+import { GroundMarks, LightPool, ParticleSystem, ScreenFx, Sprite, type Emit } from "./fxkit.ts";
 import { flameTexture, puffTexture } from "./moveFx.ts";
 import { glowTexture, noOutline, starTexture, toon } from "./toon.ts";
 
@@ -123,9 +124,33 @@ export class Vfx {
   private scene: THREE.Scene;
   /** Camera shake amplitude, decays by itself. */
   shake = 0;
+  /** Light particles (sparks, fire, glows) and blended ones (smoke, dust). */
+  readonly glowParts: ParticleSystem;
+  readonly smokeParts: ParticleSystem;
+  /** Point lights lent to impacts, fireballs, explosions. */
+  readonly lights: LightPool;
+  /** Scorches and cracks on the ground. */
+  readonly marks: GroundMarks;
+  /** What the effects ask of the picture (read by the post-processing). */
+  readonly screen = new ScreenFx();
 
   constructor(scene: THREE.Scene) {
     this.scene = scene;
+    this.glowParts = new ParticleSystem(8000, true);
+    this.smokeParts = new ParticleSystem(3000, false);
+    scene.add(this.glowParts.mesh, this.smokeParts.mesh);
+    this.lights = new LightPool(scene, 4);
+    this.marks = new GroundMarks(scene);
+  }
+
+  /** Light particles: sparks, embers, fire, glows. */
+  spark(e: Emit, count = 1): void {
+    this.glowParts.emit(e, count);
+  }
+
+  /** Blended particles: smoke, dust. */
+  smoke(e: Emit, count = 1): void {
+    this.smokeParts.emit(e, count);
   }
 
   /**
@@ -149,31 +174,155 @@ export class Vfx {
    * colour), sparks that fly off, fall and stretch with their speed, a shockwave ring.
    */
   hit(pos: THREE.Vector3, color: THREE.ColorRepresentation, big: boolean): void {
-    const size = big ? 2.6 : 1.6;
-    const flash = this.sprite(this.glow, 0xffffff, 0.7);
+    const size = big ? 2.3 : 1.4;
+    const tint = new THREE.Color(color);
+    const hot = tint.clone().lerp(new THREE.Color(1, 1, 1), 0.55);
+    // A short, tight white core (not a blob that hides the fighters).
+    const flash = this.sprite(this.glow, 0xffffff, 0.9);
     flash.position.copy(pos);
-    this.add(flash, 0.07, (k) => {
-      flash.scale.setScalar(size * (0.45 + k * 0.25));
-      flash.material.opacity = 0.7 * (1 - k);
+    this.add(flash, 0.06, (k) => {
+      flash.scale.setScalar(size * 0.55 * (0.6 + k * 0.6));
+      flash.material.opacity = 0.9 * (1 - k);
     });
     const spin = Math.random() * Math.PI;
     const back = this.sprite(burstTexture(), color);
     back.position.copy(pos);
     back.material.rotation = spin + 0.2;
-    this.add(back, big ? 0.26 : 0.18, (k) => {
-      back.scale.setScalar(size * 1.35 * (0.55 + Math.sqrt(k) * 0.7));
-      back.material.opacity = 1 - k * k;
+    this.add(back, big ? 0.22 : 0.15, (k) => {
+      back.scale.setScalar(size * 1.25 * (0.5 + Math.sqrt(k) * 0.75));
+      back.material.opacity = 0.9 * (1 - k * k);
     });
     const burst = this.sprite(burstTexture(), 0xffffff);
     burst.position.copy(pos);
     burst.material.rotation = spin;
-    this.add(burst, big ? 0.18 : 0.13, (k) => {
-      burst.scale.setScalar(size * (0.5 + Math.sqrt(k) * 0.6));
-      burst.material.opacity = 1 - k;
+    this.add(burst, big ? 0.14 : 0.1, (k) => {
+      burst.scale.setScalar(size * 0.8 * (0.5 + Math.sqrt(k) * 0.6));
+      burst.material.opacity = 0.85 * (1 - k);
     });
-    this.sparks(pos, color, big ? 16 : 9, big ? 11 : 7);
-    if (big) this.ring(pos, color, 3.2);
+    // Sparks: many, fast, white-hot, cooling to the blow's colour as they fall.
+    const n = big ? 34 : 16;
+    for (let i = 0; i < n; i++) {
+      const v = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.9 - 0.2, Math.random() - 0.5).normalize().multiplyScalar((big ? 9 : 6) + Math.random() * (big ? 12 : 7));
+      this.spark({
+        pos, vel: v, life: 0.22 + Math.random() * 0.3, size: [0.045, 0.02], stretch: 0.045,
+        color: [new THREE.Color(4, 3.6, 3.2), tint.clone().multiplyScalar(2.2)], alpha: [1, 0],
+        sprite: Sprite.Spark, drag: 3.5, gravity: 14,
+      });
+    }
+    // A few slower glowing motes that linger.
+    for (let i = 0; i < (big ? 10 : 4); i++)
+      this.spark({
+        pos, vel: new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.8, Math.random() - 0.5).multiplyScalar(3), life: 0.4 + Math.random() * 0.35,
+        size: [0.12, 0.02], color: [hot.clone().multiplyScalar(2.5), tint.clone().multiplyScalar(1.5)], sprite: Sprite.Glow, drag: 2.5, gravity: -1,
+      });
+    // The blow lights its surroundings for an instant.
+    this.lights.flash(pos, hot, big ? 7 : 3, big ? 6 : 4, big ? 0.22 : 0.12);
+    if (big) {
+      this.ring(pos, color, 3.2);
+      this.screen.ripple(pos, 0.012, 2.4, 0.4);
+      this.screen.kick(0.006);
+    }
     this.shake = Math.max(this.shake, big ? 0.35 : 0.12);
+  }
+
+  /**
+   * An explosion (rockets, fireballs, blasts): a white flash, a rolling fireball that
+   * climbs and darkens into smoke, embers thrown out, a shockwave that bends the air,
+   * dust along the ground, a scorch left behind, the street lit orange for a moment.
+   */
+  explode(pos: THREE.Vector3, size: number, color: THREE.ColorRepresentation = 0xff7a1a, ground?: number): void {
+    const fire = new THREE.Color(color);
+    const floor = ground ?? pos.y - 0.6;
+    this.lights.flash(pos.clone().setY(pos.y + 0.5), fire.clone().lerp(new THREE.Color(1, 0.85, 0.6), 0.4), 16 * size, 10 * size, 0.7);
+    // Flash.
+    this.spark({ pos, life: 0.12, size: [1.6 * size, 3.4 * size], color: [new THREE.Color(5, 4.6, 4), new THREE.Color(3, 1.6, 0.6)], sprite: Sprite.Glow });
+    // Fireball: puffs of light, hot yellow to deep red, swelling and rising.
+    const puffs = Math.round(26 * size);
+    for (let i = 0; i < puffs; i++) {
+      const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.8, Math.random() - 0.5).normalize();
+      const sp = (2.5 + Math.random() * 5) * size;
+      this.spark({
+        pos: pos.clone().addScaledVector(dir, 0.15 * size), vel: dir.multiplyScalar(sp), life: 0.45 + Math.random() * 0.45,
+        size: [0.55 * size, (1.6 + Math.random()) * size],
+        color: [new THREE.Color(5, 3.4, 1.4), fire.clone().multiplyScalar(0.6)], alpha: [0.9, 0],
+        sprite: Sprite.Smoke, drag: 3.2, gravity: -2.2, rot: Math.random() * 6.28, spin: (Math.random() - 0.5) * 2,
+      });
+    }
+    // Inner tongues of flame.
+    for (let i = 0; i < Math.round(10 * size); i++) {
+      const a = Math.random() * Math.PI * 2;
+      this.spark({
+        pos, vel: new THREE.Vector3(Math.cos(a) * 2, 3 + Math.random() * 3, Math.sin(a) * 2).multiplyScalar(size), life: 0.35 + Math.random() * 0.25,
+        size: [0.7 * size, 1.3 * size], color: [new THREE.Color(4, 2.6, 1), new THREE.Color(1.6, 0.4, 0.08)], sprite: Sprite.Flame, drag: 2.5, gravity: -3,
+      });
+    }
+    // Smoke: dark, slow, climbing and spreading after the fire.
+    for (let i = 0; i < Math.round(16 * size); i++) {
+      const dir = new THREE.Vector3(Math.random() - 0.5, 0.6 + Math.random() * 0.6, Math.random() - 0.5);
+      const grey = 0.08 + Math.random() * 0.08;
+      this.smoke({
+        pos: pos.clone().addScaledVector(dir, 0.3 * size), vel: dir.multiplyScalar((1.2 + Math.random() * 2) * size), life: 1.6 + Math.random() * 1.2,
+        size: [0.9 * size, (3 + Math.random() * 1.5) * size], color: [new THREE.Color(grey * 1.4, grey * 1.2, grey), new THREE.Color(grey * 2.2, grey * 2.1, grey * 2)],
+        alpha: [0.8, 0], sprite: Sprite.Smoke, drag: 1.4, gravity: -0.7, rot: Math.random() * 6.28, spin: (Math.random() - 0.5) * 0.8,
+        delay: 0.08 + Math.random() * 0.2,
+      });
+    }
+    // Embers: thrown out, falling, streaking.
+    for (let i = 0; i < Math.round(46 * size); i++) {
+      const v = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.9 + 0.1, Math.random() - 0.5).normalize().multiplyScalar((7 + Math.random() * 14) * size);
+      this.spark({
+        pos, vel: v, life: 0.5 + Math.random() * 0.9, size: [0.05, 0.025], stretch: 0.035,
+        color: [new THREE.Color(5, 3.6, 1.6), new THREE.Color(1.8, 0.35, 0.05)], sprite: Sprite.Spark, drag: 1.4, gravity: 12,
+      });
+    }
+    // Dust kicked along the ground, and the shockwave.
+    this.dustRing(new THREE.Vector3(pos.x, floor, pos.z), 2.4 * size, 18);
+    this.groundWave(new THREE.Vector3(pos.x, floor, pos.z), color, 3.2 * size);
+    this.marks.add(new THREE.Vector3(pos.x, floor, pos.z), 3.4 * size, "scorch", 7);
+    this.screen.ripple(pos, 0.025 * Math.min(1.6, size), 4.5 * size, 0.6);
+    this.screen.kick(0.012 * Math.min(1.5, size), 0.18);
+    this.shake = Math.max(this.shake, 0.4 * size);
+  }
+
+  /** Dust thrown out in a ring along the ground (landings, slams, blasts). */
+  dustRing(at: THREE.Vector3, size: number, count = 12): void {
+    for (let i = 0; i < count; i++) {
+      const a = (i / count) * Math.PI * 2 + Math.random() * 0.4;
+      const v = new THREE.Vector3(Math.cos(a), 0.15 + Math.random() * 0.3, Math.sin(a)).multiplyScalar(size * (1.6 + Math.random() * 1.2));
+      const tone = 0.55 + Math.random() * 0.15;
+      this.smoke({
+        pos: at.clone().setY(at.y + 0.15), vel: v, life: 0.7 + Math.random() * 0.5, size: [0.4 * size, 1.1 * size],
+        color: [new THREE.Color(tone, tone * 0.93, tone * 0.82), new THREE.Color(tone, tone * 0.95, tone * 0.86)], alpha: [0.55, 0],
+        sprite: Sprite.Dust, drag: 3, gravity: -0.3, rot: Math.random() * 6.28, spin: (Math.random() - 0.5),
+      });
+    }
+  }
+
+  /** A trail left by something in flight: a few motes along its path. */
+  trail(at: THREE.Vector3, dir: THREE.Vector3, color: THREE.ColorRepresentation, size: number, count = 2): void {
+    const c = new THREE.Color(color);
+    for (let i = 0; i < count; i++) {
+      const jitter = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(size * 0.6);
+      this.spark({
+        pos: at.clone().add(jitter), vel: dir.clone().multiplyScalar(-1.5).add(jitter.multiplyScalar(2)), life: 0.25 + Math.random() * 0.2,
+        size: [size * 0.9, size * 0.15], color: [c.clone().multiplyScalar(2.6), c.clone().multiplyScalar(1.2)], alpha: [0.8, 0], sprite: Sprite.Glow, drag: 3,
+      });
+    }
+  }
+
+  /** Energy being gathered: motes drawn in towards a point (a charging technique). */
+  gather(at: THREE.Vector3, color: THREE.ColorRepresentation, radius: number, count = 3): void {
+    const c = new THREE.Color(color);
+    for (let i = 0; i < count; i++) {
+      const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
+      const from = at.clone().addScaledVector(dir, radius * (0.7 + Math.random() * 0.5));
+      const life = 0.3 + Math.random() * 0.15;
+      // Speed so that it reaches the point at the end of its life (drag 0).
+      this.spark({
+        pos: from, vel: at.clone().sub(from).divideScalar(life), life, size: [0.03, 0.09], stretch: 0.03,
+        color: [c.clone().multiplyScalar(1.2), new THREE.Color(3, 3, 3).lerp(c, 0.3)], alpha: [0.2, 1], sprite: Sprite.Spark,
+      });
+    }
   }
 
   /** Sparks: fly off, fall, stretched along their motion as seen on screen. */
@@ -206,6 +355,12 @@ export class Vfx {
    * the victim, the « freeze » of anime fighters and Smash.
    */
   impact(pos: THREE.Vector3, color: THREE.ColorRepresentation): void {
+    // The inverted « impact frame », a zoom blur on the victim, a big shockwave.
+    this.screen.invert = 0.07;
+    this.screen.zoomTo(pos, 0.9);
+    this.screen.ripple(pos, 0.035, 6, 0.7);
+    this.screen.kick(0.02);
+    this.lights.flash(pos, color, 14, 10, 0.5);
     for (const [tint, size, life, turn, alpha] of [[color, 8, 0.2, 0.15, 0.75], [0xffffff, 4.5, 0.12, 0, 0.55]] as const) {
       const s = this.sprite(burstTexture(), tint);
       s.material.depthTest = false;
@@ -244,10 +399,10 @@ export class Vfx {
     const m = noOutline(new THREE.MeshBasicMaterial({ color, map: ringTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
     const ring = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), m);
     ring.position.copy(pos);
-    this.add(ring, 0.3, (k) => {
-      // Fast out, slowing down: a burst, not a steady growth.
-      ring.scale.setScalar(size * (0.25 + (1 - (1 - k) ** 3) * 0.8));
-      m.opacity = 1 - k;
+    // A sharp, quick shockwave: it reads as a snap, not as a veil over the fighters.
+    this.add(ring, 0.24, (k) => {
+      ring.scale.setScalar(size * 0.7 * (0.25 + (1 - (1 - k) ** 3) * 0.8));
+      m.opacity = 0.7 * (1 - k) ** 1.5;
     });
     ring.onBeforeRender = (_r, _s, cam) => ring.quaternion.copy(cam.quaternion);
   }
@@ -290,6 +445,13 @@ export class Vfx {
       sheath.material.opacity = 0.7 * on * (1 - k);
       flash.material.opacity = 1 - k;
     });
+    this.lights.flash(pos.clone().setY(pos.y + 1.5), new THREE.Color(color).lerp(new THREE.Color(1, 1, 1), 0.5), 24, 14, 0.4);
+    for (let i = 0; i < 30; i++) {
+      const v = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.8 + 0.2, Math.random() - 0.5).normalize().multiplyScalar(6 + Math.random() * 10);
+      this.spark({ pos: pos.clone().setY(pos.y + 0.1), vel: v, life: 0.3 + Math.random() * 0.4, size: [0.04, 0.02], stretch: 0.04, color: [new THREE.Color(4, 4, 5), new THREE.Color(color).multiplyScalar(2)], sprite: Sprite.Spark, drag: 3, gravity: 14 });
+    }
+    this.marks.add(pos, 2.6, "scorch", 6);
+    this.screen.kick(0.008, 0.35, 0xdff4ff);
     this.shake = Math.max(this.shake, 0.35);
   }
 
@@ -303,8 +465,9 @@ export class Vfx {
       ring.scale.setScalar(size * (0.2 + (1 - (1 - k) ** 3) * 0.9));
       m.opacity = 0.95 * (1 - k);
     });
+    this.dustRing(pos, size * 0.45, 10);
     // The ground kicks up: dust thrown out along the front.
-    for (let i = 0; i < 8; i++) {
+    for (let i = 0; i < 0; i++) {
       const a = (i / 8) * Math.PI * 2 + Math.random() * 0.4;
       const d = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
       const s = new THREE.Sprite(noOutline(new THREE.SpriteMaterial({ map: this.glow, color: 0xe8dcc0, transparent: true, opacity: 0.5, depthWrite: false })));
@@ -378,34 +541,20 @@ export class Vfx {
 
   /** Flames bursting out and rising, then gone (fire, explosions). */
   flames(pos: THREE.Vector3, count: number, size: number): void {
-    for (let i = 0; i < count; i++) {
-      const s = this.sprite(flameTexture(), 0xff9a50, 0.65);
+    for (let i = 0; i < count * 3; i++) {
       const a = Math.random() * Math.PI * 2;
-      const v = new THREE.Vector3(Math.cos(a), 0.6 + Math.random(), Math.sin(a)).multiplyScalar(size * (1.5 + Math.random() * 2));
-      s.position.copy(pos);
-      const sz = size * (0.8 + Math.random() * 0.8);
-      this.add(s, 0.45 + Math.random() * 0.3, (k, dt) => {
-        s.position.addScaledVector(v, dt * (1 - k * 0.6));
-        s.scale.set(sz * (0.6 + k * 0.6), sz * (1 + k), 1);
-        s.material.opacity = 0.65 * (1 - k);
+      this.spark({
+        pos: pos.clone().add(new THREE.Vector3(Math.cos(a), 0, Math.sin(a)).multiplyScalar(Math.random() * 0.4 * size)),
+        vel: new THREE.Vector3(Math.cos(a) * 1.5, 2.5 + Math.random() * 3, Math.sin(a) * 1.5).multiplyScalar(size), life: 0.4 + Math.random() * 0.4,
+        size: [0.5 * size, 1.1 * size], color: [new THREE.Color(4.5, 2.8, 1.1), new THREE.Color(1.4, 0.3, 0.06)], sprite: Sprite.Flame, drag: 2, gravity: -2.5,
       });
     }
-    // Dark smoke billowing up after it (drawn over, not added: it gives the fire its contrast).
-    for (let i = 0; i < 6; i++) {
-      const smoke = new THREE.Sprite(noOutline(new THREE.SpriteMaterial({ map: this.glow, color: i % 2 ? 0x3a3330 : 0x4d4540, transparent: true, opacity: 0, depthWrite: false })));
-      const v = new THREE.Vector3((Math.random() - 0.5) * 1.2, 1.2 + Math.random() * 1.2, (Math.random() - 0.5) * 1.2).multiplyScalar(size);
-      const at = pos.clone();
-      const delay = 0.08 + i * 0.03;
-      this.add(smoke, 1.3, (k, dt) => {
-        const age = k * 1.3 - delay;
-        if (age < 0) return;
-        at.addScaledVector(v, dt);
-        v.multiplyScalar(Math.exp(-dt * 1.5));
-        smoke.position.copy(at);
-        smoke.scale.setScalar(size * (1.0 + age * 2.4));
-        smoke.material.opacity = 0.75 * Math.min(1, age * 6) * (1 - k);
+    for (let i = 0; i < count; i++)
+      this.smoke({
+        pos: pos.clone().setY(pos.y + 0.5 * size), vel: new THREE.Vector3((Math.random() - 0.5) * 1.5, 2 + Math.random() * 1.5, (Math.random() - 0.5) * 1.5).multiplyScalar(size),
+        life: 1.2 + Math.random() * 0.8, size: [0.7 * size, 2.4 * size], color: [new THREE.Color(0.1, 0.09, 0.08), new THREE.Color(0.22, 0.21, 0.2)], alpha: [0.7, 0],
+        sprite: Sprite.Smoke, drag: 1.2, gravity: -0.6, rot: Math.random() * 6.28, spin: (Math.random() - 0.5) * 0.6, delay: 0.1 + Math.random() * 0.15,
       });
-    }
   }
 
   /** Launch trail: a puff left behind a fighter sent flying, bigger the faster it goes. */
@@ -424,15 +573,12 @@ export class Vfx {
 
   dust(pos: THREE.Vector3, count = 5): void {
     for (let i = 0; i < count; i++) {
-      const m = noOutline(new THREE.SpriteMaterial({ map: this.glow, color: 0xe8dcc0, transparent: true, opacity: 0.6, depthWrite: false }));
-      const s = new THREE.Sprite(m);
       const a = Math.random() * Math.PI * 2;
-      const v = new THREE.Vector3(Math.cos(a), 0.4, Math.sin(a)).multiplyScalar(1.5 + Math.random());
-      s.position.copy(pos).setY(pos.y + 0.2);
-      this.add(s, 0.5, (k, dt) => {
-        s.position.addScaledVector(v, dt * (1 - k));
-        s.scale.setScalar(0.5 + k * 1.2);
-        m.opacity = 0.6 * (1 - k);
+      const tone = 0.62 + Math.random() * 0.12;
+      this.smoke({
+        pos: pos.clone().setY(pos.y + 0.15), vel: new THREE.Vector3(Math.cos(a), 0.35, Math.sin(a)).multiplyScalar(1.4 + Math.random() * 1.2),
+        life: 0.55 + Math.random() * 0.3, size: [0.35, 1.0], color: [new THREE.Color(tone, tone * 0.93, tone * 0.82), new THREE.Color(tone, tone * 0.95, tone * 0.86)],
+        alpha: [0.5, 0], sprite: Sprite.Dust, drag: 3, gravity: -0.2, rot: Math.random() * 6.28, spin: (Math.random() - 0.5),
       });
     }
   }
@@ -517,6 +663,11 @@ export class Vfx {
 
   update(dt: number): void {
     this.shake *= Math.exp(-dt * 12);
+    this.glowParts.update(dt);
+    this.smokeParts.update(dt);
+    this.lights.update(dt);
+    this.marks.update(dt);
+    this.screen.update(dt);
     this.effects = this.effects.filter((e) => {
       e.age += dt;
       const k = Math.min(1, e.age / e.life);
