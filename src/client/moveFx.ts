@@ -264,8 +264,8 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
       const unit = new THREE.CylinderGeometry(1, 1, 1, 28, 1, true);
       unit.translate(0, 0.5, 0);
       const haloMat = energyMaterial(color, { core: 0.9, intensity: 0.45, opacity: 0.55, flow: [0.6, -3.5], grain: [2, 1] });
-      const bodyMat = energyMaterial(color, { core: 1.4, intensity: 1.1, flow: [0.2, -5], grain: [3, 1] });
-      const coreMat = energyMaterial(new THREE.Color(color).lerp(new THREE.Color(1, 1, 1), 0.7), { core: 2.2, intensity: 1.9, flow: [0, -7], grain: [2, 1] });
+      const bodyMat = energyMaterial(color, { core: 1.2, intensity: 1.6, flow: [0.2, -5], grain: [3, 1] });
+      const coreMat = energyMaterial(new THREE.Color(color).lerp(new THREE.Color(1, 1, 1), 0.6), { core: 2.4, intensity: 1.4, flow: [0, -7], grain: [2, 1] });
       const halo = new THREE.Mesh(unit, haloMat);
       const sheath = new THREE.Mesh(unit, bodyMat);
       const core = new THREE.Mesh(unit, coreMat);
@@ -295,7 +295,7 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
       extra.push(motes.group);
       const headBall = new THREE.Mesh(ballGeo, energyMaterial(color, { core: 1.0, intensity: 1.4, flow: [1.2, -2] }));
       const headHalo = new THREE.Sprite(additive(glow, color, 0.25));
-      const headFlare = new THREE.Sprite(additive(flareTexture(), 0xffffff, 0.5));
+      const headFlare = new THREE.Sprite(additive(flareTexture(), new THREE.Color(color).lerp(new THREE.Color(1, 1, 1), 0.35), 0.5));
       group.add(headHalo, headBall, headFlare);
       const mats = [haloMat, bodyMat, coreMat, muzzleBall.material as THREE.ShaderMaterial, headBall.material as THREE.ShaderMaterial];
       const last = origin.clone();
@@ -315,7 +315,7 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
           const r = size * (0.5 + 0.05 * Math.sin(t * 40)) * fade;
           halo.scale.set(r * 2.3, len, r * 2.3);
           sheath.scale.set(r, len, r);
-          core.scale.set(r * 0.32, len, r * 0.32);
+          core.scale.set(r * 0.25, len, r * 0.25);
           for (const m of [haloMat, bodyMat, coreMat]) m.uniforms.grain!.value.y = len / 2.5;
           rings.forEach((ring, i) => {
             const along = ((t * 2.4 + i / rings.length) % 1) * len;

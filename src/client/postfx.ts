@@ -175,7 +175,8 @@ export class PostFX {
       });
     };
     this.composer.addPass(this.ao);
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.5, 0.5, BLOOM_THRESHOLD);
+    // A tight bloom: glows stay round their source and keep its colour.
+    this.bloom = new UnrealBloomPass(new THREE.Vector2(size.x, size.y), 0.45, 0.28, BLOOM_THRESHOLD);
     this.composer.addPass(this.bloom);
     this.impact = new ShaderPass(ImpactShader);
     this.composer.addPass(this.impact);

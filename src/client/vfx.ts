@@ -178,7 +178,7 @@ export class Vfx {
     const tint = new THREE.Color(color);
     const hot = tint.clone().lerp(new THREE.Color(1, 1, 1), 0.55);
     // A short, tight white core (not a blob that hides the fighters).
-    const flash = this.sprite(this.glow, 0xffffff, 0.9);
+    const flash = this.sprite(this.glow, hot, 0.7);
     flash.position.copy(pos);
     this.add(flash, 0.06, (k) => {
       flash.scale.setScalar(size * 0.55 * (0.6 + k * 0.6));
@@ -192,7 +192,7 @@ export class Vfx {
       back.scale.setScalar(size * 1.25 * (0.5 + Math.sqrt(k) * 0.75));
       back.material.opacity = 0.9 * (1 - k * k);
     });
-    const burst = this.sprite(burstTexture(), 0xffffff);
+    const burst = this.sprite(burstTexture(), hot);
     burst.position.copy(pos);
     burst.material.rotation = spin;
     this.add(burst, big ? 0.14 : 0.1, (k) => {
@@ -205,7 +205,7 @@ export class Vfx {
       const v = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.9 - 0.2, Math.random() - 0.5).normalize().multiplyScalar((big ? 9 : 6) + Math.random() * (big ? 12 : 7));
       this.spark({
         pos, vel: v, life: 0.22 + Math.random() * 0.3, size: [0.045, 0.02], stretch: 0.045,
-        color: [new THREE.Color(4, 3.6, 3.2), tint.clone().multiplyScalar(2.2)], alpha: [1, 0],
+        color: [hot.clone().multiplyScalar(2.6), tint.clone().multiplyScalar(1.8)], alpha: [1, 0],
         sprite: Sprite.Spark, drag: 3.5, gravity: 14,
       });
     }
@@ -320,7 +320,7 @@ export class Vfx {
       // Speed so that it reaches the point at the end of its life (drag 0).
       this.spark({
         pos: from, vel: at.clone().sub(from).divideScalar(life), life, size: [0.03, 0.09], stretch: 0.03,
-        color: [c.clone().multiplyScalar(1.2), new THREE.Color(3, 3, 3).lerp(c, 0.3)], alpha: [0.2, 1], sprite: Sprite.Spark,
+        color: [c.clone().multiplyScalar(1.2), c.clone().lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar(2.2)], alpha: [0.2, 1], sprite: Sprite.Spark,
       });
     }
   }
@@ -401,8 +401,8 @@ export class Vfx {
     ring.position.copy(pos);
     // A sharp, quick shockwave: it reads as a snap, not as a veil over the fighters.
     this.add(ring, 0.24, (k) => {
-      ring.scale.setScalar(size * 0.7 * (0.25 + (1 - (1 - k) ** 3) * 0.8));
-      m.opacity = 0.7 * (1 - k) ** 1.5;
+      ring.scale.setScalar(size * 0.5 * (0.25 + (1 - (1 - k) ** 3) * 0.8));
+      m.opacity = 0.55 * (1 - k) ** 1.5;
     });
     ring.onBeforeRender = (_r, _s, cam) => ring.quaternion.copy(cam.quaternion);
   }
