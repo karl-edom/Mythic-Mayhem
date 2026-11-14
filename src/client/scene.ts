@@ -516,7 +516,7 @@ export class ArenaView {
           }
           const fx = this.fxOf(e.source, e.slot);
           if (fx) this.specialFx.hit(fx, this.fxFighter(e.source), this.fxFighter(e.target));
-          if (e.knockdown) this.vfx.groundWave(new THREE.Vector3(w.fighters[e.target]!.pos.x, w.fighters[e.target]!.floor, w.fighters[e.target]!.pos.z), 0xffffff, 3);
+          if (e.knockdown) this.vfx.groundWave(new THREE.Vector3(w.fighters[e.target]!.pos.x, w.fighters[e.target]!.floor, w.fighters[e.target]!.pos.z), 0xffd9a0, 2.4);
           // Directional aerials: streaks show where the blow sends (up, or slammed down).
           if (e.aim) this.vfx.speedLines(this.center(w.fighters[e.target]!), new THREE.Vector3(0, e.aim === "up" ? 1 : -1, 0), this.characters[e.source]!.colors.secondary);
           break;
@@ -632,7 +632,7 @@ export class ArenaView {
           // Ground tech: a white ring and a puff of dust where the fighter springs up.
           const f = w.fighters[e.unit]!;
           const at = new THREE.Vector3(f.pos.x, f.floor + 0.05, f.pos.z);
-          this.vfx.groundWave(at, 0xffffff, 1.8);
+          this.vfx.groundWave(at, 0xffd9a0, 1.8);
           this.vfx.dust(at, 6);
           sound.dash(this.pan(at));
           break;

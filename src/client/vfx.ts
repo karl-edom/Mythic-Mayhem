@@ -237,7 +237,7 @@ export class Vfx {
     const floor = ground ?? pos.y - 0.6;
     this.lights.flash(pos.clone().setY(pos.y + 0.5), fire.clone().lerp(new THREE.Color(1, 0.85, 0.6), 0.4), 16 * size, 10 * size, 0.7);
     // Flash.
-    this.spark({ pos, life: 0.1, size: [1.0 * size, 2.2 * size], color: [new THREE.Color(2.6, 2.1, 1.5), new THREE.Color(1.8, 0.8, 0.25)], sprite: Sprite.Glow });
+    this.spark({ pos, life: 0.1, size: [0.9 * size, 1.9 * size], color: [new THREE.Color(2.3, 1.45, 0.6), new THREE.Color(1.6, 0.6, 0.15)], sprite: Sprite.Glow });
     // Fireball: puffs of light, hot yellow to deep red, swelling and rising.
     const puffs = Math.round(20 * size);
     for (let i = 0; i < puffs; i++) {
@@ -460,27 +460,17 @@ export class Vfx {
 
   /** Ground shockwave (landing a heavy blow, knockdown, area special). */
   groundWave(pos: THREE.Vector3, color: THREE.ColorRepresentation, size: number): void {
-    const m = noOutline(new THREE.MeshBasicMaterial({ color, map: ringTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    // Added light over a pale ground reads as a white veil: the wave keeps a deep tint
+    // and stays faint; the dust it raises does the rest.
+    const m = noOutline(new THREE.MeshBasicMaterial({ color: deepen(color, 0.6), map: ringTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
     const ring = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), m);
     ring.rotation.x = -Math.PI / 2;
     ring.position.copy(pos).setY(pos.y + 0.05);
     this.add(ring, 0.45, (k) => {
       ring.scale.setScalar(size * (0.2 + (1 - (1 - k) ** 3) * 0.9));
-      m.opacity = 0.6 * (1 - k) ** 1.4;
+      m.opacity = 0.35 * (1 - k) ** 1.6;
     });
     this.dustRing(pos, size * 0.45, 10);
-    // The ground kicks up: dust thrown out along the front.
-    for (let i = 0; i < 0; i++) {
-      const a = (i / 8) * Math.PI * 2 + Math.random() * 0.4;
-      const d = new THREE.Vector3(Math.cos(a), 0, Math.sin(a));
-      const s = new THREE.Sprite(noOutline(new THREE.SpriteMaterial({ map: this.glow, color: 0xe8dcc0, transparent: true, opacity: 0.5, depthWrite: false })));
-      const at = pos.clone().setY(pos.y + 0.25);
-      this.add(s, 0.5, (k) => {
-        s.position.copy(at).addScaledVector(d, size * (0.2 + (1 - (1 - k) ** 3) * 0.85));
-        s.scale.setScalar(0.5 + k * size * 0.35);
-        s.material.opacity = 0.5 * (1 - k);
-      });
-    }
   }
 
   /** Blade arc in front of the fighter, tilted per combo hit. */
