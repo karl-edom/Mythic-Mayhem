@@ -117,6 +117,18 @@ export function energyMaterial(color: THREE.ColorRepresentation, o: EnergyOption
   return m;
 }
 
+/**
+ * A technique's colour made deeper and richer (a pale sky blue becomes a strong azure):
+ * energy drawn in light colours burns to white once it glows; its deep version keeps
+ * the hue, the white is left to the core.
+ */
+export function deepen(color: THREE.ColorRepresentation, amount = 1): THREE.Color {
+  const c = new THREE.Color(color);
+  const hsl = { h: 0, s: 0, l: 0 };
+  c.getHSL(hsl);
+  return c.setHSL(hsl.h, Math.min(1, hsl.s + 0.35 * amount), Math.min(hsl.l, 0.5 - 0.08 * amount));
+}
+
 /** Advances an energy material's clock. */
 export function energyTick(m: THREE.ShaderMaterial, t: number): void {
   m.uniforms.time!.value = t;

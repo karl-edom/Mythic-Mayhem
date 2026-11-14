@@ -244,7 +244,7 @@ export class Vfx {
       this.spark({
         pos: pos.clone().addScaledVector(dir, 0.15 * size), vel: dir.multiplyScalar(sp), life: 0.45 + Math.random() * 0.45,
         size: [0.45 * size, (0.9 + Math.random() * 0.6) * size],
-        color: [new THREE.Color(2.4, 1.3, 0.45), fire.clone().multiplyScalar(0.5)], alpha: [0.85, 0],
+        color: [new THREE.Color(2.3, 0.95, 0.22), fire.clone().multiplyScalar(0.45)], alpha: [0.85, 0],
         sprite: Sprite.Smoke, drag: 3.2, gravity: -2.2, rot: Math.random() * 6.28, spin: (Math.random() - 0.5) * 2,
       });
     }
@@ -289,10 +289,10 @@ export class Vfx {
     for (let i = 0; i < count; i++) {
       const a = (i / count) * Math.PI * 2 + Math.random() * 0.4;
       const v = new THREE.Vector3(Math.cos(a), 0.15 + Math.random() * 0.3, Math.sin(a)).multiplyScalar(size * (1.6 + Math.random() * 1.2));
-      const tone = 0.55 + Math.random() * 0.15;
+      const tone = 0.32 + Math.random() * 0.1;
       this.smoke({
-        pos: at.clone().setY(at.y + 0.15), vel: v, life: 0.7 + Math.random() * 0.5, size: [0.4 * size, 1.1 * size],
-        color: [new THREE.Color(tone, tone * 0.93, tone * 0.82), new THREE.Color(tone, tone * 0.95, tone * 0.86)], alpha: [0.55, 0],
+        pos: at.clone().setY(at.y + 0.15), vel: v, life: 0.6 + Math.random() * 0.4, size: [0.3 * size, 0.8 * size],
+        color: [new THREE.Color(tone, tone * 0.9, tone * 0.78), new THREE.Color(tone, tone * 0.93, tone * 0.82)], alpha: [0.45, 0],
         sprite: Sprite.Dust, drag: 3, gravity: -0.3, rot: Math.random() * 6.28, spin: (Math.random() - 0.5),
       });
     }

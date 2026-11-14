@@ -21,7 +21,7 @@ import { WeaponTrail } from "./trail.ts";
 import { buildPizza } from "./pizza.ts";
 import { Vfx } from "./vfx.ts";
 import { PostFX } from "./postfx.ts";
-import { energyMaterial, energyTick } from "./energy.ts";
+import { deepen, energyMaterial, energyTick } from "./energy.ts";
 import { GhostTrail, SpecialFx, type FxFighter } from "./specialFx.ts";
 import { sound, type HeldSound } from "./audio.ts";
 import { bladeFire, chargeAura, eggTexture, emberAura, flareTexture, handLook, projectileLook, zoneFlames, zoneLightning, zoneVortex, type HandLook, type ProjectileLook } from "./moveFx.ts";
@@ -1117,7 +1117,7 @@ export class ArenaView {
             g.add(halo);
           } else {
             // A ball of energy: light from inside, streaming; a star flare on it.
-            const ball = new THREE.Mesh(new THREE.SphereGeometry(p.size * 0.85, 24, 16), energyMaterial(color, { core: 1.1, intensity: 1.4, flow: [1.4, -2.2] }));
+            const ball = new THREE.Mesh(new THREE.SphereGeometry(p.size * 0.85, 24, 16), energyMaterial(deepen(color), { core: 1.1, intensity: 1.6, flow: [1.4, -2.2], hot: 0.45 }));
             ball.userData.energy = true;
             const flare = new THREE.Sprite(noOutline(new THREE.SpriteMaterial({ map: flareTexture(), color, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false })));
             flare.scale.setScalar(p.size * 3.6);

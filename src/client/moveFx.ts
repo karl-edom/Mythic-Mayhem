@@ -6,7 +6,7 @@
 
 import * as THREE from "three";
 import type { MoveStyle } from "../brawl/character.ts";
-import { energyMaterial, energyTick } from "./energy.ts";
+import { deepen, energyMaterial, energyTick } from "./energy.ts";
 import { glowTexture, noOutline } from "./toon.ts";
 import { buildWeapon } from "./weapons.ts";
 
@@ -263,8 +263,9 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
       const body = new THREE.Group();
       const unit = new THREE.CylinderGeometry(1, 1, 1, 28, 1, true);
       unit.translate(0, 0.5, 0);
-      const haloMat = energyMaterial(color, { core: 0.9, intensity: 0.3, opacity: 0.5, flow: [0.6, -3.5], grain: [2, 1] });
-      const bodyMat = energyMaterial(color, { core: 1.1, intensity: 1.15, flow: [0.2, -5], grain: [3, 1], hot: 0.25 });
+      const deep = deepen(color);
+      const haloMat = energyMaterial(deep, { core: 0.9, intensity: 0.5, opacity: 0.6, flow: [0.6, -3.5], grain: [2, 1], hot: 0 });
+      const bodyMat = energyMaterial(deep, { core: 1.1, intensity: 1.6, flow: [0.2, -5], grain: [3, 1], hot: 0.2 });
       const coreMat = energyMaterial(new THREE.Color(color).lerp(new THREE.Color(1, 1, 1), 0.5), { core: 2.6, intensity: 0.9, flow: [0, -7], grain: [2, 1] });
       const halo = new THREE.Mesh(unit, haloMat);
       const sheath = new THREE.Mesh(unit, bodyMat);
@@ -284,8 +285,8 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
       extra.push(body);
       const ballGeo = new THREE.SphereGeometry(1, 24, 16);
       const muzzle = new THREE.Group();
-      const muzzleBall = new THREE.Mesh(ballGeo, energyMaterial(color, { core: 1.1, intensity: 1.3, flow: [0.8, -1.5] }));
-      const muzzleFlare = new THREE.Sprite(additive(flareTexture(), color, 0.55));
+      const muzzleBall = new THREE.Mesh(ballGeo, energyMaterial(deep, { core: 1.1, intensity: 1.4, flow: [0.8, -1.5], hot: 0.4 }));
+      const muzzleFlare = new THREE.Sprite(additive(flareTexture(), deep, 0.6));
       muzzle.add(muzzleBall, muzzleFlare);
       muzzle.position.copy(origin);
       scene.add(muzzle);
@@ -293,8 +294,8 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
       const motes = new Motes();
       scene.add(motes.group);
       extra.push(motes.group);
-      const headBall = new THREE.Mesh(ballGeo, energyMaterial(color, { core: 1.0, intensity: 1.4, flow: [1.2, -2] }));
-      const headHalo = new THREE.Sprite(additive(glow, color, 0.25));
+      const headBall = new THREE.Mesh(ballGeo, energyMaterial(deep, { core: 1.0, intensity: 1.5, flow: [1.2, -2], hot: 0.4 }));
+      const headHalo = new THREE.Sprite(additive(glow, deep, 0.3));
       const headFlare = new THREE.Sprite(additive(flareTexture(), new THREE.Color(color).lerp(new THREE.Color(1, 1, 1), 0.35), 0.5));
       group.add(headHalo, headBall, headFlare);
       const mats = [haloMat, bodyMat, coreMat, muzzleBall.material as THREE.ShaderMaterial, headBall.material as THREE.ShaderMaterial];
