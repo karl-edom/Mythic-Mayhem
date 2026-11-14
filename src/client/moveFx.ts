@@ -579,37 +579,39 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
       };
     }
     case undefined: {
-      // A ball of energy: a white core, its colour round it, a ring spinning on it,
-      // and motes left behind along its path.
-      const halo = new THREE.Sprite(additive(glow, color));
-      halo.scale.setScalar(size * 3.4);
-      const core = new THREE.Sprite(additive(glow, 0xffffff));
-      core.scale.setScalar(size * 0.9);
+      // A ball of energy: light from inside, streaming, in the technique's deep colour;
+      // a dyed sheath round it keeps that colour over a pale backdrop; a slow star
+      // flare on it and a ring spinning on its path. (Its glowing wake is the scene's.)
+      const deep = deepen(color);
+      const ballMat = energyMaterial(deep, { core: 1.1, intensity: 1.6, flow: [1.4, -2.2], hot: 0.45 });
+      const sheathMat = energyMaterial(deep, { core: 0.7, intensity: 0.8, opacity: 0.5, flow: [0.9, -1.6], dye: true });
+      const sphere = new THREE.SphereGeometry(1, 24, 16);
+      const ball = new THREE.Mesh(sphere, ballMat);
+      const sheath = new THREE.Mesh(sphere, sheathMat);
+      sheath.renderOrder = -1;
+      const flare = new THREE.Sprite(additive(flareTexture(), deep, 0.55));
+      const halo = new THREE.Sprite(additive(glow, deep, 0.25));
       const ring = new THREE.Mesh(
-        new THREE.TorusGeometry(size * 0.9, size * 0.08, 6, 32),
-        noOutline(new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false })),
+        new THREE.TorusGeometry(size * 0.9, size * 0.05, 6, 32),
+        noOutline(new THREE.MeshBasicMaterial({ color: deep.clone().lerp(new THREE.Color(1, 1, 1), 0.3), transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false })),
       );
-      group.add(halo, core, ring);
-      const trail = new Motes();
-      scene.add(trail.group);
-      extra.push(trail.group);
-      let prev = -1;
+      group.add(sheath, halo, ball, flare, ring);
       return {
         group,
-        update(t, pos, dir) {
-          const dt = prev < 0 ? 0 : Math.min(0.05, Math.max(0, t - prev));
-          prev = t;
+        update(t, _pos, dir) {
+          energyTick(ballMat, t);
+          energyTick(sheathMat, t);
+          const pulse = 1 + 0.07 * Math.sin(t * 30);
+          ball.scale.setScalar(size * 0.8 * pulse);
+          sheath.scale.setScalar(size * 1.15 * pulse);
+          halo.scale.setScalar(size * 2.6);
+          flare.scale.setScalar(size * 3);
+          flare.material.rotation = t * 2.5;
           ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), dir.clone().normalize());
           ring.rotateZ(t * 10);
           ring.scale.setScalar(1 + 0.15 * Math.sin(t * 30));
-          halo.scale.setScalar(size * (3.2 + 0.4 * Math.sin(t * 25)));
-          for (let i = 0; i < 2; i++) trail.emit(pos.clone().addScaledVector(anyDir(), size * 0.4), anyDir().multiplyScalar(0.6), i ? color : 0xffffff, size * 1.1, 0.35, { grow: -0.5, alpha: 0.8 });
-          trail.update(dt);
         },
-        dispose: () => {
-          trail.dispose();
-          done();
-        },
+        dispose: done,
       };
     }
     default:
