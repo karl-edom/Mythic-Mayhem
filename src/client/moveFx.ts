@@ -713,21 +713,23 @@ export function handLook(look: NonNullable<MoveStyle["hand"]>, color: string, bl
     }
     case "lightning": {
       // Crackling arcs round the hand, redrawn every frame, and a white-blue glow.
-      const halo = new THREE.Sprite(additive(glow, color, 0.9));
-      const core = new THREE.Sprite(additive(glow, 0xffffff));
-      core.scale.setScalar(0.25);
+      // The glow in the deep colour (a pale yellow or blue would burn white), faint:
+      // the arcs are what reads.
+      const halo = new THREE.Sprite(additive(glow, deepen(color), 0.45));
+      const core = new THREE.Sprite(additive(glow, deepen(color).lerp(new THREE.Color(1, 1, 1), 0.5), 0.7));
+      core.scale.setScalar(0.16);
       const n = 16;
       const pos = new Float32Array(n * 6 * 2 * 3);
       const geo = new THREE.BufferGeometry();
       geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-      const arcs = new THREE.LineSegments(geo, noOutline(new THREE.LineBasicMaterial({ color: 0xe8f6ff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })));
+      const arcs = new THREE.LineSegments(geo, noOutline(new THREE.LineBasicMaterial({ color: deepen(color, 0.3).lerp(new THREE.Color(1, 1, 1), 0.45), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })));
       arcs.frustumCulled = false;
       obj.add(halo, core, arcs);
       let last = -1;
       return {
         obj,
         update(t) {
-          halo.scale.setScalar(0.55 + 0.15 * Math.random());
+          halo.scale.setScalar(0.42 + 0.12 * Math.random());
           if (t - last < 0.03) return;
           last = t;
           let k = 0;
