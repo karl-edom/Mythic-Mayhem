@@ -235,9 +235,9 @@ export class Vfx {
   explode(pos: THREE.Vector3, size: number, color: THREE.ColorRepresentation = 0xff7a1a, ground?: number): void {
     const fire = new THREE.Color(color);
     const floor = ground ?? pos.y - 0.6;
-    this.lights.flash(pos.clone().setY(pos.y + 0.5), fire.clone().lerp(new THREE.Color(1, 0.85, 0.6), 0.4), 16 * size, 10 * size, 0.7);
+    this.lights.flash(pos.clone().setY(pos.y + 0.5), fire.clone().lerp(new THREE.Color(1, 0.85, 0.6), 0.4), 10 * size, 9 * size, 0.6);
     // Flash.
-    this.spark({ pos, life: 0.1, size: [0.9 * size, 1.9 * size], color: [new THREE.Color(2.3, 1.45, 0.6), new THREE.Color(1.6, 0.6, 0.15)], sprite: Sprite.Glow });
+    this.spark({ pos, life: 0.1, size: [0.7 * size, 1.5 * size], color: [new THREE.Color(2.1, 1.2, 0.45), new THREE.Color(1.6, 0.6, 0.15)], sprite: Sprite.Glow });
     // Fireball: puffs of light, hot yellow to deep red, swelling and rising.
     const puffs = Math.round(20 * size);
     for (let i = 0; i < puffs; i++) {
@@ -246,7 +246,7 @@ export class Vfx {
       this.spark({
         pos: pos.clone().addScaledVector(dir, 0.15 * size), vel: dir.multiplyScalar(sp), life: 0.45 + Math.random() * 0.45,
         size: [0.45 * size, (0.9 + Math.random() * 0.6) * size],
-        color: [new THREE.Color(2.3, 0.95, 0.22), fire.clone().multiplyScalar(0.45)], alpha: [0.85, 0],
+        color: [new THREE.Color(1.7, 0.62, 0.12), fire.clone().multiplyScalar(0.4)], alpha: [0.85, 0],
         sprite: Sprite.Smoke, drag: 3.2, gravity: -2.2, rot: Math.random() * 6.28, spin: (Math.random() - 0.5) * 2,
       });
     }
@@ -415,43 +415,45 @@ export class Vfx {
    * line with a coloured glow down its length, a flash where it lands, gone in a blink.
    */
   bolt(pos: THREE.Vector3, color: THREE.ColorRepresentation, height = 14): void {
-    const pts: number[] = [];
-    let x = 0;
-    let z = 0;
-    const n = 14;
-    for (let i = 0; i < n; i++) {
-      const y0 = height * (1 - i / n);
-      const y1 = height * (1 - (i + 1) / n);
-      const nx = i === n - 1 ? 0 : x + (Math.random() - 0.5) * 1.2;
-      const nz = i === n - 1 ? 0 : z + (Math.random() - 0.5) * 1.2;
-      pts.push(x, y0, z, nx, y1, nz);
-      x = nx;
-      z = nz;
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
-    const core = noOutline(new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+    // A jagged main channel and a few forks, each drawn as two ribbons turned to the
+    // camera: a thin white-hot core inside a wide glow in the bolt's deep colour.
+    const deep = deepen(color, 0.5);
+    const coreMat = boltMaterial(new THREE.Color(1.6, 1.7, 2));
+    const glowMat = boltMaterial(deep.clone().multiplyScalar(1.4));
     const group = new THREE.Group();
-    group.add(new THREE.LineSegments(geo, core));
-    const sheath = this.sprite(this.glow, color, 0.7);
-    sheath.scale.set(1.6, height, 1);
-    sheath.position.y = height / 2;
-    const flash = this.sprite(this.glow, 0xffffff);
-    flash.scale.setScalar(3.5);
+    const channel = jagged(new THREE.Vector3(0, height, 0), new THREE.Vector3(0, 0, 0), 18, 0.9);
+    const paths = [{ pts: channel, w: 1 }];
+    for (let f = 0; f < 3; f++) {
+      const from = channel[2 + Math.floor(Math.random() * (channel.length - 6))]!;
+      const to = from.clone().add(new THREE.Vector3((Math.random() - 0.5) * 5, -2 - Math.random() * 3, (Math.random() - 0.5) * 2));
+      paths.push({ pts: jagged(from, to, 7, 0.5), w: 0.5 });
+    }
+    for (const { pts, w } of paths) {
+      group.add(new THREE.Mesh(ribbon(pts, 0.7 * w), glowMat));
+      group.add(new THREE.Mesh(ribbon(pts, 0.09 * w), coreMat));
+    }
+    const flash = this.sprite(this.glow, deep.clone().lerp(new THREE.Color(1, 1, 1), 0.4));
+    flash.scale.setScalar(2.6);
     flash.position.y = 0.4;
-    group.add(sheath, flash);
+    group.add(flash);
     group.position.copy(pos);
+    // Turned about its own axis to face the camera (the ribbons are flat).
+    for (const c of group.children)
+      if (c instanceof THREE.Mesh) c.onBeforeRender = (_r, _s, cam) => {
+        c.rotation.y = Math.atan2(cam.position.x - group.position.x, cam.position.z - group.position.z);
+        c.updateMatrixWorld();
+      };
     this.add(group, 0.35, (k) => {
       // It flickers out: on, off, on, fading.
-      const on = k < 0.15 || (k > 0.3 && k < 0.5) ? 1 : 0.35;
-      core.opacity = on * (1 - k);
-      sheath.material.opacity = 0.7 * on * (1 - k);
-      flash.material.opacity = 1 - k;
+      const on = k < 0.15 || (k > 0.3 && k < 0.5) ? 1 : 0.3;
+      coreMat.opacity = on * (1 - k);
+      glowMat.opacity = 0.8 * on * (1 - k);
+      flash.material.opacity = 0.8 * (1 - k);
     });
-    this.lights.flash(pos.clone().setY(pos.y + 1.5), new THREE.Color(color).lerp(new THREE.Color(1, 1, 1), 0.5), 24, 14, 0.4);
+    this.lights.flash(pos.clone().setY(pos.y + 1.5), deep.clone().lerp(new THREE.Color(1, 1, 1), 0.3), 14, 12, 0.35);
     for (let i = 0; i < 30; i++) {
       const v = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.8 + 0.2, Math.random() - 0.5).normalize().multiplyScalar(6 + Math.random() * 10);
-      this.spark({ pos: pos.clone().setY(pos.y + 0.1), vel: v, life: 0.3 + Math.random() * 0.4, size: [0.04, 0.02], stretch: 0.04, color: [new THREE.Color(4, 4, 5), new THREE.Color(color).multiplyScalar(2)], sprite: Sprite.Spark, drag: 3, gravity: 14 });
+      this.spark({ pos: pos.clone().setY(pos.y + 0.1), vel: v, life: 0.3 + Math.random() * 0.4, size: [0.04, 0.02], stretch: 0.04, color: [new THREE.Color(2.2, 2.3, 2.6), deep.clone().multiplyScalar(1.6)], sprite: Sprite.Spark, drag: 3, gravity: 14 });
     }
     this.marks.add(pos, 2.6, "scorch", 6);
     this.screen.kick(0.008, 0.35, 0xdff4ff);
@@ -475,18 +477,40 @@ export class Vfx {
 
   /** Blade arc in front of the fighter, tilted per combo hit. */
   slash(origin: THREE.Vector3, yaw: number, tilt: number, radius: number, color: THREE.ColorRepresentation): void {
+    // A blade's sweep: brightest along its leading edge and its outer rim, fading
+    // through the technique's colour to nothing along the tail.
     const m = noOutline(
-      new THREE.MeshBasicMaterial({ color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
+      new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
     );
-    const arc = new THREE.Mesh(new THREE.RingGeometry(radius * 0.55, radius, 32, 1, -Math.PI * 0.55, Math.PI * 1.1), m);
+    m.userData.hdr = true;
+    const start = -Math.PI * 0.55;
+    const sweep = Math.PI * 1.1;
+    const geo = new THREE.RingGeometry(radius * 0.55, radius, 40, 4, start, sweep);
+    const deep = deepen(color, 0.5);
+    const hot = deep.clone().lerp(new THREE.Color(1, 1, 1), 0.55);
+    const p = geo.attributes.position!;
+    const cols = new Float32Array(p.count * 3);
+    const c = new THREE.Color();
+    for (let i = 0; i < p.count; i++) {
+      const x = p.getX(i);
+      const y = p.getY(i);
+      const along = (Math.atan2(y, x) - start) / sweep; // 0 tail .. 1 leading edge
+      const rim = (Math.hypot(x, y) / radius - 0.55) / 0.45; // 0 inner .. 1 outer
+      const k = Math.max(0, Math.min(1, along)) ** 1.6 * (0.25 + 0.75 * rim ** 1.5);
+      c.copy(deep).lerp(hot, k ** 2).multiplyScalar(k * 1.4);
+      cols.set([c.r, c.g, c.b], i * 3);
+    }
+    geo.setAttribute("color", new THREE.BufferAttribute(cols, 3));
+    const arc = new THREE.Mesh(geo, m);
     const holder = new THREE.Group();
     holder.position.copy(origin);
     holder.rotation.set(0, yaw, 0);
     arc.rotation.set(-Math.PI / 2 + tilt, 0, Math.PI / 2);
     holder.add(arc);
-    this.add(holder, 0.16, (k) => {
-      m.opacity = 0.85 * (1 - k);
+    this.add(holder, 0.18, (k) => {
+      m.opacity = 1 - k * k;
       arc.scale.setScalar(0.9 + k * 0.25);
+      arc.rotation.z = Math.PI / 2 + k * 0.5;
     });
   }
 
@@ -676,4 +700,64 @@ export class Vfx {
       return false;
     });
   }
+}
+
+/** Additive material for lightning ribbons: a soft falloff across their width. */
+function boltMaterial(color: THREE.Color): THREE.MeshBasicMaterial {
+  const m = noOutline(new THREE.MeshBasicMaterial({ color, map: ribbonTexture(), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
+  return m;
+}
+
+let ribbonTex: THREE.CanvasTexture | null = null;
+/** Bright in the middle, fading to its two edges (across u). */
+function ribbonTexture(): THREE.CanvasTexture {
+  if (ribbonTex) return ribbonTex;
+  const c = document.createElement("canvas");
+  c.width = 64;
+  c.height = 4;
+  const g = c.getContext("2d")!;
+  const grad = g.createLinearGradient(0, 0, 64, 0);
+  grad.addColorStop(0, "rgba(255,255,255,0)");
+  grad.addColorStop(0.35, "rgba(255,255,255,0.35)");
+  grad.addColorStop(0.5, "rgba(255,255,255,1)");
+  grad.addColorStop(0.65, "rgba(255,255,255,0.35)");
+  grad.addColorStop(1, "rgba(255,255,255,0)");
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 4);
+  ribbonTex = new THREE.CanvasTexture(c);
+  return ribbonTex;
+}
+
+/** A jagged path from `a` to `b`: midpoints thrown aside, more in the middle. */
+function jagged(a: THREE.Vector3, b: THREE.Vector3, n: number, spread: number): THREE.Vector3[] {
+  const out = [a.clone()];
+  for (let i = 1; i < n; i++) {
+    const k = i / n;
+    const off = spread * Math.sin(Math.PI * k) + spread * 0.4;
+    out.push(a.clone().lerp(b, k).add(new THREE.Vector3((Math.random() - 0.5) * off, (Math.random() - 0.5) * off * 0.3, (Math.random() - 0.5) * off * 0.5)));
+  }
+  out.push(b.clone());
+  return out;
+}
+
+/** A flat strip along a path in the XY plane (seen from +Z), `width` wide. */
+function ribbon(pts: THREE.Vector3[], width: number): THREE.BufferGeometry {
+  const pos: number[] = [];
+  const uv: number[] = [];
+  const idx: number[] = [];
+  pts.forEach((p, i) => {
+    const prev = pts[Math.max(0, i - 1)]!;
+    const next = pts[Math.min(pts.length - 1, i + 1)]!;
+    const d = next.clone().sub(prev);
+    const side = new THREE.Vector3(-d.y, d.x, 0).normalize().multiplyScalar(width / 2);
+    pos.push(p.x - side.x, p.y - side.y, p.z, p.x + side.x, p.y + side.y, p.z);
+    const v = i / (pts.length - 1);
+    uv.push(0, v, 1, v);
+    if (i) idx.push(2 * i - 2, 2 * i - 1, 2 * i, 2 * i - 1, 2 * i + 1, 2 * i);
+  });
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("uv", new THREE.Float32BufferAttribute(uv, 2));
+  g.setIndex(idx);
+  return g;
 }
