@@ -264,7 +264,7 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
       const unit = new THREE.CylinderGeometry(1, 1, 1, 28, 1, true);
       unit.translate(0, 0.5, 0);
       const deep = deepen(color);
-      const haloMat = energyMaterial(deep, { core: 0.9, intensity: 0.5, opacity: 0.6, flow: [0.6, -3.5], grain: [2, 1], hot: 0 });
+      const haloMat = energyMaterial(deep, { core: 0.7, intensity: 0.9, opacity: 0.55, flow: [0.6, -3.5], grain: [2, 1], dye: true });
       const bodyMat = energyMaterial(deep, { core: 1.1, intensity: 1.6, flow: [0.2, -5], grain: [3, 1], hot: 0.2 });
       const coreMat = energyMaterial(new THREE.Color(color).lerp(new THREE.Color(1, 1, 1), 0.5), { core: 2.6, intensity: 0.9, flow: [0, -7], grain: [2, 1] });
       const halo = new THREE.Mesh(unit, haloMat);
@@ -314,7 +314,7 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
           const dir = d.normalize();
           body.quaternion.setFromUnitVectors(UP, dir);
           const r = size * (0.5 + 0.05 * Math.sin(t * 40)) * fade;
-          halo.scale.set(r * 2.3, len, r * 2.3);
+          halo.scale.set(r * 1.7, len, r * 1.7);
           sheath.scale.set(r, len, r);
           core.scale.set(r * 0.25, len, r * 0.25);
           for (const m of [haloMat, bodyMat, coreMat]) m.uniforms.grain!.value.y = len / 2.5;

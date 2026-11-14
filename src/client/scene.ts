@@ -1119,8 +1119,11 @@ export class ArenaView {
             // A ball of energy: light from inside, streaming; a star flare on it.
             const ball = new THREE.Mesh(new THREE.SphereGeometry(p.size * 0.85, 24, 16), energyMaterial(deepen(color), { core: 1.1, intensity: 1.6, flow: [1.4, -2.2], hot: 0.45 }));
             ball.userData.energy = true;
-            const flare = new THREE.Sprite(noOutline(new THREE.SpriteMaterial({ map: flareTexture(), color, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false })));
-            flare.scale.setScalar(p.size * 3.6);
+            halo.material.color = deepen(color);
+            halo.material.opacity = 0.3;
+            halo.scale.setScalar(p.size * 2.6);
+            const flare = new THREE.Sprite(noOutline(new THREE.SpriteMaterial({ map: flareTexture(), color: deepen(color), transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false })));
+            flare.scale.setScalar(p.size * 3);
             flare.userData.flare = true;
             g.add(halo, ball, flare);
           }
@@ -1160,7 +1163,7 @@ export class ArenaView {
           else this.vfx.glint(at, 0xffd27a, 0.8);
         } else {
           // An energy ball bursting: a ring, sparks, a puff of its light.
-          this.vfx.ring(at, 0xffffff, 1.5);
+          this.vfx.ring(at, this.projectileColor(p as { owner: number; slot: number }), 1.5);
           this.vfx.hit(at, this.projectileColor(p as { owner: number; slot: number }), false);
           this.scene.remove(g);
         }

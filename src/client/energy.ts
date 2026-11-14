@@ -57,6 +57,12 @@ export interface EnergyOptions {
   opacity?: number;
   /** How much of its core turns white-hot (0 none, 1 all of it). */
   hot?: number;
+  /**
+   * Blended over the scene instead of added to it: the layer dyes what lies behind in
+   * its colour. Added light can only brighten, and over a pale ground it reads as white
+   * glare; a dyed sheath around the glow keeps the technique's colour on any backdrop.
+   */
+  dye?: boolean;
 }
 
 /**
@@ -65,6 +71,7 @@ export interface EnergyOptions {
  */
 export function energyMaterial(color: THREE.ColorRepresentation, o: EnergyOptions = {}): THREE.ShaderMaterial {
   const m = new THREE.ShaderMaterial({
+    defines: o.dye ? { DYE: 1 } : {},
     uniforms: {
       time: { value: 0 },
       color: { value: new THREE.Color(color) },
@@ -105,11 +112,15 @@ export function energyMaterial(color: THREE.ColorRepresentation, o: EnergyOption
         // White-hot in the core, the technique's colour around it, darker at the rim.
         vec3 hot = mix(color, vec3(1.0), smoothstep(0.55, 1.0, e) * hotness);
         vec3 col = mix(color * 0.35, hot, smoothstep(0.05, 0.6, e)) * intensity;
-        gl_FragColor = vec4(col * e * opacity, e * opacity);
+        #ifdef DYE
+          gl_FragColor = vec4(color * intensity, smoothstep(0.0, 0.5, e) * opacity);
+        #else
+          gl_FragColor = vec4(col * e * opacity, e * opacity);
+        #endif
       }`,
     transparent: true,
     depthWrite: false,
-    blending: THREE.AdditiveBlending,
+    blending: o.dye ? THREE.NormalBlending : THREE.AdditiveBlending,
     side: THREE.DoubleSide,
   });
   m.userData.hdr = true;

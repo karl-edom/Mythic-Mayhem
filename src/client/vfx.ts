@@ -3,6 +3,7 @@
 // each with a short life. Purely visual: nothing here touches the simulation.
 
 import * as THREE from "three";
+import { deepen } from "./energy.ts";
 import { GroundMarks, LightPool, ParticleSystem, ScreenFx, Sprite, type Emit } from "./fxkit.ts";
 import { flameTexture, puffTexture } from "./moveFx.ts";
 import { glowTexture, noOutline, starTexture, toon } from "./toon.ts";
@@ -176,7 +177,8 @@ export class Vfx {
   hit(pos: THREE.Vector3, color: THREE.ColorRepresentation, big: boolean): void {
     const size = big ? 1.7 : 1.1;
     const tint = new THREE.Color(color);
-    const hot = tint.clone().lerp(new THREE.Color(1, 1, 1), 0.55);
+    const deep = deepen(tint);
+    const hot = deep.clone().lerp(new THREE.Color(1, 1, 1), 0.3);
     // A short, tight white core (not a blob that hides the fighters).
     const flash = this.sprite(this.glow, hot, 0.7);
     flash.position.copy(pos);
@@ -185,7 +187,7 @@ export class Vfx {
       flash.material.opacity = 0.9 * (1 - k);
     });
     const spin = Math.random() * Math.PI;
-    const back = this.sprite(burstTexture(), color);
+    const back = this.sprite(burstTexture(), deep);
     back.position.copy(pos);
     back.material.rotation = spin + 0.2;
     this.add(back, big ? 0.22 : 0.15, (k) => {
@@ -197,7 +199,7 @@ export class Vfx {
     burst.material.rotation = spin;
     this.add(burst, big ? 0.14 : 0.1, (k) => {
       burst.scale.setScalar(size * 0.8 * (0.5 + Math.sqrt(k) * 0.6));
-      burst.material.opacity = 0.85 * (1 - k);
+      burst.material.opacity = 0.55 * (1 - k);
     });
     // Sparks: many, fast, white-hot, cooling to the blow's colour as they fall.
     const n = big ? 34 : 16;
@@ -205,7 +207,7 @@ export class Vfx {
       const v = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.9 - 0.2, Math.random() - 0.5).normalize().multiplyScalar((big ? 9 : 6) + Math.random() * (big ? 12 : 7));
       this.spark({
         pos, vel: v, life: 0.22 + Math.random() * 0.3, size: [0.045, 0.02], stretch: 0.045,
-        color: [hot.clone().multiplyScalar(2.6), tint.clone().multiplyScalar(1.8)], alpha: [1, 0],
+        color: [hot.clone().multiplyScalar(1.9), deep.clone().multiplyScalar(1.5)], alpha: [1, 0],
         sprite: Sprite.Spark, drag: 3.5, gravity: 14,
       });
     }
@@ -213,7 +215,7 @@ export class Vfx {
     for (let i = 0; i < (big ? 10 : 4); i++)
       this.spark({
         pos, vel: new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.8, Math.random() - 0.5).multiplyScalar(3), life: 0.4 + Math.random() * 0.35,
-        size: [0.12, 0.02], color: [hot.clone().multiplyScalar(2.5), tint.clone().multiplyScalar(1.5)], sprite: Sprite.Glow, drag: 2.5, gravity: -1,
+        size: [0.12, 0.02], color: [hot.clone().multiplyScalar(1.6), deep.clone().multiplyScalar(1.2)], sprite: Sprite.Glow, drag: 2.5, gravity: -1,
       });
     // The blow lights its surroundings for an instant.
     this.lights.flash(pos, hot, big ? 7 : 3, big ? 6 : 4, big ? 0.22 : 0.12);
@@ -300,12 +302,13 @@ export class Vfx {
 
   /** A trail left by something in flight: a few motes along its path. */
   trail(at: THREE.Vector3, dir: THREE.Vector3, color: THREE.ColorRepresentation, size: number, count = 2): void {
-    const c = new THREE.Color(color);
+    // Deep colour, faint: a wake overlaps itself a dozen times, a bright one turns to fog.
+    const c = deepen(color);
     for (let i = 0; i < count; i++) {
       const jitter = new THREE.Vector3(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).multiplyScalar(size * 0.6);
       this.spark({
         pos: at.clone().add(jitter), vel: dir.clone().multiplyScalar(-1.5).add(jitter.multiplyScalar(2)), life: 0.25 + Math.random() * 0.2,
-        size: [size * 0.9, size * 0.15], color: [c.clone().multiplyScalar(2.6), c.clone().multiplyScalar(1.2)], alpha: [0.8, 0], sprite: Sprite.Glow, drag: 3,
+        size: [size * 0.55, size * 0.1], color: [c.clone().multiplyScalar(1.3), c.clone().multiplyScalar(0.7)], alpha: [0.45, 0], sprite: Sprite.Glow, drag: 3,
       });
     }
   }
