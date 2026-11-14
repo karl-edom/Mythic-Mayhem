@@ -783,12 +783,12 @@ export class ArenaView {
       this.vfx.glint(at, color, act?.kind === "heavy" ? 1.6 : 1.3);
     } else if (!windup) v.windupKey = "";
     // A special winding up: energy drawn in to the hand, in the technique's colour.
-    if (act?.kind === "special" && !act.fired && f.alive && this.frame % 2 === 0) {
+    if (act?.kind === "special" && !act.fired && f.alive && this.frame % 3 === 0) {
       const id = f.kit.specials[act.slot]?.id;
       const style = id ? this.characters[f.id]!.moves[id] : undefined;
       const hand = v.model?.root.getObjectByName("rightHand");
       const at = hand ? hand.getWorldPosition(new THREE.Vector3()) : this.center(f).add(new THREE.Vector3(f.facing.x, 0.2, f.facing.z).multiplyScalar(0.5));
-      this.vfx.gather(at, style?.color ?? this.characters[f.id]!.colors.secondary, 1.1, 2);
+      this.vfx.gather(at, style?.color ?? this.characters[f.id]!.colors.secondary, 1.1, 1);
     }
 
     const a = f.action;
@@ -1095,7 +1095,6 @@ export class ArenaView {
           g = look.group;
           this.looks.set(p, { look, kind: style?.projectile ?? "ball", color });
           if (style?.projectile === "bullet" || style?.projectile === "rocket") this.vfx.glint(origin, 0xffd27a, 1.2);
-          if (style?.projectile === "beam") this.vfx.ring(origin, color, 1.6);
           this.projectiles.set(p, g);
           this.lightFollow(p, color, style?.projectile);
         } else {

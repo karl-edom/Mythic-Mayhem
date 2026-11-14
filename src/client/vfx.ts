@@ -235,16 +235,16 @@ export class Vfx {
     const floor = ground ?? pos.y - 0.6;
     this.lights.flash(pos.clone().setY(pos.y + 0.5), fire.clone().lerp(new THREE.Color(1, 0.85, 0.6), 0.4), 16 * size, 10 * size, 0.7);
     // Flash.
-    this.spark({ pos, life: 0.12, size: [1.6 * size, 3.4 * size], color: [new THREE.Color(5, 4.6, 4), new THREE.Color(3, 1.6, 0.6)], sprite: Sprite.Glow });
+    this.spark({ pos, life: 0.1, size: [1.0 * size, 2.2 * size], color: [new THREE.Color(2.6, 2.1, 1.5), new THREE.Color(1.8, 0.8, 0.25)], sprite: Sprite.Glow });
     // Fireball: puffs of light, hot yellow to deep red, swelling and rising.
-    const puffs = Math.round(26 * size);
+    const puffs = Math.round(20 * size);
     for (let i = 0; i < puffs; i++) {
       const dir = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.8, Math.random() - 0.5).normalize();
       const sp = (2.5 + Math.random() * 5) * size;
       this.spark({
         pos: pos.clone().addScaledVector(dir, 0.15 * size), vel: dir.multiplyScalar(sp), life: 0.45 + Math.random() * 0.45,
-        size: [0.55 * size, (1.6 + Math.random()) * size],
-        color: [new THREE.Color(5, 3.4, 1.4), fire.clone().multiplyScalar(0.6)], alpha: [0.9, 0],
+        size: [0.45 * size, (0.9 + Math.random() * 0.6) * size],
+        color: [new THREE.Color(2.4, 1.3, 0.45), fire.clone().multiplyScalar(0.5)], alpha: [0.85, 0],
         sprite: Sprite.Smoke, drag: 3.2, gravity: -2.2, rot: Math.random() * 6.28, spin: (Math.random() - 0.5) * 2,
       });
     }
@@ -253,16 +253,16 @@ export class Vfx {
       const a = Math.random() * Math.PI * 2;
       this.spark({
         pos, vel: new THREE.Vector3(Math.cos(a) * 2, 3 + Math.random() * 3, Math.sin(a) * 2).multiplyScalar(size), life: 0.35 + Math.random() * 0.25,
-        size: [0.7 * size, 1.3 * size], color: [new THREE.Color(4, 2.6, 1), new THREE.Color(1.6, 0.4, 0.08)], sprite: Sprite.Flame, drag: 2.5, gravity: -3,
+        size: [0.5 * size, 0.9 * size], color: [new THREE.Color(2.6, 1.6, 0.6), new THREE.Color(1.2, 0.3, 0.06)], sprite: Sprite.Flame, drag: 2.5, gravity: -3,
       });
     }
     // Smoke: dark, slow, climbing and spreading after the fire.
     for (let i = 0; i < Math.round(16 * size); i++) {
       const dir = new THREE.Vector3(Math.random() - 0.5, 0.6 + Math.random() * 0.6, Math.random() - 0.5);
-      const grey = 0.08 + Math.random() * 0.08;
+      const grey = 0.05 + Math.random() * 0.05;
       this.smoke({
         pos: pos.clone().addScaledVector(dir, 0.3 * size), vel: dir.multiplyScalar((1.2 + Math.random() * 2) * size), life: 1.6 + Math.random() * 1.2,
-        size: [0.9 * size, (3 + Math.random() * 1.5) * size], color: [new THREE.Color(grey * 1.4, grey * 1.2, grey), new THREE.Color(grey * 2.2, grey * 2.1, grey * 2)],
+        size: [0.7 * size, (2 + Math.random()) * size], color: [new THREE.Color(grey * 1.3, grey * 1.15, grey), new THREE.Color(grey * 1.8, grey * 1.75, grey * 1.7)],
         alpha: [0.8, 0], sprite: Sprite.Smoke, drag: 1.4, gravity: -0.7, rot: Math.random() * 6.28, spin: (Math.random() - 0.5) * 0.8,
         delay: 0.08 + Math.random() * 0.2,
       });
@@ -272,7 +272,7 @@ export class Vfx {
       const v = new THREE.Vector3(Math.random() - 0.5, Math.random() * 0.9 + 0.1, Math.random() - 0.5).normalize().multiplyScalar((7 + Math.random() * 14) * size);
       this.spark({
         pos, vel: v, life: 0.5 + Math.random() * 0.9, size: [0.05, 0.025], stretch: 0.035,
-        color: [new THREE.Color(5, 3.6, 1.6), new THREE.Color(1.8, 0.35, 0.05)], sprite: Sprite.Spark, drag: 1.4, gravity: 12,
+        color: [new THREE.Color(3, 1.9, 0.7), new THREE.Color(1.4, 0.3, 0.05)], sprite: Sprite.Spark, drag: 1.4, gravity: 12,
       });
     }
     // Dust kicked along the ground, and the shockwave.
@@ -320,7 +320,7 @@ export class Vfx {
       // Speed so that it reaches the point at the end of its life (drag 0).
       this.spark({
         pos: from, vel: at.clone().sub(from).divideScalar(life), life, size: [0.03, 0.09], stretch: 0.03,
-        color: [c.clone().multiplyScalar(1.2), c.clone().lerp(new THREE.Color(1, 1, 1), 0.3).multiplyScalar(2.2)], alpha: [0.2, 1], sprite: Sprite.Spark,
+        color: [c.clone().multiplyScalar(0.9), c.clone().lerp(new THREE.Color(1, 1, 1), 0.25).multiplyScalar(1.5)], alpha: [0.15, 0.8], sprite: Sprite.Spark,
       });
     }
   }
