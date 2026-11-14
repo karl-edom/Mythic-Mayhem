@@ -263,9 +263,9 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
       const body = new THREE.Group();
       const unit = new THREE.CylinderGeometry(1, 1, 1, 28, 1, true);
       unit.translate(0, 0.5, 0);
-      const haloMat = energyMaterial(color, { core: 0.9, intensity: 0.9, opacity: 0.55, flow: [0.6, -3.5], grain: [2, 1] });
-      const bodyMat = energyMaterial(color, { core: 1.4, intensity: 2.2, flow: [0.2, -5], grain: [3, 1] });
-      const coreMat = energyMaterial(new THREE.Color(color).lerp(new THREE.Color(1, 1, 1), 0.7), { core: 2.2, intensity: 3.2, flow: [0, -7], grain: [2, 1] });
+      const haloMat = energyMaterial(color, { core: 0.9, intensity: 0.45, opacity: 0.55, flow: [0.6, -3.5], grain: [2, 1] });
+      const bodyMat = energyMaterial(color, { core: 1.4, intensity: 1.1, flow: [0.2, -5], grain: [3, 1] });
+      const coreMat = energyMaterial(new THREE.Color(color).lerp(new THREE.Color(1, 1, 1), 0.7), { core: 2.2, intensity: 1.9, flow: [0, -7], grain: [2, 1] });
       const halo = new THREE.Mesh(unit, haloMat);
       const sheath = new THREE.Mesh(unit, bodyMat);
       const core = new THREE.Mesh(unit, coreMat);
@@ -284,8 +284,8 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
       extra.push(body);
       const ballGeo = new THREE.SphereGeometry(1, 24, 16);
       const muzzle = new THREE.Group();
-      const muzzleBall = new THREE.Mesh(ballGeo, energyMaterial(color, { core: 1.1, intensity: 2.4, flow: [0.8, -1.5] }));
-      const muzzleFlare = new THREE.Sprite(additive(flareTexture(), color, 0.9));
+      const muzzleBall = new THREE.Mesh(ballGeo, energyMaterial(color, { core: 1.1, intensity: 1.3, flow: [0.8, -1.5] }));
+      const muzzleFlare = new THREE.Sprite(additive(flareTexture(), color, 0.55));
       muzzle.add(muzzleBall, muzzleFlare);
       muzzle.position.copy(origin);
       scene.add(muzzle);
@@ -293,9 +293,9 @@ export function projectileLook(scene: THREE.Scene, look: MoveStyle["projectile"]
       const motes = new Motes();
       scene.add(motes.group);
       extra.push(motes.group);
-      const headBall = new THREE.Mesh(ballGeo, energyMaterial(color, { core: 1.0, intensity: 2.6, flow: [1.2, -2] }));
-      const headHalo = new THREE.Sprite(additive(glow, color, 0.45));
-      const headFlare = new THREE.Sprite(additive(flareTexture(), 0xffffff, 0.8));
+      const headBall = new THREE.Mesh(ballGeo, energyMaterial(color, { core: 1.0, intensity: 1.4, flow: [1.2, -2] }));
+      const headHalo = new THREE.Sprite(additive(glow, color, 0.25));
+      const headFlare = new THREE.Sprite(additive(flareTexture(), 0xffffff, 0.5));
       group.add(headHalo, headBall, headFlare);
       const mats = [haloMat, bodyMat, coreMat, muzzleBall.material as THREE.ShaderMaterial, headBall.material as THREE.ShaderMaterial];
       const last = origin.clone();

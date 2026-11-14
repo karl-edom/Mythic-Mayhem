@@ -1118,7 +1118,7 @@ export class ArenaView {
             g.add(halo);
           } else {
             // A ball of energy: light from inside, streaming; a star flare on it.
-            const ball = new THREE.Mesh(new THREE.SphereGeometry(p.size * 0.85, 24, 16), energyMaterial(color, { core: 1.1, intensity: 2.5, flow: [1.4, -2.2] }));
+            const ball = new THREE.Mesh(new THREE.SphereGeometry(p.size * 0.85, 24, 16), energyMaterial(color, { core: 1.1, intensity: 1.4, flow: [1.4, -2.2] }));
             ball.userData.energy = true;
             const flare = new THREE.Sprite(noOutline(new THREE.SpriteMaterial({ map: flareTexture(), color, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false })));
             flare.scale.setScalar(p.size * 3.6);

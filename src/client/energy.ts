@@ -98,7 +98,7 @@ export function energyMaterial(color: THREE.ColorRepresentation, o: EnergyOption
         float body = pow(facing, core);
         vec2 uv = vUv * grain + flow * time;
         float n = texture2D(noise, uv).r * 0.65 + texture2D(noise, uv * 2.3 - flow * time * 0.7).r * 0.35;
-        float e = body * (0.55 + 0.9 * n);
+        float e = min(1.0, body * (0.5 + 0.8 * n));
         // White-hot in the core, the technique's colour around it, darker at the rim.
         vec3 hot = mix(color, vec3(1.0), smoothstep(0.55, 1.0, e));
         vec3 col = mix(color * 0.35, hot, smoothstep(0.05, 0.6, e)) * intensity;
